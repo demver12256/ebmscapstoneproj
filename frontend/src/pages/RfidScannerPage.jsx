@@ -1,0 +1,408 @@
+import { useState, useEffect, useRef } from 'react';
+import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users } from 'lucide-react';
+import { attendanceApi, distributionApi } from '../services/api';
+import * as XLSX from 'xlsx';
+
+export default function RfidScannerPage() {
+  const [distributionEvents, setDistributionEvents] = useState([]);
+  const [selectedEvent, setSelectedEvent] = useState('');
+  const [qualifiedBeneficiaries, setQualifiedBeneficiaries] = useState([]);
+  const [eventName, setEventName] = useState('');
+  const [rfidInput, setRfidInput] = useState('');
+  const [scannedRecords, setScannedRecords] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const rfidInputRef = useRef(null);
+
+  useEffect(() => {
+    const fetchDistributionEvents = async () => {
+      try {
+        console.log('Fetching distribution events...');
+        // Load all events first, then filter for scheduled/ongoing
+        const res = await distributionApi.listEvents();
+        console.log('API Response:', res.data);
+        const allEvents = res.data.data || [];
+        console.log('All events:', allEvents);
+        
+        // Filter events that are scheduled or ongoing
+        const availableEvents = allEvents.filter(
+          event => event.status === 'scheduled' || event.status === 'ongoing'
+        );
+        console.log('Available events (scheduled/ongoing):', availableEvents);
+        
+        setDistributionEvents(availableEvents);
+      } catch (err) {
+        console.error('Failed to load distribution events:', err);
+        setError('Failed to load distribution events');
+      }
+    };
+    fetchDistributionEvents();
+  }, []);
+
+  useEffect(() => {
+    const loadQualifiedBeneficiaries = async () => {
+      if (!selectedEvent) {
+        setQualifiedBeneficiaries([]);
+        setEventName('');
+        return;
+      }
+
+      try {
+        const event = distributionEvents.find(e => e.id === Number(selectedEvent));
+        if (event) {
+          setEventName(event.title);
+          
+          // Get transactions (qualified beneficiaries) for this event
+          const txnRes = await distributionApi.getTransactions(selectedEvent);
+          const transactions = txnRes.data.data || [];
+          
+          // Filter only pending transactions (not yet released)
+          const qualified = transactions
+            .filter(txn => txn.status === 'pending' && txn.Beneficiary)
+            .map(txn => txn.Beneficiary);
+          
+          setQualifiedBeneficiaries(qualified);
+        }
+      } catch (err) {
+        console.error('Failed to load qualified beneficiaries:', err);
+        setError('Failed to load qualified beneficiaries');
+      }
+    };
+    loadQualifiedBeneficiaries();
+  }, [selectedEvent, distributionEvents]);
+
+  useEffect(() => {
+    if (rfidInputRef.current) {
+      rfidInputRef.current.focus();
+    }
+  }, [selectedEvent]);
+
+  const handleExportToExcel = () => {
+    if (scannedRecords.length === 0) {
+      setError('No records to export');
+      return;
+    }
+
+    const selectedEventData = distributionEvents.find(e => e.id === Number(selectedEvent));
+    const worksheetData = [
+      ['RFID Attendance Record'],
+      ['Event:', eventName],
+      ['Program:', selectedEventData?.Program?.name || 'N/A'],
+      ['Date:', new Date().toLocaleDateString()],
+      ['Total Scanned:', scannedRecords.length],
+      [],
+      ['#', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Category', 'Time Scanned', 'Status']
+    ];
+
+    scannedRecords.forEach((record, index) => {
+      worksheetData.push([
+        index + 1,
+        record.rfid,
+        record.name,
+        record.beneficiary_id_code || 'N/A',
+        record.category || 'N/A',
+        record.time,
+        record.status
+      ]);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance');
+
+    // Auto-size columns
+    const maxWidth = worksheetData.reduce((w, r) => Math.max(w, r.length), 10);
+    worksheet['!cols'] = Array(maxWidth).fill({ wch: 15 });
+
+    const fileName = `${eventName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    
+    setSuccess('Excel file exported successfully!');
+    setTimeout(() => setSuccess(null), 3000);
+  };
+
+  const handleScan = async (e) => {
+    e.preventDefault();
+    
+    if (!selectedEvent) {
+      setError('Please select a distribution event first');
+      return;
+    }
+
+    if (!rfidInput.trim()) {
+      setError('Please scan an RFID card');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const rfidNumber = rfidInput.trim();
+      const now = new Date();
+      const attendanceDate = now.toISOString().split('T')[0];
+      const timeIn = now.toTimeString().split(' ')[0];
+
+      // Find beneficiary by RFID number from qualified list
+      const beneficiary = qualifiedBeneficiaries.find((b) => b.RFID_number === rfidNumber);
+      
+      if (!beneficiary) {
+        setError(`No qualified beneficiary found with RFID: ${rfidNumber}`);
+        setRfidInput('');
+        setTimeout(() => {
+          if (rfidInputRef.current) rfidInputRef.current.focus();
+        }, 100);
+        setLoading(false);
+        return;
+      }
+
+      // Check for duplicate scan in today's records
+      const isDuplicate = scannedRecords.some(
+        (r) => r.rfid === rfidNumber && r.date === attendanceDate
+      );
+
+      if (isDuplicate) {
+        setError(`${beneficiary.first_name} ${beneficiary.last_name} already scanned for this event today`);
+        setRfidInput('');
+        setTimeout(() => {
+          if (rfidInputRef.current) rfidInputRef.current.focus();
+        }, 100);
+        setLoading(false);
+        return;
+      }
+
+      // Create attendance record
+      await attendanceApi.create({
+        beneficiary_id: beneficiary.id,
+        RFID_number: rfidNumber,
+        event_name: eventName,
+        attendance_date: attendanceDate,
+        time_in: timeIn,
+        remarks: 'On time'
+      });
+
+      setSuccess(`✓ ${beneficiary.first_name} ${beneficiary.last_name} - Attendance recorded!`);
+      setScannedRecords([
+        {
+          id: Date.now(),
+          rfid: rfidNumber,
+          name: `${beneficiary.first_name} ${beneficiary.last_name}`,
+          beneficiary_id_code: beneficiary.beneficiary_id_code,
+          category: beneficiary.category,
+          time: timeIn,
+          date: attendanceDate,
+          status: 'recorded'
+        },
+        ...scannedRecords
+      ]);
+
+      setRfidInput('');
+      if (rfidInputRef.current) {
+        rfidInputRef.current.focus();
+      }
+
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      console.error('Error:', err);
+      setError(err.message || 'Failed to record attendance');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="p-3 bg-blue-100 rounded-lg">
+          <Smartphone className="w-6 h-6 text-blue-600" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">RFID Attendance Scanner</h1>
+          <p className="text-sm text-slate-600 mt-1">Tap RFID cards to record attendance for events and programs.</p>
+        </div>
+      </div>
+
+      {/* Scanner Setup */}
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-slate-900">Event Setup</h2>
+
+        {error && (
+          <div className="rounded-lg bg-red-50 border border-red-200 p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-red-700">
+              <p className="font-medium">Error loading events</p>
+              <p>{error}</p>
+            </div>
+          </div>
+        )}
+
+        {!error && distributionEvents.length === 0 && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-700">
+              <p className="font-medium">No distribution events available</p>
+              <p>There are currently no scheduled or ongoing distribution events. Please contact the admin to create and publish a distribution event first.</p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Distribution Event Selection */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              Select Distribution Event
+            </label>
+            <select
+              value={selectedEvent}
+              onChange={(e) => setSelectedEvent(e.target.value)}
+              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            >
+              <option value="">-- Choose a distribution event --</option>
+              {distributionEvents.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {event.title} - {event.Program?.name || 'N/A'} ({new Date(event.scheduled_date).toLocaleDateString()})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Event Name (Auto-populated) */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              Event Name
+            </label>
+            <input
+              type="text"
+              value={eventName}
+              readOnly
+              placeholder="Select a distribution event first"
+              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-slate-50 text-slate-700 text-sm cursor-not-allowed"
+            />
+          </div>
+        </div>
+
+        {/* Qualified Beneficiaries Count */}
+        {selectedEvent && (
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 flex items-start gap-3">
+            <Users className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-700">
+              <p className="font-medium">Qualified Beneficiaries: {qualifiedBeneficiaries.length}</p>
+              <p>Only enrolled beneficiaries with pending status can be scanned for this event.</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* RFID Scanner Input */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">RFID Scanner Ready</h2>
+            <p className="text-sm text-slate-600 mt-1">Tap cards here to record attendance</p>
+          </div>
+          <div className={`w-4 h-4 rounded-full animate-pulse ${selectedEvent ? 'bg-green-500' : 'bg-red-500'}`} />
+        </div>
+
+        <form onSubmit={handleScan} className="space-y-3">
+          <input
+            ref={rfidInputRef}
+            type="text"
+            value={rfidInput}
+            onChange={(e) => setRfidInput(e.target.value)}
+            placeholder="Tap RFID card here..."
+            disabled={!selectedEvent}
+            className={`w-full px-6 py-4 border-2 rounded-lg text-center text-lg font-mono focus:outline-none transition-all ${
+              selectedEvent
+                ? 'border-blue-400 bg-white focus:ring-2 focus:ring-blue-500'
+                : 'border-slate-300 bg-slate-100 cursor-not-allowed text-slate-500'
+            }`}
+            autoComplete="off"
+          />
+
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
+
+          {success && (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-3 flex items-start gap-2">
+              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-green-700">{success}</p>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading || !selectedEvent}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+          >
+            {loading ? 'Recording...' : 'Tap card or press Enter'}
+          </button>
+        </form>
+      </div>
+
+      {/* Scanned Records */}
+      {scannedRecords.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">Today's Scans ({scannedRecords.length})</h2>
+            <button
+              onClick={handleExportToExcel}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
+            >
+              <Download className="w-4 h-4" />
+              Export to Excel
+            </button>
+          </div>
+
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {scannedRecords.map((record) => (
+              <div
+                key={record.id}
+                className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 hover:bg-blue-50 transition-colors"
+              >
+                <div className="flex items-center gap-3 flex-1">
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-900 truncate">{record.name}</p>
+                    <p className="text-xs text-slate-600 font-mono">{record.rfid}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-slate-700 font-medium">{record.time}</p>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
+                    Recorded
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Status Box */}
+      {!selectedEvent ? (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
+          <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-700">
+            <p className="font-medium">Scanner not ready</p>
+            <p>Select a distribution event to begin scanning RFID cards for qualified beneficiaries.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg bg-green-50 border border-green-200 p-4 flex items-start gap-3">
+          <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-green-700">
+            <p className="font-medium">Scanner is active and ready</p>
+            <p>Event: <span className="font-semibold">{eventName}</span> | Qualified: <span className="font-semibold">{qualifiedBeneficiaries.length} beneficiaries</span></p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
