@@ -1,10 +1,34 @@
-import { Calendar, MapPin, Copy, Bell, FileText, CheckCircle2, Clock, DollarSign, Users, AlertTriangle } from 'lucide-react';
-import { useState } from 'react';
+import { Calendar, MapPin, Copy, Bell, FileText, CheckCircle2, Clock, DollarSign, Users, AlertTriangle, Megaphone, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { announcementApi } from '../services/api';
+import { Link } from 'react-router-dom';
 
 export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const [copied, setCopied] = useState(false);
   const { user } = useAuth();
+  const [announcements, setAnnouncements] = useState([]);
+
+  useEffect(() => {
+    const loadAnnouncements = async () => {
+      try {
+        const res = await announcementApi.list();
+        setAnnouncements(res.data?.data || []);
+      } catch (err) {
+        console.error('Failed to load beneficiary dashboard announcements:', err);
+      }
+    };
+    loadAnnouncements();
+  }, []);
+
+  const handleMarkAsRead = async (annId) => {
+    try {
+      await announcementApi.markAsRead(annId);
+      setAnnouncements(prev => prev.map(a => a.id === annId ? { ...a, is_read: true } : a));
+    } catch (err) {
+      console.error('Failed to mark read:', err);
+    }
+  };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(beneficiary?.beneficiary_id_code || '');
@@ -26,6 +50,8 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
     ?.filter(txn => txn.status === 'released')?.length || 0;
 
   const enrolledProgram = beneficiary?.Enrollments?.[0]?.BenefitProgram;
+
+  const unreadAnnouncements = announcements.filter(a => !a.is_read);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -57,6 +83,72 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
           <div className="flex-1">
             <p className="font-bold text-green-900">Congratulations! Your application has been APPROVED.</p>
             <p className="text-sm text-green-700">You are now an official beneficiary. You can now view your benefits and upcoming distributions.</p>
+          </div>
+        </div>
+      )}
+
+      {/* TARGETED ANNOUNCEMENTS BANNER / WIDGET */}
+      {announcements.length > 0 && (
+        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-6 shadow-lg space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Megaphone className="w-6 h-6 text-yellow-400" />
+                {unreadAnnouncements.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping" />
+                )}
+              </div>
+              <h2 className="text-lg font-black tracking-tight">Official Municipal Announcements</h2>
+            </div>
+            <Link
+              to="/dashboard/notifications"
+              className="text-xs font-bold text-yellow-300 hover:text-yellow-200 underline flex items-center gap-1"
+            >
+              View All ({announcements.length})
+            </Link>
+          </div>
+
+          <div className="space-y-3">
+            {announcements.slice(0, 2).map((ann) => (
+              <div
+                key={ann.id}
+                className={`bg-white/10 backdrop-blur-md border rounded-xl p-4 transition ${
+                  !ann.is_read ? 'border-yellow-400/80 bg-white/15' : 'border-white/10 opacity-90'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      {!ann.is_read && (
+                        <span className="bg-yellow-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full">
+                          NEW UNREAD
+                        </span>
+                      )}
+                      <span className="text-xs text-yellow-200 font-bold">{ann.priority} Priority</span>
+                      <span className="text-xs text-blue-200">• Published by {ann.CreatedBy?.first_name || 'Admin'}</span>
+                    </div>
+                    <h3 className="font-extrabold text-white text-base leading-snug">{ann.title}</h3>
+                    <p className="text-xs text-blue-100 line-clamp-2">{ann.message}</p>
+                    {(ann.event_date || ann.venue) && (
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-amber-200 font-semibold pt-1">
+                        {ann.event_date && <span>📅 Date: {ann.event_date} {ann.event_time && `at ${ann.event_time}`}</span>}
+                        {ann.venue && <span>📍 Venue: {ann.venue}</span>}
+                      </div>
+                    )}
+                  </div>
+
+                  {!ann.is_read && (
+                    <button
+                      onClick={() => handleMarkAsRead(ann.id)}
+                      className="shrink-0 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-extrabold text-xs px-3 py-1.5 rounded-lg transition shadow flex items-center gap-1"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Mark Read
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

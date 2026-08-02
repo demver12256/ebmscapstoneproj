@@ -21,6 +21,9 @@ import BeneficiaryProfilePage from './pages/BeneficiaryProfilePage';
 import MyApplicationsPage from './pages/MyApplicationsPage';
 import MyBenefitsPage from './pages/MyBenefitsPage';
 import MyDocumentsPage from './pages/MyDocumentsPage';
+import AnnouncementManagementPage from './pages/AnnouncementManagementPage';
+import NotificationsPage from './pages/NotificationsPage';
+import RfidAnnouncementScannerPage from './pages/RfidAnnouncementScannerPage';
 import ComingSoonPage from './pages/ComingSoonPage';
 import MainLayout from './components/layout/MainLayout';
 
@@ -70,8 +73,10 @@ const AppRoutes = () => (
       <Route path="programs/:id" element={<ProgramDetailsPage />} />
       <Route path="barangays" element={<BarangayListPage />} />
       <Route path="distributions" element={<DistributionPage />} />
+      <Route path="announcements" element={<AnnouncementManagementPage />} />
       <Route path="attendance" element={<AttendancePage />} />
       <Route path="rfid-scanner" element={<RfidScannerPage />} />
+      <Route path="announcement-scanner" element={<RfidAnnouncementScannerPage />} />
       <Route path="sms" element={<SmsPage />} />
       <Route path="users" element={<UserListPage />} />
       <Route path="messages" element={<MessagesPage />} />
@@ -81,7 +86,7 @@ const AppRoutes = () => (
       <Route path="my-applications" element={<MyApplicationsPage />} />
       <Route path="my-benefits" element={<MyBenefitsPage />} />
       <Route path="documents" element={<MyDocumentsPage />} />
-      <Route path="notifications" element={<ComingSoonPage />} />
+      <Route path="notifications" element={<NotificationsPage />} />
       <Route path="help-center" element={<ComingSoonPage />} />
       <Route path="settings" element={<ComingSoonPage />} />
       <Route path="*" element={<NotFoundPage />} />

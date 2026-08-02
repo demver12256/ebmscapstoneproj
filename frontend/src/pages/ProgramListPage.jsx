@@ -144,6 +144,18 @@ export default function ProgramListPage() {
   // Find barangay name for non-admin header label
   const userBarangayName = barangays.find(b => b.id === user?.barangay_id)?.barangay_name || '';
 
+  // Helper to safely get program options for any category variation
+  const getProgramOptions = (category) => {
+    if (!category) return [];
+    if (PROGRAMS_BY_CATEGORY[category]) return PROGRAMS_BY_CATEGORY[category];
+    const foundKey = Object.keys(PROGRAMS_BY_CATEGORY).find(
+      (k) => k.toLowerCase().includes(category.toLowerCase()) || category.toLowerCase().includes(k.toLowerCase())
+    );
+    return foundKey ? PROGRAMS_BY_CATEGORY[foundKey] : [];
+  };
+
+  const programOptions = getProgramOptions(form.category);
+
   const getErrorMessage = (err, fallback) => {
     if (typeof err === 'string') return err;
     return err?.message || fallback;
@@ -200,11 +212,17 @@ export default function ProgramListPage() {
 
     // If program name is selected, auto-fill the description
     if (name === 'name' && form.category && value) {
-      const description = PROGRAM_DESCRIPTIONS[form.category]?.[value] || '';
+      let description = PROGRAM_DESCRIPTIONS[form.category]?.[value];
+      if (!description) {
+        const foundCategoryKey = Object.keys(PROGRAM_DESCRIPTIONS).find(
+          (k) => k.toLowerCase().includes(form.category.toLowerCase()) || form.category.toLowerCase().includes(k.toLowerCase())
+        );
+        description = foundCategoryKey ? (PROGRAM_DESCRIPTIONS[foundCategoryKey]?.[value] || '') : '';
+      }
       setForm((prev) => ({
         ...prev,
         [name]: value,
-        description: description
+        description: description || prev.description
       }));
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
@@ -628,18 +646,30 @@ export default function ProgramListPage() {
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Program Name</label>
                 {form.category ? (
-                  <select
-                    name="name"
-                    value={form.name}
-                    onChange={handleChange}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-                    required
-                  >
-                    <option value="">Select Program</option>
-                    {PROGRAMS_BY_CATEGORY[form.category].map((prog) => (
-                      <option key={prog} value={prog}>{prog}</option>
-                    ))}
-                  </select>
+                  programOptions.length > 0 ? (
+                    <select
+                      name="name"
+                      value={form.name}
+                      onChange={handleChange}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                      required
+                    >
+                      <option value="">Select Program</option>
+                      {programOptions.map((prog) => (
+                        <option key={prog} value={prog}>{prog}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      name="name"
+                      value={form.name}
+                      onChange={handleChange}
+                      placeholder="Enter program name"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                      required
+                    />
+                  )
                 ) : (
                   <div className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">
                     Please select a category first

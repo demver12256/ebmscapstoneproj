@@ -41,6 +41,8 @@ const SMSNotification = require('./models/smsNotification')(sequelize, DataTypes
 const AuditLog = require('./models/auditLog')(sequelize, DataTypes);
 const Message = require('./models/message')(sequelize, DataTypes);
 const Notification = require('./models/notification')(sequelize, DataTypes);
+const Announcement = require('./models/announcement')(sequelize, DataTypes);
+const AnnouncementRecipient = require('./models/announcementRecipient')(sequelize, DataTypes);
 
 // ── User ↔ Barangay ──
 User.belongsTo(Barangay, { foreignKey: 'barangay_id' });
@@ -101,6 +103,25 @@ Message.belongsTo(User, { as: 'Receiver', foreignKey: 'receiver_id' });
 User.hasMany(Message, { as: 'SentMessages', foreignKey: 'sender_id' });
 User.hasMany(Message, { as: 'ReceivedMessages', foreignKey: 'receiver_id' });
 
+// ── Announcement Associations ──
+Announcement.belongsTo(User, { as: 'CreatedBy', foreignKey: 'created_by_user_id' });
+User.hasMany(Announcement, { foreignKey: 'created_by_user_id' });
+
+Announcement.hasMany(AnnouncementRecipient, { foreignKey: 'announcement_id', as: 'Recipients', onDelete: 'CASCADE' });
+AnnouncementRecipient.belongsTo(Announcement, { foreignKey: 'announcement_id' });
+
+AnnouncementRecipient.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', as: 'Beneficiary' });
+Beneficiary.hasMany(AnnouncementRecipient, { foreignKey: 'beneficiary_id' });
+
+AnnouncementRecipient.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
+User.hasMany(AnnouncementRecipient, { foreignKey: 'user_id' });
+
+AnnouncementRecipient.belongsTo(User, { as: 'ScannedByStaff', foreignKey: 'scanned_by_staff_id' });
+
+Attendance.belongsTo(Announcement, { foreignKey: 'announcement_id', as: 'Announcement' });
+Announcement.hasMany(Attendance, { foreignKey: 'announcement_id', as: 'Attendances' });
+Attendance.belongsTo(User, { as: 'ScannedByStaff', foreignKey: 'scanned_by_staff_id' });
+
 const connectDatabase = async () => {
   await sequelize.authenticate();
   // alter:{drop:false} adds new columns/tables but skips re-creating existing indexes,
@@ -125,4 +146,6 @@ module.exports = {
   AuditLog,
   Message,
   Notification,
+  Announcement,
+  AnnouncementRecipient,
 };

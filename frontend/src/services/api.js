@@ -134,4 +134,18 @@ export const messageApi = {
   unreadCount: () => apiClient.get('/messages/unread/count'),
 };
 
+export const announcementApi = {
+  list: (params) => apiClient.get('/announcements', { params }),
+  get: (id) => apiClient.get(`/announcements/${id}`),
+  create: (data) => apiClient.post('/announcements', data),
+  update: (id, data) => apiClient.put(`/announcements/${id}`, data),
+  remove: (id) => apiClient.delete(`/announcements/${id}`),
+  resend: (id) => apiClient.patch(`/announcements/${id}/resend`),
+  markAsRead: (id) => apiClient.patch(`/announcements/${id}/read`),
+  previewTargetCount: (params) => apiClient.get('/announcements/preview-count', { params }),
+  scanRfid: (id, data) => apiClient.post(`/announcements/${id}/scan-rfid`, data),
+  getAttendanceStats: (id) => apiClient.get(`/announcements/${id}/attendance-stats`),
+  exportAttendanceReport: (id) => apiClient.get(`/announcements/${id}/export`),
+};
+
 export default apiClient;

@@ -22,6 +22,7 @@ const auditRoutes = require('./routes/audit');
 const seedRoutes = require('./routes/seed');
 const messageRoutes = require('./routes/messages');
 const notificationRoutes = require('./routes/notifications');
+const announcementRoutes = require('./routes/announcements');
 const { errorHandler } = require('./middleware/error.middleware');
 
 const app = express();
@@ -80,6 +81,7 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/seed', seedRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/announcements', announcementRoutes);
 
 app.get('/api', (req, res) => {
   res.json({ message: 'Welcome to EBMS API' });
@@ -118,27 +120,40 @@ connectDatabase()
       if (err.code === 'EADDRINUSE') {
         console.warn(`⚠️  Port ${PORT} is in use. Attempting to free it automatically...`);
         try {
-          // Find and kill the process using the port (Windows)
+          // Find and kill all processes using the port (Windows)
           const result = execSync(`netstat -ano | findstr :${PORT}`, { encoding: 'utf8' });
-          const lines = result.trim().split('\n').filter(l => l.includes('LISTENING'));
+          const lines = result.trim().split('\n');
+          const pidsToKill = new Set();
           lines.forEach(line => {
             const parts = line.trim().split(/\s+/);
             const pid = parts[parts.length - 1];
-            if (pid && pid !== '0') {
-              execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' });
-              console.log(`✅ Killed PID ${pid} — restarting...`);
+            if (pid && pid !== '0' && !isNaN(Number(pid))) {
+              pidsToKill.add(pid);
             }
           });
-          // Retry after a short delay
+          pidsToKill.forEach(pid => {
+            try {
+              execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' });
+              console.log(`✅ Killed PID ${pid} — restarting...`);
+            } catch (e) {
+              // Ignore if already terminated
+            }
+          });
+          // Retry listening after 1.5s
           setTimeout(() => {
             server.listen(PORT, () => {
               console.log(`Server is running on port ${PORT}`);
               console.log(`API available at http://localhost:${PORT}/api`);
             });
-          }, 1000);
+          }, 1500);
         } catch (killErr) {
-          console.error(`❌ Could not free port ${PORT}. Please run: taskkill /PID <PID> /F`);
-          process.exit(1);
+          console.warn(`⚠️ Port ${PORT} busy, retrying listen in 2s...`);
+          setTimeout(() => {
+            server.listen(PORT, () => {
+              console.log(`Server is running on port ${PORT}`);
+              console.log(`API available at http://localhost:${PORT}/api`);
+            });
+          }, 2000);
         }
       } else {
         console.error('Server error:', err);

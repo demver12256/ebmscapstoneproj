@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell } from 'recharts';
-import { dashboardApi, beneficiaryApi } from '../services/api';
+import { dashboardApi, beneficiaryApi, announcementApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { 
   Users, TrendingUp, DollarSign, FileText, 
   Clock, CheckCircle, XCircle, Calendar,
-  Activity, Award, Target, Zap, ArrowRight
+  Activity, Award, Target, Zap, ArrowRight, Megaphone, Smartphone, MapPin
 } from 'lucide-react';
 
 export default function ModernDashboard() {
@@ -16,6 +16,7 @@ export default function ModernDashboard() {
   const [summary, setSummary] = useState(null);
   const [monthly, setMonthly] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [dateRange, setDateRange] = useState('today');
 
   useEffect(() => {
@@ -25,18 +26,21 @@ export default function ModernDashboard() {
   const loadDashboard = async () => {
     setLoading(true);
     try {
-      const [summaryRes, monthlyRes, appsRes] = await Promise.all([
+      const [summaryRes, monthlyRes, appsRes, annRes] = await Promise.all([
         dashboardApi.summary(),
         dashboardApi.monthlyDistribution(),
-        beneficiaryApi.listApplications()
+        beneficiaryApi.listApplications(),
+        announcementApi.list(),
       ]);
       const summaryData = summaryRes.data?.data || summaryRes.data || {};
       const monthlyData = monthlyRes.data?.data || monthlyRes.data || [];
       const appsData = appsRes.data?.data || appsRes.data || [];
+      const annData = annRes.data?.data || annRes.data || [];
 
       setSummary(summaryData);
       setMonthly(Array.isArray(monthlyData) ? monthlyData : []);
       setApplications(Array.isArray(appsData) ? appsData : []);
+      setAnnouncements(Array.isArray(annData) ? annData : []);
     } catch (err) {
       console.error('Failed to load dashboard:', err);
     } finally {
@@ -230,6 +234,76 @@ export default function ModernDashboard() {
           </button>
         </div>
       </div>
+
+      {/* UPCOMING ANNOUNCEMENTS & ACTIVITY FACILITATION WIDGET */}
+      {announcements.length > 0 && (
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-dswd-blue text-white rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-yellow-400 text-slate-950 rounded-xl">
+                <Megaphone className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <h2 className="text-lg font-black tracking-tight">Upcoming Activity Announcements</h2>
+                <p className="text-xs text-blue-200">Scheduled events requiring RFID beneficiary attendance facilitation</p>
+              </div>
+            </div>
+            <Link
+              to="/dashboard/announcements"
+              className="text-xs font-bold text-yellow-300 hover:text-yellow-200 underline flex items-center gap-1"
+            >
+              View All ({announcements.length}) <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {announcements.slice(0, 2).map((ann) => (
+              <div
+                key={ann.id}
+                className="bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-4 flex flex-col justify-between gap-3 hover:bg-white/15 transition"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="bg-yellow-400/20 text-yellow-300 font-extrabold px-2 py-0.5 rounded text-[10px] uppercase">
+                      {ann.priority} PRIORITY
+                    </span>
+                    <span className="text-blue-200 text-[11px]">
+                      Expected: <strong className="text-white">{ann.recipient_count || 0} Beneficiaries</strong>
+                    </span>
+                  </div>
+                  <h3 className="font-extrabold text-white text-base leading-snug">{ann.title}</h3>
+                  <p className="text-xs text-blue-100 line-clamp-2">{ann.message}</p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10 text-xs text-amber-200">
+                  <div className="space-y-0.5">
+                    {ann.event_date && (
+                      <div className="flex items-center gap-1 font-semibold text-slate-100">
+                        <Calendar className="w-3.5 h-3.5 text-yellow-400" />
+                        <span>{ann.event_date} {ann.event_time && `at ${ann.event_time}`}</span>
+                      </div>
+                    )}
+                    {ann.venue && (
+                      <div className="flex items-center gap-1 text-slate-300">
+                        <MapPin className="w-3.5 h-3.5 text-red-400" />
+                        <span className="truncate max-w-[200px]">{ann.venue}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => navigate(`/dashboard/announcement-scanner?id=${ann.id}`)}
+                    className="bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black px-3.5 py-1.5 rounded-lg text-xs shadow transition flex items-center gap-1.5 transform active:scale-95"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 stroke-[2.5]" />
+                    Start Attendance
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

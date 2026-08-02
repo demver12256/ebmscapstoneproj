@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { 
   Home, Users, MapPin, ListChecks, BarChart3, UserCog, MessageSquare, LogOut, 
-  Smartphone, Package, User, FileText, Award, FileCheck, Bell, HelpCircle, Settings 
+  Smartphone, Package, User, FileText, Award, FileCheck, Bell, HelpCircle, Settings, Megaphone 
 } from 'lucide-react';
 
 const staffNavItems = [
@@ -12,7 +12,9 @@ const staffNavItems = [
   { path: '/dashboard/programs', label: 'Programs', icon: ListChecks, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/barangays', label: 'Barangays', icon: MapPin, roles: ['admin'] },
   { path: '/dashboard/distributions', label: 'Distributions', icon: Package, roles: ['admin', 'staff', 'barangay'] },
-  { path: '/dashboard/rfid-scanner', label: 'RFID Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
+  { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, roles: ['admin', 'staff', 'barangay'] },
+  { path: '/dashboard/announcement-scanner', label: 'Attendance Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
+  { path: '/dashboard/rfid-scanner', label: 'RFID Scanner', icon: Smartphone, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, roles: ['admin', 'staff'] },
   { path: '/dashboard/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/users', label: 'Users', icon: UserCog, roles: ['admin', 'staff'] },
