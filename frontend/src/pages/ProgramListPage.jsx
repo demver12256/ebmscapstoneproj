@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Table from '../components/ui/Table';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import { programApi, barangayApi } from '../services/api';
+import { programApi, barangayApi, beneficiaryApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Briefcase, Plus, X, Edit2, Trash2, ToggleLeft, ToggleRight, Filter, MapPin, Eye, Archive, ArchiveRestore, UserPlus, Users, Calendar } from 'lucide-react';
 
@@ -116,6 +116,7 @@ export default function ProgramListPage() {
   const [barangays, setBarangays] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editingProgram, setEditingProgram] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -127,6 +128,7 @@ export default function ProgramListPage() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedProgram, setSelectedProgram] = useState(null);
   const [enrolledBeneficiaries, setEnrolledBeneficiaries] = useState([]);
+  const [eligibleBeneficiaries, setEligibleBeneficiaries] = useState([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   // Admin filters
@@ -272,13 +274,21 @@ export default function ProgramListPage() {
 
       if (editingProgram) {
         await programApi.update(editingProgram.id, payload);
+        setSuccess('Program updated successfully!');
       } else {
-        await programApi.create(payload);
+        const res = await programApi.create(payload);
+        const autoEnrolled = res.data?.auto_enrolled_count || 0;
+        if (autoEnrolled > 0) {
+          setSuccess(`Program created successfully! ${autoEnrolled} eligible beneficiary(ies) automatically enrolled.`);
+        } else {
+          setSuccess('Program created successfully!');
+        }
       }
       setShowModal(false);
       setEditingProgram(null);
       setForm({ ...EMPTY_FORM });
       await loadPrograms();
+      setTimeout(() => setSuccess(null), 6000);
     } catch (err) {
       setFormError(getErrorMessage(err, 'Failed to save program'));
     } finally {
@@ -301,10 +311,63 @@ export default function ProgramListPage() {
     setDetailsLoading(true);
     
     try {
-      const res = await programApi.getEnrolledBeneficiaries(program.id);
-      setEnrolledBeneficiaries(res.data.data || []);
+      // Get enrolled beneficiaries
+      const enrolledRes = await programApi.getEnrolledBeneficiaries(program.id);
+      const enrolledBeneficiariesData = enrolledRes.data.data || [];
+      setEnrolledBeneficiaries(enrolledBeneficiariesData);
+      
+      // Get all approved beneficiaries for the same barangay and category
+      const allBeneficiariesRes = await beneficiaryApi.list();
+      const allBeneficiaries = allBeneficiariesRes.data.data || [];
+      
+      // Get enrolled beneficiary IDs
+      const enrolledIds = enrolledBeneficiariesData.map(b => b.id);
+      
+      // Filter eligible beneficiaries (approved, same barangay, same category, not enrolled)
+      const normalizeCategory = (cat) => cat?.toLowerCase().replace(/ies$/i, 'y').replace(/s$/i, '');
+      const programCat = normalizeCategory(program.eligibility_category || program.category);
+      
+      const eligible = allBeneficiaries.filter(b => {
+        if (b.status !== 'Approved') return false;
+        if (b.barangay_id !== program.barangay_id) return false;
+        if (enrolledIds.includes(b.id)) return false;
+        
+        // Check category match
+        const beneficiaryCat = normalizeCategory(b.category);
+        const hasMatchingCategory = b.category && (
+          beneficiaryCat === programCat || 
+          beneficiaryCat?.includes(programCat) ||
+          b.category?.toLowerCase().includes((program.eligibility_category || program.category || '').toLowerCase())
+        );
+        
+        return hasMatchingCategory;
+      });
+      
+      setEligibleBeneficiaries(eligible);
+
+      // AUTO-ENROLL: If there are eligible beneficiaries but no enrolled beneficiaries, auto-enroll them
+      if (eligible.length > 0 && enrolledBeneficiariesData.length === 0) {
+        console.log(`Auto-enrolling ${eligible.length} eligible beneficiaries...`);
+        try {
+          const autoEnrollRes = await programApi.autoEnrollBeneficiaries(program.id);
+          console.log('Auto-enrollment result:', autoEnrollRes.data);
+          
+          // Reload enrolled beneficiaries after auto-enrollment
+          const updatedEnrolledRes = await programApi.getEnrolledBeneficiaries(program.id);
+          setEnrolledBeneficiaries(updatedEnrolledRes.data.data || []);
+          
+          // Clear eligible list since they're now enrolled
+          setEligibleBeneficiaries([]);
+          
+          setSuccess(autoEnrollRes.data.message || `Successfully auto-enrolled ${autoEnrollRes.data.data.newly_enrolled} beneficiary(ies)`);
+          setTimeout(() => setSuccess(null), 5000);
+        } catch (autoEnrollError) {
+          console.error('Auto-enrollment failed:', autoEnrollError);
+          // Don't show error to user, just log it - enrollment can still be done manually
+        }
+      }
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to load enrolled beneficiaries'));
+      setError(getErrorMessage(err, 'Failed to load beneficiaries'));
     } finally {
       setDetailsLoading(false);
     }
@@ -471,6 +534,14 @@ export default function ProgramListPage() {
           <span className="text-lg">⚠️</span>
           <span>{error}</span>
           <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {success && (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700 flex items-start gap-3">
+          <span className="text-lg">✅</span>
+          <span>{success}</span>
+          <button onClick={() => setSuccess(null)} className="ml-auto text-green-400 hover:text-green-600"><X className="w-4 h-4" /></button>
         </div>
       )}
 
@@ -842,20 +913,13 @@ export default function ProgramListPage() {
                 </div>
               </div>
 
-              {/* Enrolled Beneficiaries */}
+              {/* Enrolled Beneficiaries Section */}
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-slate-900">
                     <Users className="w-5 h-5 inline mr-2" />
-                    Enrolled Beneficiaries
+                    Enrolled Beneficiaries ({enrolledBeneficiaries.length})
                   </h3>
-                  <button
-                    onClick={() => navigate(`/dashboard/programs/${selectedProgram.id}`)}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Enroll More
-                  </button>
                 </div>
 
                 {detailsLoading ? (
@@ -864,26 +928,25 @@ export default function ProgramListPage() {
                     <p className="text-sm text-slate-600 mt-2">Loading beneficiaries...</p>
                   </div>
                 ) : enrolledBeneficiaries.length === 0 ? (
-                  <div className="text-center py-8 bg-slate-50 rounded-lg border border-slate-200">
-                    <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                  <div className="text-center py-6 bg-slate-50 rounded-lg border border-slate-200">
+                    <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                     <p className="text-sm text-slate-600">No beneficiaries enrolled yet</p>
-                    <p className="text-xs text-slate-500 mt-1">Click "Enroll More" to add members to this program</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg mb-6">
                     <table className="w-full text-sm">
-                      <thead className="bg-slate-50 border-b border-slate-200">
+                      <thead className="bg-green-50 border-b border-green-200">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Beneficiary</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">ID</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Category</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Enrolled Date</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Status</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">ID</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">Category</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">Enrolled Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {enrolledBeneficiaries.map((beneficiary) => (
-                          <tr key={beneficiary.id} className="hover:bg-slate-50">
+                          <tr key={beneficiary.id} className="hover:bg-green-50">
                             <td className="px-4 py-3">
                               <p className="font-semibold text-slate-900">
                                 {beneficiary.first_name} {beneficiary.last_name}
@@ -910,6 +973,70 @@ export default function ProgramListPage() {
                   </div>
                 )}
               </div>
+
+              {/* Eligible Beneficiaries for Enrollment */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-slate-900">
+                    <UserPlus className="w-5 h-5 inline mr-2" />
+                    Eligible Beneficiaries ({eligibleBeneficiaries.length})
+                  </h3>
+                </div>
+
+                {detailsLoading ? (
+                  <div className="text-center py-8">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                    <p className="text-sm text-slate-600 mt-2">Loading eligible beneficiaries...</p>
+                  </div>
+                ) : eligibleBeneficiaries.length === 0 ? (
+                  <div className="text-center py-6 bg-slate-50 rounded-lg border border-slate-200">
+                    <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    <p className="text-sm text-slate-600">No eligible beneficiaries available</p>
+                    <p className="text-xs text-slate-500 mt-1">All matching beneficiaries are already enrolled in this program</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-96">
+                    <table className="w-full text-sm">
+                      <thead className="bg-purple-50 border-b border-purple-200 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">ID</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">Category</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">Barangay</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {eligibleBeneficiaries.map((beneficiary) => (
+                          <tr key={beneficiary.id} className="hover:bg-purple-50 transition">
+                            <td className="px-4 py-3">
+                              <p className="font-semibold text-slate-900">
+                                {beneficiary.first_name} {beneficiary.last_name}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-mono text-slate-600">{beneficiary.beneficiary_id_code}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                                {beneficiary.category}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm text-slate-600">{beneficiary.Barangay?.barangay_name || '—'}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
+                                {beneficiary.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Footer */}
@@ -919,6 +1046,7 @@ export default function ProgramListPage() {
                   setShowDetailsModal(false);
                   setSelectedProgram(null);
                   setEnrolledBeneficiaries([]);
+                  setEligibleBeneficiaries([]);
                 }}
                 className="px-6 py-2 bg-slate-700 text-white font-semibold rounded-lg hover:bg-slate-800 transition"
               >

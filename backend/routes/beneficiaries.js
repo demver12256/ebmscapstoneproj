@@ -29,11 +29,18 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
-    const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    const allowedMimes = [
+      'application/pdf', 
+      'application/msword', // .doc
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+      'image/jpeg', 
+      'image/jpg', 
+      'image/png'
+    ];
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF, JPG, JPEG, and PNG are allowed.'));
+      cb(new Error('Invalid file type. Only PDF, Word (DOC/DOCX), JPG, JPEG, and PNG are allowed.'));
     }
   }
 });
@@ -85,33 +92,48 @@ router.get('/applications', authorize('admin', 'staff', 'barangay'), async (req,
 // Get currently logged-in beneficiary profile and documents
 router.get('/me', authorize('beneficiary'), async (req, res, next) => {
   try {
+    console.log('[GET /me] Request from user:', req.user.id);
+    
     const { Enrollment, BenefitProgram, DistributionTransaction, DistributionEvent } = require('../db');
+    
+    if (!req.user || !req.user.id) {
+      console.error('[GET /me] No user ID in request');
+      return res.status(400).json({ success: false, message: 'User ID is required' });
+    }
     
     const beneficiary = await Beneficiary.findOne({
       where: { user_id: req.user.id },
       include: [
-        Barangay, 
-        User, 
-        { model: BeneficiaryDocument, as: 'Documents' },
+        { model: Barangay, required: false },
+        { model: User, required: false },
+        { model: BeneficiaryDocument, as: 'Documents', required: false },
         { 
           model: Enrollment, 
           as: 'Enrollments',
-          include: [{ model: BenefitProgram }]
+          required: false,
+          where: { status: 'active' },
+          include: [{ model: BenefitProgram, required: false }]
         },
         {
           model: DistributionTransaction,
           as: 'DistributionTransactions',
-          include: [{ model: DistributionEvent, as: 'Event' }],
+          required: false,
+          include: [{ model: DistributionEvent, as: 'Event', required: false }],
           order: [['created_at', 'DESC']],
           limit: 10
         }
       ]
     });
+    
     if (!beneficiary) {
+      console.error('[GET /me] Beneficiary not found for user:', req.user.id);
       return res.status(404).json({ success: false, message: 'Beneficiary profile not found' });
     }
+    
+    console.log('[GET /me] Successfully fetched beneficiary:', beneficiary.id);
     res.json({ success: true, data: beneficiary });
   } catch (error) {
+    console.error('[GET /me] Error:', error);
     next(error);
   }
 });
@@ -224,6 +246,39 @@ router.post('/me/documents', authorize('beneficiary'), upload.single('document')
     });
 
     res.status(201).json({ success: true, data: doc });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Upload profile picture
+router.post('/me/profile-picture', authorize('beneficiary'), upload.single('profile_picture'), async (req, res, next) => {
+  try {
+    const beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id } });
+    if (!beneficiary) {
+      return res.status(404).json({ success: false, message: 'Beneficiary profile not found' });
+    }
+    
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    // Delete old profile picture if exists
+    if (beneficiary.profile_picture) {
+      try {
+        const fullPath = path.join(__dirname, '..', beneficiary.profile_picture);
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+      } catch (e) {
+        console.error('Error deleting old profile picture:', e);
+      }
+    }
+
+    const relativePath = `uploads/documents/${req.file.filename}`;
+    await beneficiary.update({ profile_picture: relativePath });
+
+    res.json({ success: true, message: 'Profile picture updated', data: { profile_picture: relativePath } });
   } catch (error) {
     next(error);
   }

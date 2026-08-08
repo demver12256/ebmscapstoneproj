@@ -30,6 +30,12 @@ import {
 import { announcementApi, programApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
+const TARGET_CATEGORIES = [
+  '4Ps Household Beneficiaries',
+  'Senior Citizens (Social Pension)',
+  'Persons with Disabilities (PWD)',
+];
+
 export default function AnnouncementManagementPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -67,6 +73,7 @@ export default function AnnouncementManagementPage() {
     priority: 'Medium',
     status: 'published',
     expiration_date: '',
+    target_categories: [...TARGET_CATEGORIES],
     target_programs: [],
     target_barangays: [],
   });
@@ -78,8 +85,17 @@ export default function AnnouncementManagementPage() {
         programApi.list(),
         barangayApi.list(),
       ]);
-      setPrograms(progRes.data?.data || progRes.data || []);
-      setBarangays(bgryRes.data?.data || bgryRes.data || []);
+      const loadedPrograms = progRes.data?.data || progRes.data || [];
+      const loadedBarangays = bgryRes.data?.data || bgryRes.data || [];
+      setPrograms(loadedPrograms);
+      setBarangays(loadedBarangays);
+
+      setFormData((prev) => ({
+        ...prev,
+        target_categories: (prev.target_categories && prev.target_categories.length > 0) ? prev.target_categories : [...TARGET_CATEGORIES],
+        target_programs: loadedPrograms.map((p) => p.id),
+        target_barangays: (prev.target_barangays && prev.target_barangays.length > 0) ? prev.target_barangays : loadedBarangays.map((b) => b.id),
+      }));
     } catch (err) {
       console.error('Failed to load programs/barangays metadata:', err);
     }
@@ -115,16 +131,20 @@ export default function AnnouncementManagementPage() {
   }, [fetchAnnouncements]);
 
   // Live preview counter when target selections change
-  const updateTargetPreview = useCallback(async (pIds, bIds) => {
-    if (!pIds.length || !bIds.length) {
+  const updateTargetPreview = useCallback(async (categories, bIds) => {
+    const activeCats = (categories && categories.length > 0) ? categories : TARGET_CATEGORIES;
+    const activeBgrais = (bIds && bIds.length > 0) ? bIds : barangays.map((b) => b.id);
+
+    if (!activeCats.length || !activeBgrais.length) {
       setPreviewCount(0);
       return;
     }
     setPreviewLoading(true);
     try {
       const res = await announcementApi.previewTargetCount({
-        target_programs: JSON.stringify(pIds),
-        target_barangays: JSON.stringify(bIds),
+        target_categories: JSON.stringify(activeCats),
+        target_programs: JSON.stringify(activeCats),
+        target_barangays: JSON.stringify(activeBgrais),
       });
       setPreviewCount(res.data?.count || 0);
     } catch (err) {
@@ -132,13 +152,38 @@ export default function AnnouncementManagementPage() {
     } finally {
       setPreviewLoading(false);
     }
-  }, []);
+  }, [barangays]);
 
   useEffect(() => {
     if (isModalOpen) {
-      updateTargetPreview(formData.target_programs, formData.target_barangays);
+      const catsToPreview = (formData.target_categories && formData.target_categories.length > 0)
+        ? formData.target_categories
+        : TARGET_CATEGORIES;
+      const bIdsToPreview = (formData.target_barangays && formData.target_barangays.length > 0)
+        ? formData.target_barangays
+        : barangays.map((b) => b.id);
+
+      updateTargetPreview(catsToPreview, bIdsToPreview);
     }
-  }, [formData.target_programs, formData.target_barangays, isModalOpen, updateTargetPreview]);
+  }, [formData.target_categories, formData.target_barangays, isModalOpen, barangays, updateTargetPreview]);
+
+const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
+  if (!selectedCategories || selectedCategories.length === 0) return [];
+  if (selectedCategories.length === TARGET_CATEGORIES.length) return allPrograms.map((p) => p.id);
+
+  return allPrograms
+    .filter((p) => {
+      const pCat = (p.eligibility_category || p.category || '').toLowerCase();
+      return selectedCategories.some((c) => {
+        const normC = c.toLowerCase();
+        return pCat.includes(normC) || normC.includes(pCat) ||
+          (normC.includes('4ps') && pCat.includes('4ps')) ||
+          (normC.includes('senior') && pCat.includes('senior')) ||
+          (normC.includes('pwd') && pCat.includes('pwd'));
+      });
+    })
+    .map((p) => p.id);
+};
 
   // Reset form
   const handleOpenCreateModal = () => {
@@ -154,6 +199,7 @@ export default function AnnouncementManagementPage() {
       priority: 'Medium',
       status: 'published',
       expiration_date: '',
+      target_categories: [...TARGET_CATEGORIES],
       target_programs: programs.map((p) => p.id),
       target_barangays: barangays.map((b) => b.id),
     });
@@ -176,6 +222,12 @@ export default function AnnouncementManagementPage() {
         .trim();
     }
 
+    const annPrograms = Array.isArray(ann.target_programs) ? ann.target_programs : [];
+    const matchedCategories = TARGET_CATEGORIES.filter((cat) => {
+      const catProgIds = mapCategoriesToProgramIds([cat], programs);
+      return catProgIds.some((id) => annPrograms.includes(id));
+    });
+
     setFormData({
       title: ann.title || '',
       message: ann.message || '',
@@ -187,29 +239,43 @@ export default function AnnouncementManagementPage() {
       priority: ann.priority || 'Medium',
       status: ann.status || 'published',
       expiration_date: ann.expiration_date || '',
-      target_programs: Array.isArray(ann.target_programs) ? ann.target_programs : [],
-      target_barangays: Array.isArray(ann.target_barangays) ? ann.target_barangays : [],
+      target_categories: matchedCategories.length > 0 ? matchedCategories : [...TARGET_CATEGORIES],
+      target_programs: annPrograms.length > 0 ? annPrograms : programs.map((p) => p.id),
+      target_barangays: Array.isArray(ann.target_barangays) ? ann.target_barangays : barangays.map((b) => b.id),
     });
     setIsModalOpen(true);
   };
 
-  // Toggle Program Selection
-  const toggleProgramTarget = (pId) => {
+  // Toggle Category Selection
+  const toggleCategoryTarget = (catName) => {
     setFormData((prev) => {
-      const exists = prev.target_programs.includes(pId);
-      const updated = exists
-        ? prev.target_programs.filter((id) => id !== pId)
-        : [...prev.target_programs, pId];
-      return { ...prev, target_programs: updated };
+      const currentCats = prev.target_categories || [...TARGET_CATEGORIES];
+      const exists = currentCats.includes(catName);
+      const updatedCats = exists
+        ? currentCats.filter((c) => c !== catName)
+        : [...currentCats, catName];
+
+      const matchingPrograms = mapCategoriesToProgramIds(updatedCats, programs);
+
+      return {
+        ...prev,
+        target_categories: updatedCats,
+        target_programs: matchingPrograms,
+      };
     });
   };
 
-  const toggleAllPrograms = () => {
+  const toggleAllCategories = () => {
     setFormData((prev) => {
-      const allSelected = prev.target_programs.length === programs.length;
+      const currentCats = prev.target_categories || [...TARGET_CATEGORIES];
+      const allSelected = currentCats.length === TARGET_CATEGORIES.length;
+      const updatedCats = allSelected ? [] : [...TARGET_CATEGORIES];
+      const matchingPrograms = allSelected ? [] : programs.map((p) => p.id);
+
       return {
         ...prev,
-        target_programs: allSelected ? [] : programs.map((p) => p.id),
+        target_categories: updatedCats,
+        target_programs: matchingPrograms,
       };
     });
   };
@@ -731,7 +797,7 @@ export default function AnnouncementManagementPage() {
       {/* CREATE / EDIT ANNOUNCEMENT MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-        <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden my-4 transform transition-all border border-slate-200">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden my-4 transform transition-all border border-slate-200">
             <div className="bg-gradient-to-r from-dswd-blue to-indigo-900 px-5 py-3 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Megaphone className="w-6 h-6 text-yellow-400" />
@@ -826,54 +892,15 @@ export default function AnnouncementManagementPage() {
               </div>
 
               {/* VENUE SECTION */}
-              <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 space-y-2">
+              <div className="space-y-1">
                 <label className="block text-xs font-black text-slate-700 uppercase">Venue / Location</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">Select Barangay</label>
-                    <select
-                      value={formData.venue_barangay || ''}
-                      onChange={(e) => {
-                        const bName = e.target.value;
-                        setFormData({
-                          ...formData,
-                          venue_barangay: bName,
-                          venue: bName ? `Barangay ${bName}${formData.venue_detail ? ` - ${formData.venue_detail}` : ''}` : formData.venue_detail || '',
-                        });
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                    >
-                      <option value="">-- Select Barangay --</option>
-                      {barangays.map((b) => (
-                        <option key={b.id} value={b.barangay_name}>{b.barangay_name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">Specific Location / Hall</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Covered Court, Barangay Hall"
-                      value={formData.venue_detail || ''}
-                      onChange={(e) => {
-                        const detail = e.target.value;
-                        setFormData({
-                          ...formData,
-                          venue_detail: detail,
-                          venue: formData.venue_barangay
-                            ? `Barangay ${formData.venue_barangay}${detail ? ` - ${detail}` : ''}`
-                            : detail,
-                        });
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                </div>
-                {formData.venue && (
-                  <p className="text-[11px] text-slate-500 font-semibold">
-                    📍 Full venue: <span className="text-slate-800">{formData.venue}</span>
-                  </p>
-                )}
+                <input
+                  type="text"
+                  placeholder="e.g., Covered Court, Barangay Hall, MSWD Office"
+                  value={formData.venue || ''}
+                  onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                />
               </div>
 
               {/* TARGET AUDIENCE SELECTION SECTION */}
@@ -892,72 +919,78 @@ export default function AnnouncementManagementPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50/50">
+                  {/* Target Categories */}
+                  <div className="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/60">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-black uppercase text-slate-700">
-                        Benefit Programs <span className="text-red-500">*</span>
+                      <label className="text-xs font-black uppercase text-slate-700">
+                        Target Categories <span className="text-red-500">*</span>
                       </label>
                       <button
                         type="button"
-                        onClick={toggleAllPrograms}
-                        className="text-[10px] font-bold text-dswd-blue hover:underline"
+                        onClick={toggleAllCategories}
+                        className="text-xs font-bold text-dswd-blue hover:underline"
                       >
-                        {formData.target_programs.length === programs.length ? 'Deselect All' : 'Select All'}
+                        {(formData.target_categories || TARGET_CATEGORIES).length === TARGET_CATEGORIES.length ? 'Deselect All' : 'Select All'}
                       </button>
                     </div>
 
-                    <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                      {programs.map((p) => {
-                        const selected = formData.target_programs.includes(p.id);
+                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                      {TARGET_CATEGORIES.map((cat) => {
+                        const selected = (formData.target_categories || TARGET_CATEGORIES).includes(cat);
                         return (
                           <div
-                            key={p.id}
-                            onClick={() => toggleProgramTarget(p.id)}
-                            className={`flex items-center gap-2 p-1.5 rounded-md cursor-pointer transition text-[11px] font-semibold ${
-                              selected ? 'bg-blue-100 text-blue-900 border border-blue-300' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                            key={cat}
+                            onClick={() => toggleCategoryTarget(cat)}
+                            className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition text-xs font-bold ${
+                              selected
+                                ? 'bg-blue-100/80 text-blue-950 border-2 border-blue-400 shadow-sm'
+                                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                             }`}
                           >
                             {selected ? (
-                              <CheckSquare className="w-3.5 h-3.5 text-dswd-blue shrink-0" />
+                              <CheckSquare className="w-4 h-4 text-dswd-blue shrink-0" />
                             ) : (
-                              <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <Square className="w-4 h-4 text-slate-300 shrink-0" />
                             )}
-                            <span className="truncate">{p.name} ({p.code || p.eligibility_category})</span>
+                            <span className="truncate">{cat}</span>
                           </div>
                         );
                       })}
                     </div>
                   </div>
 
-                  <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50/50">
+                  {/* Target Barangays (Styled exactly like screenshot) */}
+                  <div className="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/60">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-black uppercase text-slate-700">
+                      <label className="text-xs font-black uppercase text-slate-700">
                         Target Barangays <span className="text-red-500">*</span>
                       </label>
                       <button
                         type="button"
                         onClick={toggleAllBarangays}
-                        className="text-[10px] font-bold text-dswd-blue hover:underline"
+                        className="text-xs font-bold text-dswd-blue hover:underline"
                       >
                         {formData.target_barangays.length === barangays.length ? 'Deselect All' : 'Select All'}
                       </button>
                     </div>
 
-                    <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
                       {barangays.map((b) => {
                         const selected = formData.target_barangays.includes(b.id);
                         return (
                           <div
                             key={b.id}
                             onClick={() => toggleBarangayTarget(b.id)}
-                            className={`flex items-center gap-2 p-1.5 rounded-md cursor-pointer transition text-[11px] font-semibold ${
-                              selected ? 'bg-emerald-100 text-emerald-950 border border-emerald-300' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                            className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition text-xs font-bold ${
+                              selected
+                                ? 'bg-emerald-100/90 text-emerald-950 border-2 border-emerald-400 shadow-sm'
+                                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                             }`}
                           >
                             {selected ? (
-                              <CheckSquare className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                              <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
                             ) : (
-                              <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <Square className="w-4 h-4 text-slate-300 shrink-0" />
                             )}
                             <span className="truncate">{b.barangay_name}</span>
                           </div>

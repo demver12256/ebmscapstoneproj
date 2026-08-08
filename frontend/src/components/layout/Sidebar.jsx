@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { 
   Home, Users, MapPin, ListChecks, BarChart3, UserCog, MessageSquare, LogOut, 
-  Smartphone, Package, User, FileText, Award, FileCheck, Bell, HelpCircle, Settings, Megaphone 
+  Smartphone, Package, User, FileText, Award, FileCheck, Bell, HelpCircle, Settings, Megaphone, Lock, HandHeart 
 } from 'lucide-react';
 
 const staffNavItems = [
@@ -13,22 +13,21 @@ const staffNavItems = [
   { path: '/dashboard/barangays', label: 'Barangays', icon: MapPin, roles: ['admin'] },
   { path: '/dashboard/distributions', label: 'Distributions', icon: Package, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, roles: ['admin', 'staff', 'barangay'] },
-  { path: '/dashboard/announcement-scanner', label: 'Attendance Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
-  { path: '/dashboard/rfid-scanner', label: 'RFID Scanner', icon: Smartphone, roles: ['admin', 'staff', 'barangay'] },
+  { path: '/dashboard/rfid-scanner', label: 'Distribution Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
+  { path: '/dashboard/rfid-attendance', label: 'Attendance Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
   { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, roles: ['admin', 'staff'] },
   { path: '/dashboard/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/users', label: 'Users', icon: UserCog, roles: ['admin', 'staff'] },
 ];
 
 const beneficiaryNavItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: Home, requiresApproval: false },
-  { path: '/dashboard/my-profile', label: 'My Profile', icon: User, requiresApproval: true },
-  { path: '/dashboard/my-applications', label: 'My Applications', icon: FileText, requiresApproval: true },
-  { path: '/dashboard/my-benefits', label: 'My Benefits', icon: Award, requiresApproval: true },
-  { path: '/dashboard/documents', label: 'Documents', icon: FileCheck, requiresApproval: true },
-  { path: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: true, requiresApproval: true },
-  { path: '/dashboard/help-center', label: 'Help Center', icon: HelpCircle, requiresApproval: true },
-  { path: '/dashboard/settings', label: 'Settings', icon: Settings, requiresApproval: true },
+  { path: '/dashboard', label: 'Dashboard', icon: Home, requiresApproval: false, section: 'main' },
+  { path: '/dashboard/my-applications', label: 'My Applications', icon: FileText, requiresApproval: false, hideWhenApproved: true, section: 'main' },
+  { path: '/dashboard/documents', label: 'My Documents', icon: FileCheck, requiresApproval: true, section: 'main' },
+  { path: '/dashboard/my-benefits', label: 'My Assistance', icon: HandHeart, requiresApproval: true, section: 'main' },
+  { path: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: true, requiresApproval: true, section: 'main' },
+  { path: '/dashboard/my-profile', label: 'Profile', icon: User, requiresApproval: true, section: 'account' },
+  { path: '/dashboard/settings', label: 'Change Password', icon: Lock, requiresApproval: true, section: 'account' },
 ];
 
 export default function Sidebar() {
@@ -62,7 +61,7 @@ export default function Sidebar() {
   
   // Filter beneficiary nav items based on approval status
   const beneficiaryNav = isApprovedBeneficiary 
-    ? beneficiaryNavItems 
+    ? beneficiaryNavItems.filter(item => !item.hideWhenApproved)
     : beneficiaryNavItems.filter(item => !item.requiresApproval);
   
   const navItems = isBeneficiary 
@@ -90,32 +89,92 @@ export default function Sidebar() {
         </div>
 
         {/* Navigation Items */}
-        <nav className="space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={item.path === '/dashboard'}
-                className={({ isActive }) =>
-                  `flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition relative ${isActive
-                    ? 'bg-dswd-lightBlue text-white shadow-lg shadow-blue-100'
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-                  }`
-                }
-              >
-                <Icon className="h-5 w-5 shrink-0" />
-                {item.label}
-                {item.badge && (
-                  <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                    3
-                  </span>
-                )}
-              </NavLink>
-            );
-          })}
-        </nav>
+        {isBeneficiary ? (
+          <>
+            {/* MAIN Section */}
+            <div>
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">MAIN</h3>
+              <nav className="space-y-1">
+                {navItems.filter(item => item.section === 'main').map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      end={item.path === '/dashboard'}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition relative ${isActive
+                          ? 'bg-dswd-lightBlue text-white shadow-lg shadow-blue-100'
+                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                        }`
+                      }
+                    >
+                      <Icon className="h-5 w-5 shrink-0" />
+                      {item.label}
+                      {item.badge && (
+                        <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                          3
+                        </span>
+                      )}
+                    </NavLink>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* ACCOUNT Section */}
+            <div>
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">ACCOUNT</h3>
+              <nav className="space-y-1">
+                {navItems.filter(item => item.section === 'account').map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition ${isActive
+                          ? 'bg-dswd-lightBlue text-white shadow-lg shadow-blue-100'
+                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                        }`
+                      }
+                    >
+                      <Icon className="h-5 w-5 shrink-0" />
+                      {item.label}
+                    </NavLink>
+                  );
+                })}
+              </nav>
+            </div>
+          </>
+        ) : (
+          <nav className="space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.path === '/dashboard'}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition relative ${isActive
+                      ? 'bg-dswd-lightBlue text-white shadow-lg shadow-blue-100'
+                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                    }`
+                  }
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  {item.label}
+                  {item.badge && (
+                    <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                      3
+                    </span>
+                  )}
+                </NavLink>
+              );
+            })}
+          </nav>
+        )}
       </div>
 
       {/* Footer Area */}

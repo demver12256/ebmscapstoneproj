@@ -12,6 +12,7 @@ import BarangayListPage from './pages/BarangayListPage';
 import DistributionPage from './pages/DistributionPage';
 import AttendancePage from './pages/AttendancePage';
 import RfidScannerPage from './pages/RfidScannerPage';
+import RfidAttendancePage from './pages/RfidAttendancePage';
 import SmsPage from './pages/SmsPage';
 import ReportsPage from './pages/ReportsPage';
 import UserListPage from './pages/UserListPage';
@@ -76,6 +77,7 @@ const AppRoutes = () => (
       <Route path="announcements" element={<AnnouncementManagementPage />} />
       <Route path="attendance" element={<AttendancePage />} />
       <Route path="rfid-scanner" element={<RfidScannerPage />} />
+      <Route path="rfid-attendance" element={<RfidAttendancePage />} />
       <Route path="announcement-scanner" element={<RfidAnnouncementScannerPage />} />
       <Route path="sms" element={<SmsPage />} />
       <Route path="users" element={<UserListPage />} />

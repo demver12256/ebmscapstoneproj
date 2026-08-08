@@ -1,5 +1,7 @@
 const authorize = (...allowedRoles) => {
   return (req, res, next) => {
+    console.log('[AUTHORIZE] Checking authorization for:', req.user?.role, '| Allowed roles:', allowedRoles);
+    
     if (!req.user) {
       console.error('[AUTHORIZE] Missing user in request');
       return res.status(401).json({ message: 'Unauthorized - no user found' });
@@ -10,6 +12,7 @@ const authorize = (...allowedRoles) => {
       return res.status(403).json({ message: 'Forbidden: insufficient privileges' });
     }
 
+    console.log('[AUTHORIZE] Authorization granted');
     next();
   };
 };

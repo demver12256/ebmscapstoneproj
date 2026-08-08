@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { 
   Package, Plus, Calendar, MapPin, Users, DollarSign, 
   Eye, Edit, Trash2, CheckCircle, XCircle, Clock,
-  Play, Square, AlertCircle, TrendingUp, Filter
+  Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw
 } from 'lucide-react';
 import { distributionApi, programApi, barangayApi, userApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -46,6 +46,10 @@ export default function DistributionPage() {
   const [programs, setPrograms] = useState([]);
   const [barangays, setBarangays] = useState([]);
   const [staff, setStaff] = useState([]);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  
+  // Track if barangay/category were auto-filled from program
+  const [programAutoFilled, setProgramAutoFilled] = useState(false);
   
   // Selected event for viewing details
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -68,21 +72,35 @@ export default function DistributionPage() {
     loadReferenceData();
   }, []);
 
+  // Reload events when filters change
+  useEffect(() => {
+    loadEvents();
+  }, [statusFilter, barangayFilter]);
+
+  // Auto-refresh every 5 seconds if there are ongoing events
+  useEffect(() => {
+    const hasOngoingEvents = events.some(e => e.status === 'ongoing' || e.status === 'scheduled');
+    
+    if (hasOngoingEvents) {
+      const interval = setInterval(() => {
+        loadEvents();
+        loadDashboardStats();
+      }, 5000); // Refresh every 5 seconds
+      
+      return () => clearInterval(interval);
+    }
+  }, [events]);
+
   const loadEvents = async () => {
     setLoading(true);
     try {
-      const params = statusFilter !== 'all' ? { status: statusFilter } : {};
+      const params = {};
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (barangayFilter !== 'all') params.barangay_id = barangayFilter;
+      
       const res = await distributionApi.listEvents(params);
-      let filteredEvents = res.data.data || [];
-      
-      // Filter by barangay if selected
-      if (barangayFilter !== 'all') {
-        filteredEvents = filteredEvents.filter(event => 
-          event.barangay_id === parseInt(barangayFilter)
-        );
-      }
-      
-      setEvents(filteredEvents);
+      setEvents(res.data.data || []);
+      setLastUpdated(new Date());
       setError(null);
     } catch (err) {
       setError(err.message || 'Failed to load distribution events');
@@ -97,6 +115,8 @@ export default function DistributionPage() {
       setStats(res.data.data);
     } catch (err) {
       console.error('Failed to load stats:', err);
+      console.error('Error response:', err.response?.data);
+      // Don't show error to user for stats - it's not critical
     }
   };
 
@@ -116,6 +136,92 @@ export default function DistributionPage() {
       setStaff(staffUsers);
     } catch (err) {
       console.error('Failed to load reference data:', err);
+    }
+  };
+
+  // Handle program selection — auto-fill barangay & category from program data
+  const handleProgramChange = async (programId) => {
+    if (!programId) {
+      setFormData(prev => ({ ...prev, program_id: '', barangay_id: '', target_category: '' }));
+      setProgramAutoFilled(false);
+      setEligibleBeneficiaries([]);
+      setEligibleMeta({ total: 0, qualified_count: 0, program_name: '' });
+      return;
+    }
+
+    const selectedProgram = programs.find(p => p.id === parseInt(programId));
+    if (!selectedProgram) {
+      setFormData(prev => ({ ...prev, program_id: programId }));
+      return;
+    }
+
+    // Auto-fill barangay and category from program
+    const updatedForm = {
+      ...formData,
+      program_id: programId,
+      barangay_id: selectedProgram.barangay_id ? String(selectedProgram.barangay_id) : '',
+      target_category: selectedProgram.eligibility_category || '',
+    };
+    setFormData(updatedForm);
+    setProgramAutoFilled(true);
+
+    // Auto-trigger preview of eligible beneficiaries
+    if (selectedProgram.barangay_id) {
+      setLoading(true);
+      try {
+        const res = await programApi.getEnrolledBeneficiaries(programId);
+        let enrolledBeneficiaries = res.data.data || [];
+
+        // AUTO-ENROLL: If no enrolled beneficiaries, trigger auto-enrollment
+        if (enrolledBeneficiaries.length === 0) {
+          try {
+            const autoEnrollRes = await programApi.autoEnrollBeneficiaries(programId);
+            const updatedRes = await programApi.getEnrolledBeneficiaries(programId);
+            enrolledBeneficiaries = updatedRes.data.data || [];
+            setSuccess(autoEnrollRes.data.message || `Successfully auto-enrolled ${autoEnrollRes.data?.data?.newly_enrolled || 0} beneficiary(ies)`);
+            setTimeout(() => setSuccess(null), 5000);
+          } catch (autoEnrollError) {
+            console.error('Auto-enrollment failed:', autoEnrollError);
+          }
+        }
+
+        // Filter by barangay
+        enrolledBeneficiaries = enrolledBeneficiaries.filter(
+          b => b.barangay_id === parseInt(selectedProgram.barangay_id)
+        );
+
+        // Filter by category if program has one
+        if (selectedProgram.eligibility_category) {
+          enrolledBeneficiaries = enrolledBeneficiaries.filter(
+            b => b.category && b.category.includes(selectedProgram.eligibility_category)
+          );
+        }
+
+        // Filter by approved status
+        const qualifiedBeneficiaries = enrolledBeneficiaries.filter(b => b.status === 'Approved');
+
+        // Auto-calculate amount per beneficiary
+        const eligibleCount = qualifiedBeneficiaries.length;
+        if (updatedForm.budget && eligibleCount > 0) {
+          const totalBudget = parseFloat(updatedForm.budget);
+          const amountPerBeneficiary = totalBudget / eligibleCount;
+          setFormData(prev => ({
+            ...prev,
+            amount_per_beneficiary: amountPerBeneficiary.toFixed(2)
+          }));
+        }
+
+        setEligibleBeneficiaries(qualifiedBeneficiaries);
+        setEligibleMeta({
+          total: enrolledBeneficiaries.length,
+          qualified_count: qualifiedBeneficiaries.length,
+          program_name: selectedProgram.name || '',
+        });
+      } catch (err) {
+        console.error('Failed to load enrolled beneficiaries:', err);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -147,7 +253,29 @@ export default function DistributionPage() {
         setSuccess(null);
       }, 2000);
     } catch (err) {
-      setError(err.message || 'Failed to create distribution event');
+      console.error('Create event error:', err);
+      console.error('Error response:', err.response?.data);
+      
+      // Extract specific error message from backend
+      let errorMessage = 'Failed to create distribution event';
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      // If there are specific field errors, display them
+      if (err.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        const fieldErrors = err.response.data.errors.map(e => `${e.field}: ${e.message}`).join(', ');
+        errorMessage += ` - ${fieldErrors}`;
+      }
+      
+      // If there are missing fields, display them
+      if (err.response?.data?.missing_fields && Array.isArray(err.response.data.missing_fields)) {
+        errorMessage += ` (Missing: ${err.response.data.missing_fields.join(', ')})`;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -168,6 +296,26 @@ export default function DistributionPage() {
       const res = await programApi.getEnrolledBeneficiaries(formData.program_id);
       let enrolledBeneficiaries = res.data.data || [];
       
+      // AUTO-ENROLL: If no enrolled beneficiaries, trigger auto-enrollment
+      if (enrolledBeneficiaries.length === 0) {
+        console.log('No enrolled beneficiaries found. Triggering auto-enrollment...');
+        try {
+          const autoEnrollRes = await programApi.autoEnrollBeneficiaries(formData.program_id);
+          console.log('Auto-enrollment result:', autoEnrollRes.data);
+          
+          // Reload enrolled beneficiaries after auto-enrollment
+          const updatedRes = await programApi.getEnrolledBeneficiaries(formData.program_id);
+          enrolledBeneficiaries = updatedRes.data.data || [];
+          
+          // Show success message
+          setSuccess(autoEnrollRes.data.message || `Successfully auto-enrolled ${autoEnrollRes.data.data.newly_enrolled} beneficiary(ies)`);
+          setTimeout(() => setSuccess(null), 5000);
+        } catch (autoEnrollError) {
+          console.error('Auto-enrollment failed:', autoEnrollError);
+          // Continue with empty list if auto-enrollment fails
+        }
+      }
+      
       // Filter by barangay (should already match, but double-check)
       enrolledBeneficiaries = enrolledBeneficiaries.filter(
         b => b.barangay_id === parseInt(formData.barangay_id)
@@ -184,6 +332,19 @@ export default function DistributionPage() {
       const qualifiedBeneficiaries = enrolledBeneficiaries.filter(
         b => b.status === 'Approved'
       );
+      
+      // Auto-calculate Amount per Beneficiary based on Total Budget and Eligible Count
+      const eligibleCount = qualifiedBeneficiaries.length;
+      if (formData.budget && eligibleCount > 0) {
+        const totalBudget = parseFloat(formData.budget);
+        const amountPerBeneficiary = totalBudget / eligibleCount;
+        
+        // Update formData with calculated amount
+        setFormData(prev => ({
+          ...prev,
+          amount_per_beneficiary: amountPerBeneficiary.toFixed(2)
+        }));
+      }
       
       setEligibleBeneficiaries(qualifiedBeneficiaries);
       setEligibleMeta({
@@ -214,8 +375,25 @@ export default function DistributionPage() {
       await loadDashboardStats();
       setTimeout(() => setSuccess(null), 5000);
     } catch (err) {
-      if (err.error_code === 'INSUFFICIENT_BUDGET') {
-        setError(`Insufficient Budget: You need ₱${parseFloat(err.details?.deficit || 0).toLocaleString()} more.`);
+      console.error('Publish event error:', err);
+      console.error('Error response:', err.response?.data);
+      
+      // Extract error from response
+      const errorData = err.response?.data;
+      
+      if (errorData?.error_code === 'INSUFFICIENT_BUDGET') {
+        const deficit = parseFloat(errorData.details?.deficit || 0);
+        setError(`Insufficient Budget: You need ₱${deficit.toLocaleString()} more.`);
+      } else if (errorData?.message) {
+        // Show the specific error message from backend
+        let errorMessage = errorData.message;
+        
+        // If there are debug details, add them
+        if (errorData.debug) {
+          errorMessage += ` (Debug: ${JSON.stringify(errorData.debug)})`;
+        }
+        
+        setError(errorMessage);
       } else {
         setError(err.message || 'Failed to publish event');
       }
@@ -243,6 +421,49 @@ export default function DistributionPage() {
     }
   };
 
+  const handleStartSession = async (eventId) => {
+    if (!window.confirm('Are you sure you want to start this distribution session? Staff will be able to release benefits once started.')) {
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      await distributionApi.startSession(eventId);
+      setSuccess('Distribution session started successfully! Staff can now begin releasing benefits.');
+      await loadEvents();
+      await loadDashboardStats();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Failed to start session');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEndSession = async (eventId) => {
+    if (!window.confirm('Are you sure you want to end this distribution session? No more benefits can be released after ending.')) {
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const res = await distributionApi.endSession(eventId);
+      const message = res.data?.message || 'Distribution session ended successfully';
+      setSuccess(message);
+      await loadEvents();
+      await loadDashboardStats();
+      setTimeout(() => setSuccess(null), 5000);
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Failed to end session');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleViewDetails = async (eventId) => {
     setLoading(true);
     try {
@@ -264,6 +485,34 @@ export default function DistributionPage() {
           }
         } catch (err) {
           console.warn('Could not load eligible count for draft event:', err);
+        }
+      }
+      
+      // For draft events, load eligible beneficiaries list to show in the modal
+      if (eventData.status === 'draft') {
+        try {
+          // Get enrolled beneficiaries from the program
+          const programRes = await programApi.getEnrolledBeneficiaries(eventData.program_id);
+          const enrolledBeneficiaries = programRes.data.data || [];
+          
+          // Filter based on target category if specified
+          const qualifiedBeneficiaries = eventData.target_category
+            ? enrolledBeneficiaries.filter(b => 
+                b.category && b.category.toLowerCase().includes(eventData.target_category.toLowerCase())
+              )
+            : enrolledBeneficiaries;
+          
+          // Store as preview transactions for display
+          eventData.Transactions = qualifiedBeneficiaries.map((b, index) => ({
+            id: `preview-${index}`,
+            beneficiary_id: b.id,
+            status: 'pending',
+            amount: parseFloat(eventData.amount_per_beneficiary),
+            Beneficiary: b,
+            is_preview: true // Mark as preview
+          }));
+        } catch (err) {
+          console.warn('Could not load eligible beneficiaries for draft event:', err);
         }
       }
       
@@ -313,18 +562,34 @@ export default function DistributionPage() {
             <h1 className="text-3xl font-bold text-slate-900">Distribution Management</h1>
             <p className="text-sm text-slate-600 mt-1">
               Create, manage, and monitor benefit distributions
+              {lastUpdated && (
+                <span className="ml-2 text-xs text-slate-500">
+                  • Last updated: {lastUpdated.toLocaleTimeString()}
+                </span>
+              )}
             </p>
           </div>
         </div>
-        {user?.role === 'admin' && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors"
+            onClick={() => { loadEvents(); loadDashboardStats(); }}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded-lg transition-colors disabled:opacity-50"
+            title="Refresh data"
           >
-            <Plus className="w-4 h-4" />
-            Create Distribution
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
           </button>
-        )}
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Create Distribution
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Alerts */}
@@ -570,6 +835,8 @@ export default function DistributionPage() {
                             >
                               <Eye className="w-4 h-4" />
                             </button>
+                            
+                            {/* Draft Status Actions */}
                             {event.status === 'draft' && user?.role === 'admin' && (
                               <>
                                 <button
@@ -587,6 +854,30 @@ export default function DistributionPage() {
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </>
+                            )}
+                            
+                            {/* Scheduled Status Actions - START SESSION */}
+                            {event.status === 'scheduled' && (user?.role === 'admin' || user?.role === 'staff' || user?.role === 'barangay') && (
+                              <button
+                                onClick={() => handleStartSession(event.id)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                                title="Start Distribution Session"
+                              >
+                                <Play className="w-4 h-4" />
+                                Start Session
+                              </button>
+                            )}
+                            
+                            {/* Ongoing Status Actions - END SESSION */}
+                            {event.status === 'ongoing' && (user?.role === 'admin' || user?.role === 'staff' || user?.role === 'barangay') && (
+                              <button
+                                onClick={() => handleEndSession(event.id)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                                title="End Distribution Session"
+                              >
+                                <Square className="w-4 h-4" />
+                                End Session
+                              </button>
                             )}
                           </div>
                         </td>
@@ -679,17 +970,22 @@ export default function DistributionPage() {
                 </label>
                 <select
                   value={formData.program_id}
-                  onChange={(e) => setFormData({ ...formData, program_id: e.target.value })}
+                  onChange={(e) => handleProgramChange(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                   required
                 >
                   <option value="">Select Program</option>
-                  {programs.filter(p => p.status === 'active').map((program) => (
+                  {programs.filter(p => p.status !== 'archived').map((program) => (
                     <option key={program.id} value={program.id}>
-                      {program.name} ({program.code})
+                      {program.name} {program.eligibility_category ? `[${program.eligibility_category}]` : ''} — {program.status}
                     </option>
                   ))}
                 </select>
+                {programAutoFilled && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                    ✅ Barangay at category auto-filled mula sa program settings
+                  </p>
+                )}
               </div>
 
               {/* Barangay */}
@@ -699,8 +995,8 @@ export default function DistributionPage() {
                 </label>
                 <select
                   value={formData.barangay_id}
-                  onChange={(e) => setFormData({ ...formData, barangay_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  onChange={(e) => { setFormData({ ...formData, barangay_id: e.target.value }); setProgramAutoFilled(false); }}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 ${programAutoFilled ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
                   required
                 >
                   <option value="">Select Barangay</option>
@@ -710,30 +1006,33 @@ export default function DistributionPage() {
                     </option>
                   ))}
                 </select>
+                {programAutoFilled && formData.barangay_id && (
+                  <p className="text-xs text-green-600 mt-1">📍 Auto-filled from program</p>
+                )}
               </div>
 
               {/* Target Category */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Target Category (Optional)
+                  Target Category
                 </label>
                 <select
                   value={formData.target_category}
-                  onChange={(e) => setFormData({ ...formData, target_category: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  onChange={(e) => { setFormData({ ...formData, target_category: e.target.value }); setProgramAutoFilled(false); }}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 ${programAutoFilled && formData.target_category ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
                 >
                   <option value="">All Categories</option>
-                  <option value="4Ps">4Ps (Pantawid Pamilyang Pilipino Program)</option>
-                  <option value="Senior Citizen">Senior Citizen</option>
-                  <option value="PWD">PWD (Person with Disability)</option>
-                  <option value="Solo Parent">Solo Parent</option>
-                  <option value="Indigenous People">Indigenous People</option>
-                  <option value="Out of School Youth">Out of School Youth</option>
-                  <option value="Pregnant/Lactating Mother">Pregnant/Lactating Mother</option>
+                  <option value="4Ps Household Beneficiaries">4Ps Household Beneficiaries</option>
+                  <option value="Senior Citizens (Social Pension)">Senior Citizens (Social Pension)</option>
+                  <option value="Persons with Disabilities (PWD)">Persons with Disabilities (PWD)</option>
                 </select>
-                <p className="text-xs text-slate-500 mt-1">
-                  Leave blank to include all categories, or select specific category to filter beneficiaries
-                </p>
+                {programAutoFilled && formData.target_category ? (
+                  <p className="text-xs text-green-600 mt-1">🏷️ Auto-filled from program: {formData.target_category}</p>
+                ) : (
+                  <p className="text-xs text-slate-500 mt-1">
+                    Leave blank to include all categories, or select specific category to filter beneficiaries
+                  </p>
+                )}
               </div>
 
               {/* Distribution Date */}
@@ -790,13 +1089,21 @@ export default function DistributionPage() {
                 <input
                   type="number"
                   value={formData.amount_per_beneficiary}
-                  onChange={(e) => setFormData({ ...formData, amount_per_beneficiary: e.target.value })}
-                  placeholder="e.g., 1500"
-                  min="0"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  readOnly
+                  placeholder="Auto-calculated after preview"
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-slate-700 cursor-not-allowed"
                   required
                 />
+                {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 && (
+                  <p className="text-xs text-green-600 mt-1">
+                    ₱{parseFloat(formData.budget || 0).toLocaleString()} ÷ {eligibleMeta.qualified_count} beneficiaries = ₱{parseFloat(formData.amount_per_beneficiary).toLocaleString()} each
+                  </p>
+                )}
+                {!formData.amount_per_beneficiary && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    Click "Preview Eligible Beneficiaries" to auto-calculate
+                  </p>
+                )}
               </div>
 
               {/* Assigned Staff */}
@@ -1017,12 +1324,31 @@ export default function DistributionPage() {
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                       <Users className="w-5 h-5 text-purple-600" />
-                      Enrolled Beneficiaries
+                      {selectedEvent.status === 'draft' && selectedEvent.Transactions?.[0]?.is_preview ? 'Eligible Beneficiaries (Preview)' : 'Enrolled Beneficiaries'}
                     </h3>
-                    <span className="text-sm text-slate-600">
-                      {selectedEvent.Transactions?.length || 0} beneficiary(ies)
-                    </span>
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-green-600 font-semibold">
+                        {selectedEvent.Transactions?.filter(t => t.status === 'released').length || 0} Released
+                      </span>
+                      <span className="text-sm text-amber-600 font-semibold">
+                        {selectedEvent.Transactions?.filter(t => t.status === 'pending').length || 0} Pending
+                      </span>
+                      <span className="text-sm text-slate-600">
+                        Total: {selectedEvent.Transactions?.length || 0}
+                      </span>
+                    </div>
                   </div>
+                  
+                  {/* Preview Notice for Draft Events */}
+                  {selectedEvent.status === 'draft' && selectedEvent.Transactions?.[0]?.is_preview && (
+                    <div className="p-3 bg-blue-50 border-t border-blue-200 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-blue-800">
+                        <span className="font-semibold">Preview Mode:</span> These beneficiaries are currently enrolled in the program. 
+                        Transactions will be finalized when you publish this distribution event.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {selectedEvent.Transactions && selectedEvent.Transactions.length > 0 ? (
@@ -1040,7 +1366,9 @@ export default function DistributionPage() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {selectedEvent.Transactions.map((txn, index) => (
-                          <tr key={txn.id} className="hover:bg-slate-50">
+                          <tr key={txn.id} className={`hover:bg-slate-50 ${
+                            txn.status === 'pending' ? 'bg-amber-50' : ''
+                          }`}>
                             <td className="px-4 py-3 text-slate-500">{index + 1}</td>
                             <td className="px-4 py-3">
                               <p className="font-semibold text-slate-900">
@@ -1063,7 +1391,7 @@ export default function DistributionPage() {
                             </td>
                             <td className="px-4 py-3 text-right">
                               <p className="font-bold text-green-600">
-                                ₱{parseFloat(txn.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                ₱{parseFloat(txn.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                               </p>
                             </td>
                             <td className="px-4 py-3 text-center">
@@ -1078,9 +1406,9 @@ export default function DistributionPage() {
                                   Verified
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-semibold">
+                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">
                                   <Clock className="w-3 h-3" />
-                                  Pending
+                                  {txn.is_preview ? 'Eligible' : 'Pending'}
                                 </span>
                               )}
                             </td>

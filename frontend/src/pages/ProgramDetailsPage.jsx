@@ -81,11 +81,24 @@ export default function ProgramDetailsPage() {
         if (b.barangay_id !== program.barangay_id) return false;
         if (enrolledIds.has(b.id)) return false;
         
-        // Check category match
+        // Check category match - make it more flexible
         if (program.eligibility_category) {
-          if (!b.category || !b.category.includes(program.eligibility_category)) {
-            return false;
-          }
+          if (!b.category) return false;
+          
+          // Try exact match first
+          if (b.category === program.eligibility_category) return true;
+          
+          // Try partial match (case insensitive)
+          const progCat = program.eligibility_category.toLowerCase();
+          const benCat = b.category.toLowerCase();
+          
+          // Check if they contain common keywords
+          if (progCat.includes('4ps') && benCat.includes('4ps')) return true;
+          if (progCat.includes('senior') && benCat.includes('senior')) return true;
+          if ((progCat.includes('pwd') || progCat.includes('disabilit')) && 
+              (benCat.includes('pwd') || benCat.includes('disabilit'))) return true;
+          
+          return false;
         }
         
         return true;
@@ -131,9 +144,14 @@ export default function ProgramDetailsPage() {
     setError(null);
     
     try {
-      await programApi.enrollBeneficiaries(id, {
+      console.log('Selected beneficiaries:', selectedBeneficiaries);
+      console.log('Selected beneficiaries type:', typeof selectedBeneficiaries[0]);
+      console.log('Payload being sent:', { beneficiary_ids: selectedBeneficiaries });
+      
+      const response = await programApi.enrollBeneficiaries(id, {
         beneficiary_ids: selectedBeneficiaries
       });
+      console.log('Enrollment response:', response);
       
       setSuccess(`Successfully enrolled ${selectedBeneficiaries.length} beneficiary(ies)`);
       setShowEnrollModal(false);
@@ -142,7 +160,15 @@ export default function ProgramDetailsPage() {
       
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err.message || 'Failed to enroll beneficiaries');
+      console.error('Full error object:', err);
+      console.error('Error response:', err?.response);
+      console.error('Error response data:', err?.response?.data);
+      console.error('Error message:', err?.message);
+      
+      // Get the actual backend error message
+      const errorMessage = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Failed to enroll beneficiaries';
+      console.log('Displaying error message:', errorMessage);
+      setError(errorMessage);
     } finally {
       setEnrolling(false);
     }

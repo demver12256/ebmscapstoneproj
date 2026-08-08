@@ -20,24 +20,40 @@ router.use(authenticate);
 
 // ── Middleware: Ensure staff can only access their assigned barangay ──
 const restrictToAssignedBarangay = async (req, res, next) => {
-  if (req.user.role === 'admin') return next(); // Admins have full access
+  console.log('[RESTRICT_BARANGAY] Checking access for user:', req.user.role, req.user.id);
+  
+  if (req.user.role === 'admin') {
+    console.log('[RESTRICT_BARANGAY] Admin - access granted');
+    return next(); // Admins have full access
+  }
   
   if (req.user.role === 'staff' || req.user.role === 'barangay') {
     const eventId = req.params.id;
-    if (!eventId) return next();
+    if (!eventId) {
+      console.log('[RESTRICT_BARANGAY] No event ID - skipping check');
+      return next();
+    }
     
+    console.log('[RESTRICT_BARANGAY] Checking event:', eventId);
     const event = await DistributionEvent.findByPk(eventId);
     if (!event) {
+      console.error('[RESTRICT_BARANGAY] Event not found:', eventId);
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
     
+    console.log('[RESTRICT_BARANGAY] Event barangay:', event.barangay_id, 'Assigned staff:', event.assigned_staff_id);
+    console.log('[RESTRICT_BARANGAY] User barangay:', req.user.barangay_id, 'User ID:', req.user.id);
+    
     // Staff can only access events in their barangay OR assigned to them
     if (req.user.barangay_id !== event.barangay_id && req.user.id !== event.assigned_staff_id) {
+      console.error('[RESTRICT_BARANGAY] Access denied - barangay mismatch and not assigned');
       return res.status(403).json({ 
         success: false, 
         message: 'Access denied. You can only access distribution events assigned to your barangay.' 
       });
     }
+    
+    console.log('[RESTRICT_BARANGAY] Access granted');
   }
   
   next();
@@ -82,8 +98,13 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
     }
 
     // Apply status filter if provided
-    if (req.query.status) {
+    if (req.query.status && req.query.status !== 'all') {
       where.status = req.query.status;
+    }
+
+    // Apply barangay filter if provided (admin only)
+    if (req.query.barangay_id && req.query.barangay_id !== 'all' && req.user.role === 'admin') {
+      where.barangay_id = parseInt(req.query.barangay_id);
     }
 
     const events = await DistributionEvent.findAll({
@@ -295,10 +316,87 @@ router.get('/events/:id/count-eligible', authorize('admin', 'staff', 'barangay')
 // ── POST /events ── Create a distribution event (Admin only)
 router.post('/events', authorize('admin'), async (req, res, next) => {
   try {
+    console.log('[CREATE EVENT] Request body:', req.body);
+    console.log('[CREATE EVENT] User:', req.user.role, req.user.id);
+    
+    // Validate required fields
+    const { title, program_id, barangay_id, distribution_date, budget, amount_per_beneficiary } = req.body;
+    
+    const missingFields = [];
+    if (!title) missingFields.push('title');
+    if (!program_id) missingFields.push('program_id');
+    if (!barangay_id) missingFields.push('barangay_id');
+    if (!distribution_date) missingFields.push('distribution_date');
+    if (!budget) missingFields.push('budget');
+    if (!amount_per_beneficiary) missingFields.push('amount_per_beneficiary');
+    
+    if (missingFields.length > 0) {
+      console.error('[CREATE EVENT] Missing required fields:', missingFields);
+      return res.status(400).json({ 
+        success: false, 
+        message: `Missing required fields: ${missingFields.join(', ')}`,
+        missing_fields: missingFields,
+      });
+    }
+    
+    // Validate that program exists
+    const program = await BenefitProgram.findByPk(program_id);
+    if (!program) {
+      console.error('[CREATE EVENT] Program not found:', program_id);
+      return res.status(404).json({ 
+        success: false, 
+        message: `Program with ID ${program_id} not found`,
+      });
+    }
+    
+    // Validate that barangay exists
+    const barangay = await Barangay.findByPk(barangay_id);
+    if (!barangay) {
+      console.error('[CREATE EVENT] Barangay not found:', barangay_id);
+      return res.status(404).json({ 
+        success: false, 
+        message: `Barangay with ID ${barangay_id} not found`,
+      });
+    }
+    
+    // Validate numeric fields
+    if (isNaN(parseFloat(budget)) || parseFloat(budget) <= 0) {
+      console.error('[CREATE EVENT] Invalid budget:', budget);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Budget must be a positive number',
+      });
+    }
+    
+    if (isNaN(parseFloat(amount_per_beneficiary)) || parseFloat(amount_per_beneficiary) <= 0) {
+      console.error('[CREATE EVENT] Invalid amount_per_beneficiary:', amount_per_beneficiary);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Amount per beneficiary must be a positive number',
+      });
+    }
+    
+    // Validate date
+    const distDate = new Date(distribution_date);
+    if (isNaN(distDate.getTime())) {
+      console.error('[CREATE EVENT] Invalid date:', distribution_date);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid distribution date format',
+      });
+    }
+    
+    console.log('[CREATE EVENT] Validation passed, creating event...');
+    
     const event = await DistributionEvent.create({
       ...req.body,
       status: 'draft',
+      total_beneficiaries: 0,
+      total_released: 0,
+      total_amount_released: 0,
     });
+
+    console.log('[CREATE EVENT] Event created:', event.id);
 
     const result = await DistributionEvent.findByPk(event.id, {
       include: [
@@ -314,8 +412,18 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
       module: 'distributions',
     });
 
+    console.log('[CREATE EVENT] Success!');
     res.status(201).json({ success: true, data: result });
   } catch (error) {
+    console.error('[CREATE EVENT] Error:', error.message);
+    console.error('[CREATE EVENT] Error stack:', error.stack);
+    if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Validation error: ' + error.message,
+        errors: error.errors?.map(e => ({ field: e.path, message: e.message })),
+      });
+    }
     next(error);
   }
 });
@@ -352,23 +460,41 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
   const transaction = await sequelize.transaction();
   
   try {
+    console.log('[PUBLISH EVENT] Request for event ID:', req.params.id);
+    console.log('[PUBLISH EVENT] User:', req.user.role, req.user.id);
+    
     const event = await DistributionEvent.findByPk(req.params.id, {
       include: [{ model: BenefitProgram, as: 'Program' }],
       transaction,
     });
     
     if (!event) {
+      console.error('[PUBLISH EVENT] Event not found:', req.params.id);
       await transaction.rollback();
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
     
+    console.log('[PUBLISH EVENT] Event found:', {
+      id: event.id,
+      title: event.title,
+      status: event.status,
+      program_id: event.program_id,
+      barangay_id: event.barangay_id,
+      assigned_staff_id: event.assigned_staff_id,
+      budget: event.budget,
+      amount_per_beneficiary: event.amount_per_beneficiary,
+      target_category: event.target_category,
+    });
+    
     if (event.status !== 'draft') {
+      console.error('[PUBLISH EVENT] Event is not draft, current status:', event.status);
       await transaction.rollback();
       return res.status(400).json({ success: false, message: 'Only draft events can be published' });
     }
 
     // Staff validation - MUST assign staff before publishing
     if (!event.assigned_staff_id) {
+      console.error('[PUBLISH EVENT] No staff assigned');
       await transaction.rollback();
       return res.status(400).json({ 
         success: false, 
@@ -376,8 +502,16 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       });
     }
 
+    console.log('[PUBLISH EVENT] Staff assigned:', event.assigned_staff_id);
+
     // Load eligible beneficiaries automatically based on program and barangay
     const program = event.Program;
+    console.log('[PUBLISH EVENT] Program:', {
+      id: program?.id,
+      name: program?.name,
+      eligibility_category: program?.eligibility_category,
+    });
+    
     const enrollmentWhere = { program_id: event.program_id, status: 'active' };
     const beneficiaryWhere = {
       barangay_id: event.barangay_id,
@@ -389,9 +523,16 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     // 2. Otherwise, if program has eligibility_category, use that (program-wide filter)
     if (event.target_category) {
       beneficiaryWhere.category = { [Op.like]: `%${event.target_category}%` };
+      console.log('[PUBLISH EVENT] Using event target_category filter:', event.target_category);
     } else if (program && program.eligibility_category) {
       beneficiaryWhere.category = { [Op.like]: `%${program.eligibility_category}%` };
+      console.log('[PUBLISH EVENT] Using program eligibility_category filter:', program.eligibility_category);
     }
+
+    console.log('[PUBLISH EVENT] Querying enrollments with:', {
+      enrollmentWhere,
+      beneficiaryWhere,
+    });
 
     const enrollments = await Enrollment.findAll({
       where: enrollmentWhere,
@@ -399,11 +540,20 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       transaction,
     });
 
+    console.log('[PUBLISH EVENT] Found enrollments:', enrollments.length);
+
     if (enrollments.length === 0) {
+      console.error('[PUBLISH EVENT] No eligible beneficiaries found');
       await transaction.rollback();
       return res.status(400).json({ 
         success: false, 
-        message: 'No eligible beneficiaries found for this event. Please check program enrollment and beneficiary approval status.' 
+        message: 'No eligible beneficiaries found for this event. Please check program enrollment and beneficiary approval status.',
+        debug: {
+          program_id: event.program_id,
+          barangay_id: event.barangay_id,
+          target_category: event.target_category,
+          program_eligibility: program?.eligibility_category,
+        }
       });
     }
 
@@ -413,8 +563,17 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     const totalRequired = amountPerBeneficiary * eligibleCount;
     const availableBudget = parseFloat(event.budget);
 
+    console.log('[PUBLISH EVENT] Budget calculation:', {
+      eligibleCount,
+      amountPerBeneficiary,
+      totalRequired,
+      availableBudget,
+      sufficient: totalRequired <= availableBudget,
+    });
+
     // STRICT BUDGET VALIDATION
     if (totalRequired > availableBudget) {
+      console.error('[PUBLISH EVENT] Insufficient budget');
       await transaction.rollback();
       return res.status(400).json({
         success: false,
@@ -496,6 +655,8 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     }, { transaction });
 
     await transaction.commit();
+    
+    console.log('[PUBLISH EVENT] Transaction committed successfully');
 
     // Reload event with associations
     const result = await DistributionEvent.findByPk(event.id, {
@@ -504,6 +665,13 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
         { model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] },
         { model: User, as: 'AssignedStaff', attributes: ['id', 'first_name', 'last_name'] },
       ],
+    });
+
+    console.log('[PUBLISH EVENT] Success! Published event:', {
+      id: result.id,
+      title: result.title,
+      status: result.status,
+      total_beneficiaries: result.total_beneficiaries,
     });
 
     res.json({ 
@@ -517,6 +685,8 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       }
     });
   } catch (error) {
+    console.error('[PUBLISH EVENT] Error:', error.message);
+    console.error('[PUBLISH EVENT] Error stack:', error.stack);
     await transaction.rollback();
     next(error);
   }
@@ -569,7 +739,7 @@ router.patch('/events/:id/status', authorize('admin', 'staff', 'barangay'), rest
 });
 
 // ── POST /events/:id/start-session ── Start distribution session (Staff only)
-router.post('/events/:id/start-session', authorize('staff', 'barangay'), restrictToAssignedBarangay, async (req, res, next) => {
+router.post('/events/:id/start-session', authorize('admin', 'staff', 'barangay'), restrictToAssignedBarangay, async (req, res, next) => {
   try {
     const event = await DistributionEvent.findByPk(req.params.id);
     if (!event) {
@@ -598,6 +768,9 @@ router.post('/events/:id/start-session', authorize('staff', 'barangay'), restric
       details: JSON.stringify({ event_id: event.id }),
     });
 
+    // Reload event to ensure we return the updated status
+    await event.reload();
+
     res.json({ 
       success: true, 
       data: event,
@@ -609,7 +782,7 @@ router.post('/events/:id/start-session', authorize('staff', 'barangay'), restric
 });
 
 // ── POST /events/:id/end-session ── End distribution session (Staff only)
-router.post('/events/:id/end-session', authorize('staff', 'barangay'), restrictToAssignedBarangay, async (req, res, next) => {
+router.post('/events/:id/end-session', authorize('admin', 'staff', 'barangay'), restrictToAssignedBarangay, async (req, res, next) => {
   try {
     const event = await DistributionEvent.findByPk(req.params.id);
     if (!event) {
@@ -700,7 +873,7 @@ router.get('/events/:id/transactions', authorize('admin', 'staff', 'barangay', '
 });
 
 // ── POST /events/:id/transactions/:txnId/verify ── Verify a beneficiary
-router.post('/events/:id/transactions/:txnId/verify', authorize('staff', 'barangay'), restrictToAssignedBarangay, async (req, res, next) => {
+router.post('/events/:id/transactions/:txnId/verify', authorize('admin', 'staff', 'barangay'), restrictToAssignedBarangay, async (req, res, next) => {
   try {
     const txn = await DistributionTransaction.findOne({
       where: { id: req.params.txnId, distribution_event_id: req.params.id },
@@ -813,10 +986,13 @@ router.post('/events/:id/transactions/:txnId/verify', authorize('staff', 'barang
 });
 
 // ── POST /events/:id/transactions/:txnId/release ── Release benefit
-router.post('/events/:id/transactions/:txnId/release', authorize('staff', 'barangay'), restrictToAssignedBarangay, async (req, res, next) => {
+router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff', 'barangay'), restrictToAssignedBarangay, async (req, res, next) => {
   const dbTransaction = await sequelize.transaction();
   
   try {
+    console.log('[RELEASE BENEFIT] Request from user:', req.user.role, req.user.id);
+    console.log('[RELEASE BENEFIT] Event ID:', req.params.id, 'Transaction ID:', req.params.txnId);
+    
     const txn = await DistributionTransaction.findOne({
       where: { id: req.params.txnId, distribution_event_id: req.params.id },
       include: [
@@ -828,12 +1004,21 @@ router.post('/events/:id/transactions/:txnId/release', authorize('staff', 'baran
     });
 
     if (!txn) {
+      console.error('[RELEASE BENEFIT] Transaction not found');
       await dbTransaction.rollback();
       return res.status(404).json({ success: false, message: 'Transaction not found' });
     }
 
+    console.log('[RELEASE BENEFIT] Transaction found:', {
+      id: txn.id,
+      status: txn.status,
+      beneficiary: `${txn.Beneficiary?.first_name} ${txn.Beneficiary?.last_name}`,
+      amount: txn.amount,
+    });
+
     // Prevent duplicate release
     if (txn.status === 'released') {
+      console.error('[RELEASE BENEFIT] Already released');
       await dbTransaction.rollback();
       return res.status(400).json({ 
         success: false, 
@@ -848,6 +1033,7 @@ router.post('/events/:id/transactions/:txnId/release', authorize('staff', 'baran
 
     // Verify event is ongoing
     if (txn.Event.status !== 'ongoing') {
+      console.error('[RELEASE BENEFIT] Event not ongoing, status:', txn.Event.status);
       await dbTransaction.rollback();
       return res.status(400).json({ 
         success: false, 
@@ -858,14 +1044,23 @@ router.post('/events/:id/transactions/:txnId/release', authorize('staff', 'baran
 
     const { signature_data, photo_proof, verification_method, notes } = req.body;
 
+    console.log('[RELEASE BENEFIT] Request body:', {
+      has_signature: !!signature_data,
+      has_photo: !!photo_proof,
+      verification_method,
+    });
+
     // Validate signature or photo proof is provided
     if (!signature_data && !photo_proof) {
+      console.error('[RELEASE BENEFIT] No signature or photo proof provided');
       await dbTransaction.rollback();
       return res.status(400).json({ 
         success: false, 
         message: 'Please provide either a digital signature or photo proof of receipt' 
       });
     }
+
+    console.log('[RELEASE BENEFIT] Updating transaction status to released...');
 
     // Update transaction status
     await txn.update({
@@ -877,6 +1072,8 @@ router.post('/events/:id/transactions/:txnId/release', authorize('staff', 'baran
       verification_method: verification_method || 'manual',
       notes: notes || null,
     }, { transaction: dbTransaction });
+
+    console.log('[RELEASE BENEFIT] Updating event counters...');
 
     // Update event counters
     const event = txn.Event;
@@ -893,6 +1090,68 @@ router.post('/events/:id/transactions/:txnId/release', authorize('staff', 'baran
       total_released: releasedCount,
       total_amount_released: releasedAmount,
     }, { transaction: dbTransaction });
+
+    console.log('[RELEASE BENEFIT] Event counters updated:', {
+      total_released: releasedCount,
+      total_amount_released: releasedAmount,
+    });
+
+    // AUTO-COMPLETE: If all beneficiaries have received their benefits, mark event as completed
+    const totalBeneficiaries = event.total_beneficiaries;
+    if (releasedCount >= totalBeneficiaries && totalBeneficiaries > 0) {
+      console.log('[RELEASE BENEFIT] All benefits released! Auto-completing event...');
+      await event.update({
+        status: 'completed',
+        completed_at: new Date(),
+      }, { transaction: dbTransaction });
+      
+      console.log('[RELEASE BENEFIT] Event auto-completed:', {
+        event_id: event.id,
+        title: event.title,
+        total_beneficiaries: totalBeneficiaries,
+        total_released: releasedCount,
+      });
+
+      // Create audit log for completion
+      await AuditLog.create({
+        user_id: req.user.id,
+        action: `Distribution event "${event.title}" auto-completed - all ${totalBeneficiaries} beneficiaries received benefits`,
+        module: 'distributions',
+        details: JSON.stringify({
+          event_id: event.id,
+          total_beneficiaries: totalBeneficiaries,
+          total_released: releasedCount,
+          total_amount_released: releasedAmount,
+          auto_completed: true,
+        }),
+      }, { transaction: dbTransaction });
+
+      // AUTO-COMPLETE PROGRAM: Mark the program as completed as well
+      console.log('[RELEASE BENEFIT] Auto-completing program...');
+      const program = await BenefitProgram.findByPk(event.program_id, { transaction: dbTransaction });
+      if (program && program.status === 'active') {
+        await program.update({
+          status: 'completed',
+        }, { transaction: dbTransaction });
+
+        console.log('[RELEASE BENEFIT] Program auto-completed:', {
+          program_id: program.id,
+          program_name: program.name,
+        });
+
+        // Create audit log for program completion
+        await AuditLog.create({
+          user_id: req.user.id,
+          action: `Program "${program.name}" auto-completed - distribution event finished`,
+          module: 'programs',
+          details: JSON.stringify({
+            program_id: program.id,
+            event_id: event.id,
+            auto_completed: true,
+          }),
+        }, { transaction: dbTransaction });
+      }
+    }
 
     // Notify beneficiary
     const beneficiary = txn.Beneficiary;
@@ -1100,11 +1359,16 @@ function numberToWords(num) {
 // ── GET /dashboard/stats ── Get distribution dashboard statistics
 router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
+    console.log('[DASHBOARD STATS] Request from user:', req.user.role, req.user.id);
+    
     const where = {};
 
     // Staff can only see stats for their barangay
     if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id) {
       where.barangay_id = req.user.barangay_id;
+      console.log('[DASHBOARD STATS] Filtering by barangay:', req.user.barangay_id);
+    } else {
+      console.log('[DASHBOARD STATS] Admin - showing all barangays');
     }
 
     // Total events by status
@@ -1114,9 +1378,13 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
     const ongoingEvents = await DistributionEvent.count({ where: { ...where, status: 'ongoing' } });
     const completedEvents = await DistributionEvent.count({ where: { ...where, status: 'completed' } });
 
+    console.log('[DASHBOARD STATS] Event counts:', { totalEvents, draftEvents, scheduledEvents, ongoingEvents, completedEvents });
+
     // Get event IDs for this user's scope
     const events = await DistributionEvent.findAll({ where, attributes: ['id'] });
     const eventIds = events.map(e => e.id);
+
+    console.log('[DASHBOARD STATS] Found', eventIds.length, 'events');
 
     let transactionStats = {
       total_transactions: 0,
@@ -1149,12 +1417,16 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
       }) || 0;
 
       transactionStats.total_amount_pending = transactionStats.total_amount_allocated - transactionStats.total_amount_released;
+      
+      console.log('[DASHBOARD STATS] Transaction stats:', transactionStats);
     }
 
     // Release percentage
     const releasePercentage = transactionStats.total_transactions > 0
       ? ((transactionStats.released_transactions / transactionStats.total_transactions) * 100).toFixed(2)
       : 0;
+
+    console.log('[DASHBOARD STATS] Success - sending response');
 
     res.json({
       success: true,
@@ -1178,6 +1450,8 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
       },
     });
   } catch (error) {
+    console.error('[DASHBOARD STATS] Error:', error);
+    console.error('[DASHBOARD STATS] Error stack:', error.stack);
     next(error);
   }
 });

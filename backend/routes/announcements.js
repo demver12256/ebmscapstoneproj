@@ -19,36 +19,78 @@ const {
 const router = express.Router();
 router.use(authenticate);
 
-// Helper function to find target matching beneficiaries
-async function getMatchingBeneficiaries(programIds, barangayIds) {
-  const pIds = (Array.isArray(programIds) ? programIds : [programIds]).map(Number).filter(Boolean);
-  const bIds = (Array.isArray(barangayIds) ? barangayIds : [barangayIds]).map(Number).filter(Boolean);
-
-  if (pIds.length === 0 || bIds.length === 0) {
-    return [];
+// Helper function to find target matching beneficiaries directly by Barangay & Category (Approved beneficiaries)
+async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsInput) {
+  let catList = [];
+  if (typeof targetCategoriesOrPrograms === 'string') {
+    try { catList = JSON.parse(targetCategoriesOrPrograms); } catch (e) { catList = [targetCategoriesOrPrograms]; }
+  } else if (Array.isArray(targetCategoriesOrPrograms)) {
+    catList = targetCategoriesOrPrograms;
   }
 
-  // Active enrollments for selected programs
-  const activeEnrollments = await Enrollment.findAll({
-    where: {
-      program_id: pIds,
-      status: 'active',
-    },
-    attributes: ['beneficiary_id'],
-    raw: true,
+  let categories = [];
+  let programIds = [];
+  catList.forEach(item => {
+    if (typeof item === 'number' || (!isNaN(item) && !isNaN(parseFloat(item)) && String(Number(item)) === String(item))) {
+      programIds.push(Number(item));
+    } else if (typeof item === 'string') {
+      categories.push(item);
+    }
   });
 
-  const enrolledBeneficiaryIds = [...new Set(activeEnrollments.map((e) => e.beneficiary_id))];
-  if (enrolledBeneficiaryIds.length === 0) {
+  // If program IDs were passed, resolve their category strings
+  if (programIds.length > 0) {
+    const progs = await BenefitProgram.findAll({
+      where: { id: programIds },
+      attributes: ['eligibility_category', 'category'],
+      raw: true,
+    });
+    progs.forEach(p => {
+      if (p.eligibility_category) categories.push(p.eligibility_category);
+      if (p.category) categories.push(p.category);
+    });
+  }
+
+  let bIds = [];
+  if (typeof barangayIdsInput === 'string') {
+    try { bIds = JSON.parse(barangayIdsInput); } catch (e) { bIds = [barangayIdsInput]; }
+  } else if (Array.isArray(barangayIdsInput)) {
+    bIds = barangayIdsInput;
+  }
+  bIds = bIds.map(Number).filter(Boolean);
+
+  if (bIds.length === 0) {
     return [];
   }
 
-  // Filter beneficiaries by registered barangay
+  // Build category match filters
+  const categoryConditions = [];
+  categories.forEach(cat => {
+    const norm = String(cat).toLowerCase();
+    if (norm.includes('4ps')) {
+      categoryConditions.push({ category: { [Op.like]: '%4Ps%' } });
+    } else if (norm.includes('senior')) {
+      categoryConditions.push({ category: { [Op.like]: '%Senior%' } });
+    } else if (norm.includes('pwd') || norm.includes('disabil')) {
+      categoryConditions.push({ category: { [Op.like]: '%PWD%' } });
+      categoryConditions.push({ category: { [Op.like]: '%Disabilit%' } });
+    } else if (cat) {
+      categoryConditions.push({ category: { [Op.like]: `%${cat}%` } });
+    }
+  });
+
+  // DIRECT QUERY: Find all active (Approved) beneficiaries per barangay and category
+  const whereClause = {
+    status: 'Approved',
+    barangay_id: { [Op.in]: bIds },
+  };
+
+  if (categoryConditions.length > 0) {
+    whereClause[Op.or] = categoryConditions;
+  }
+
   const matchingBeneficiaries = await Beneficiary.findAll({
-    where: {
-      id: enrolledBeneficiaryIds,
-      barangay_id: bIds,
-    },
+    where: whereClause,
     include: [
       {
         model: User,
@@ -172,14 +214,12 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
   return matchingBeneficiaries.length;
 }
 
-// ── GET /preview-count ── Preview matching beneficiary count (Admin only)
-router.get('/preview-count', authorize('admin'), async (req, res, next) => {
+// ── GET /preview-count ── Preview matching beneficiary count (Admin/Staff/Barangay)
+router.get('/preview-count', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const { target_programs, target_barangays } = req.query;
-    const pIds = target_programs ? JSON.parse(target_programs) : [];
-    const bIds = target_barangays ? JSON.parse(target_barangays) : [];
-
-    const matches = await getMatchingBeneficiaries(pIds, bIds);
+    const { target_programs, target_categories, target_barangays } = req.query;
+    const catsInput = target_categories || target_programs;
+    const matches = await getMatchingBeneficiaries(catsInput, target_barangays);
     res.json({ success: true, count: matches.length });
   } catch (error) {
     next(error);
@@ -344,8 +384,8 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// ── POST / ── Create announcement (Admin only)
-router.post('/', authorize('admin'), async (req, res, next) => {
+// ── POST / ── Create announcement (Admin/Staff/Barangay)
+router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const {
       title,
@@ -364,8 +404,9 @@ router.post('/', authorize('admin'), async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Title and description message are required' });
     }
 
-    if (!Array.isArray(target_programs) || target_programs.length === 0) {
-      return res.status(400).json({ success: false, message: 'At least one target program must be selected' });
+    const targetCatsOrProgs = req.body.target_categories || target_programs;
+    if (!Array.isArray(targetCatsOrProgs) || targetCatsOrProgs.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one target category must be selected' });
     }
 
     if (!Array.isArray(target_barangays) || target_barangays.length === 0) {
@@ -382,7 +423,7 @@ router.post('/', authorize('admin'), async (req, res, next) => {
       status,
       publish_date: status === 'published' ? new Date() : null,
       expiration_date: expiration_date || null,
-      target_programs,
+      target_programs: targetCatsOrProgs,
       target_barangays,
       created_by_user_id: req.user.id,
       recipient_count: 0,
@@ -668,8 +709,8 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
   }
 });
 
-// ── PUT /:id ── Edit/Update announcement (Admin only)
-router.put('/:id', authorize('admin'), async (req, res, next) => {
+// ── PUT /:id ── Edit/Update announcement (Admin/Staff/Barangay)
+router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const announcement = await Announcement.findByPk(req.params.id);
     if (!announcement) {

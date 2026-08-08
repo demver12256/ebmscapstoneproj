@@ -1,4 +1,4 @@
-import { User, Phone, MapPin, Calendar, Mail } from 'lucide-react';
+import { User, Phone, MapPin, Calendar, Mail, CreditCard, IdCard, Upload, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useState, useEffect } from 'react';
 import { beneficiaryApi } from '../services/api';
@@ -7,6 +7,10 @@ export default function BeneficiaryProfilePage() {
   const { user } = useAuth();
   const [beneficiary, setBeneficiary] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profilePicture, setProfilePicture] = useState(null);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
 
   useEffect(() => {
     loadProfile();
@@ -23,6 +27,55 @@ export default function BeneficiaryProfilePage() {
     }
   };
 
+  const handleProfilePictureChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setError(null);
+    setSuccess(null);
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Invalid file type. Only JPG, JPEG, and PNG are allowed.');
+      return;
+    }
+
+    // Validate file size (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File is too large. Maximum size is 5 MB.');
+      return;
+    }
+
+    setUploadingPicture(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('profile_picture', file);
+
+      const res = await beneficiaryApi.uploadProfilePicture(formData);
+      if (res.data?.success) {
+        setSuccess('Profile picture updated successfully!');
+        // Reload profile to get the updated picture from server
+        await loadProfile();
+        // Clear the temporary blob URL
+        setProfilePicture(null);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to upload profile picture');
+    } finally {
+      setUploadingPicture(false);
+    }
+  };
+
+  const getBackendUrl = () => {
+    const defaultApiUrl = 'http://localhost:5000/api';
+    const envApiUrl = process.env.REACT_APP_API_URL || defaultApiUrl;
+    return envApiUrl.replace('/api', '');
+  };
+
+  const backendUrl = getBackendUrl();
+
   if (loading) {
     return <div className="p-8">Loading...</div>;
   }
@@ -35,16 +88,53 @@ export default function BeneficiaryProfilePage() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+            {success}
+          </div>
+        )}
+
         <div className="flex items-start gap-6">
-          <div className="w-24 h-24 bg-gradient-to-br from-dswd-blue to-dswd-lightBlue rounded-full flex items-center justify-center text-white text-3xl font-bold">
-            {beneficiary?.first_name?.[0]}{beneficiary?.last_name?.[0]}
+          <div className="relative">
+            {beneficiary?.profile_picture ? (
+              <img
+                src={`${backendUrl}/${beneficiary.profile_picture}`}
+                alt="Profile"
+                className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg"
+              />
+            ) : (
+              <div className="w-24 h-24 bg-gradient-to-br from-dswd-blue to-dswd-lightBlue rounded-full flex items-center justify-center text-white text-3xl font-bold border-4 border-white shadow-lg">
+                {beneficiary?.first_name?.[0]}{beneficiary?.last_name?.[0]}
+              </div>
+            )}
+            <label className="absolute bottom-0 right-0 bg-white rounded-full p-1.5 shadow-lg cursor-pointer hover:bg-slate-50 transition border border-slate-200">
+              <input
+                type="file"
+                accept="image/jpeg,image/jpg,image/png"
+                className="hidden"
+                onChange={handleProfilePictureChange}
+                disabled={uploadingPicture}
+              />
+              {uploadingPicture ? (
+                <div className="w-5 h-5 border-2 border-dswd-blue border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Upload className="w-5 h-5 text-dswd-blue" />
+              )}
+            </label>
           </div>
           <div className="flex-1">
             <h2 className="text-2xl font-bold text-slate-900">
               {beneficiary?.first_name} {beneficiary?.middle_name} {beneficiary?.last_name}
             </h2>
-            <p className="text-slate-600">{beneficiary?.category}</p>
-            <div className="mt-4 flex items-center gap-2">
+            <p className="text-slate-600 text-sm">{beneficiary?.category}</p>
+            
+            {/* Beneficiary ID and RFID */}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
               <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
                 beneficiary?.status === 'Approved' ? 'bg-green-100 text-green-700' :
                 beneficiary?.status === 'Under Review' ? 'bg-yellow-100 text-yellow-700' :
@@ -52,6 +142,24 @@ export default function BeneficiaryProfilePage() {
               }`}>
                 {beneficiary?.status}
               </span>
+              
+              {beneficiary?.beneficiary_id_code && (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full">
+                  <IdCard className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="text-xs font-bold text-blue-700 font-mono">
+                    {beneficiary.beneficiary_id_code}
+                  </span>
+                </div>
+              )}
+              
+              {beneficiary?.RFID_number && (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-purple-50 border border-purple-200 rounded-full">
+                  <CreditCard className="w-3.5 h-3.5 text-purple-600" />
+                  <span className="text-xs font-bold text-purple-700 font-mono">
+                    {beneficiary.RFID_number}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -108,7 +216,11 @@ export default function BeneficiaryProfilePage() {
               <MapPin className="w-5 h-5 text-slate-400" />
               <div>
                 <p className="text-slate-500">Address</p>
-                <p className="font-semibold">{beneficiary?.address || 'Not provided'}</p>
+                <p className="font-semibold">
+                  {beneficiary?.sitio ? `${beneficiary.sitio}, ` : ''}
+                  {beneficiary?.Barangay?.barangay_name ? `Barangay ${beneficiary.Barangay.barangay_name}, ` : ''}
+                  Bongabong, Oriental Mindoro
+                </p>
               </div>
             </div>
           </div>

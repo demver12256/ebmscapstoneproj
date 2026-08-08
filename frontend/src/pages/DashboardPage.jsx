@@ -198,10 +198,10 @@ export default function DashboardPage() {
       return;
     }
 
-    const allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
+    const allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
     const extension = file.name.split('.').pop().toLowerCase();
     if (!allowedExtensions.includes(extension)) {
-      setError('Invalid file type. Only PDF, JPG, JPEG, and PNG are allowed.');
+      setError('Invalid file type. Only PDF, Word (DOC/DOCX), JPG, JPEG, and PNG are allowed.');
       return;
     }
 
@@ -728,6 +728,7 @@ export default function DashboardPage() {
                           <label className="cursor-pointer block text-center border-2 border-dashed border-slate-300 hover:border-dswd-lightBlue rounded-xl p-4 bg-white transition hover:shadow-inner">
                             <input
                               type="file"
+                              accept="application/pdf,.pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx,image/jpeg,image/jpg,image/png,.jpg,.jpeg,.png"
                               className="hidden"
                               onChange={(e) => handleFileUpload(e, reqDoc.name)}
                               disabled={uploadingDoc === reqDoc.name}

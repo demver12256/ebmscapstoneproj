@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users } from 'lucide-react';
+import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users, RefreshCw } from 'lucide-react';
 import { attendanceApi, distributionApi } from '../services/api';
 import * as XLSX from 'xlsx';
 
@@ -13,30 +13,37 @@ export default function RfidScannerPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const rfidInputRef = useRef(null);
 
+  const fetchDistributionEvents = async () => {
+    try {
+      console.log('Fetching distribution events...');
+      setRefreshing(true);
+      // Load all events first, then filter for scheduled/ongoing
+      const res = await distributionApi.listEvents();
+      console.log('API Response:', res.data);
+      const allEvents = res.data.data || [];
+      console.log('All events:', allEvents);
+      
+      // Filter events that are scheduled or ongoing
+      const availableEvents = allEvents.filter(
+        event => event.status === 'scheduled' || event.status === 'ongoing'
+      );
+      console.log('Available events (scheduled/ongoing):', availableEvents);
+      
+      setDistributionEvents(availableEvents);
+      setSuccess('Events refreshed successfully');
+      setTimeout(() => setSuccess(null), 2000);
+    } catch (err) {
+      console.error('Failed to load distribution events:', err);
+      setError('Failed to load distribution events');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchDistributionEvents = async () => {
-      try {
-        console.log('Fetching distribution events...');
-        // Load all events first, then filter for scheduled/ongoing
-        const res = await distributionApi.listEvents();
-        console.log('API Response:', res.data);
-        const allEvents = res.data.data || [];
-        console.log('All events:', allEvents);
-        
-        // Filter events that are scheduled or ongoing
-        const availableEvents = allEvents.filter(
-          event => event.status === 'scheduled' || event.status === 'ongoing'
-        );
-        console.log('Available events (scheduled/ongoing):', availableEvents);
-        
-        setDistributionEvents(availableEvents);
-      } catch (err) {
-        console.error('Failed to load distribution events:', err);
-        setError('Failed to load distribution events');
-      }
-    };
     fetchDistributionEvents();
   }, []);
 
@@ -142,8 +149,22 @@ export default function RfidScannerPage() {
     try {
       const rfidNumber = rfidInput.trim();
       const now = new Date();
-      const attendanceDate = now.toISOString().split('T')[0];
-      const timeIn = now.toTimeString().split(' ')[0];
+      const distributionDate = now.toISOString().split('T')[0];
+      const releaseTime = now.toTimeString().split(' ')[0];
+
+      // Verify event status is 'ongoing' before attempting release
+      const selectedEventData = distributionEvents.find(e => e.id === Number(selectedEvent));
+      if (!selectedEventData) {
+        setError('Selected event not found. Please refresh and try again.');
+        setLoading(false);
+        return;
+      }
+
+      if (selectedEventData.status !== 'ongoing') {
+        setError(`❌ Distribution session is not active (Status: ${selectedEventData.status}). Please ask the admin to start the session first.`);
+        setLoading(false);
+        return;
+      }
 
       // Find beneficiary by RFID number from qualified list
       const beneficiary = qualifiedBeneficiaries.find((b) => b.RFID_number === rfidNumber);
@@ -160,11 +181,11 @@ export default function RfidScannerPage() {
 
       // Check for duplicate scan in today's records
       const isDuplicate = scannedRecords.some(
-        (r) => r.rfid === rfidNumber && r.date === attendanceDate
+        (r) => r.rfid === rfidNumber && r.date === distributionDate
       );
 
       if (isDuplicate) {
-        setError(`${beneficiary.first_name} ${beneficiary.last_name} already scanned for this event today`);
+        setError(`${beneficiary.first_name} ${beneficiary.last_name} already claimed benefits for this event`);
         setRfidInput('');
         setTimeout(() => {
           if (rfidInputRef.current) rfidInputRef.current.focus();
@@ -173,17 +194,31 @@ export default function RfidScannerPage() {
         return;
       }
 
-      // Create attendance record
-      await attendanceApi.create({
-        beneficiary_id: beneficiary.id,
-        RFID_number: rfidNumber,
-        event_name: eventName,
-        attendance_date: attendanceDate,
-        time_in: timeIn,
-        remarks: 'On time'
+      // Get the transaction for this beneficiary
+      const txnRes = await distributionApi.getTransactions(selectedEvent);
+      const transactions = txnRes.data.data || [];
+      const transaction = transactions.find(txn => 
+        txn.beneficiary_id === beneficiary.id && txn.status === 'pending'
+      );
+
+      if (!transaction) {
+        setError(`No pending transaction found for ${beneficiary.first_name} ${beneficiary.last_name}`);
+        setRfidInput('');
+        setTimeout(() => {
+          if (rfidInputRef.current) rfidInputRef.current.focus();
+        }, 100);
+        setLoading(false);
+        return;
+      }
+
+      // Release the benefit via distribution API
+      await distributionApi.releaseBenefit(selectedEvent, transaction.id, {
+        verification_method: 'rfid',
+        signature_data: 'RFID_VERIFIED', // Required by backend - mark as RFID verified
+        notes: `Released via RFID scan at ${releaseTime}`
       });
 
-      setSuccess(`✓ ${beneficiary.first_name} ${beneficiary.last_name} - Attendance recorded!`);
+      setSuccess(`✅ ${beneficiary.first_name} ${beneficiary.last_name} - Benefit released! Amount: ₱${parseFloat(transaction.amount).toLocaleString()}`);
       setScannedRecords([
         {
           id: Date.now(),
@@ -191,9 +226,10 @@ export default function RfidScannerPage() {
           name: `${beneficiary.first_name} ${beneficiary.last_name}`,
           beneficiary_id_code: beneficiary.beneficiary_id_code,
           category: beneficiary.category,
-          time: timeIn,
-          date: attendanceDate,
-          status: 'recorded'
+          amount: transaction.amount,
+          time: releaseTime,
+          date: distributionDate,
+          status: 'released'
         },
         ...scannedRecords
       ]);
@@ -206,7 +242,35 @@ export default function RfidScannerPage() {
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       console.error('Error:', err);
-      setError(err.message || 'Failed to record attendance');
+      
+      // Handle different error types
+      if (err.response) {
+        // Server responded with error status
+        const status = err.response.status;
+        const message = err.response.data?.message || err.message;
+        const errorCode = err.response.data?.error_code;
+        
+        if (errorCode === 'SESSION_NOT_ACTIVE') {
+          // Session not active - needs to be started
+          setError(`❌ ${message} - Please ask the admin to start the distribution session first, then click the Refresh button.`);
+        } else if (status === 409 || errorCode === 'ALREADY_RELEASED') {
+          // Conflict - duplicate release
+          setError(`⚠️ Already claimed: ${message}`);
+        } else if (status === 404) {
+          // Not found - invalid RFID
+          setError(`❌ RFID not found: ${message}`);
+        } else {
+          setError(`Error: ${message}`);
+        }
+      } else if (err.request) {
+        // Request made but no response
+        setError('❌ Network error: Cannot connect to server');
+      } else {
+        // Other errors
+        setError(err.message || 'Failed to record attendance');
+      }
+      
+      setTimeout(() => setError(null), 5000);
     } finally {
       setLoading(false);
     }
@@ -215,14 +279,24 @@ export default function RfidScannerPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-3 bg-blue-100 rounded-lg">
-          <Smartphone className="w-6 h-6 text-blue-600" />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-blue-100 rounded-lg">
+            <Smartphone className="w-6 h-6 text-blue-600" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">RFID Distribution Scanner</h1>
+            <p className="text-sm text-slate-600 mt-1">Tap RFID cards to verify and release benefits for distribution events.</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">RFID Attendance Scanner</h1>
-          <p className="text-sm text-slate-600 mt-1">Tap RFID cards to record attendance for events and programs.</p>
-        </div>
+        <button
+          onClick={fetchDistributionEvents}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors"
+        >
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Refreshing...' : 'Refresh Events'}
+        </button>
       </div>
 
       {/* Scanner Setup */}
@@ -263,7 +337,7 @@ export default function RfidScannerPage() {
               <option value="">-- Choose a distribution event --</option>
               {distributionEvents.map((event) => (
                 <option key={event.id} value={event.id}>
-                  {event.title} - {event.Program?.name || 'N/A'} ({new Date(event.scheduled_date).toLocaleDateString()})
+                  {event.Program?.eligibility_category || event.Program?.category} - {event.Program?.name || 'N/A'} ({event.distribution_date ? new Date(event.distribution_date).toLocaleDateString() : 'No date set'})
                 </option>
               ))}
             </select>
@@ -286,13 +360,43 @@ export default function RfidScannerPage() {
 
         {/* Qualified Beneficiaries Count */}
         {selectedEvent && (
-          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 flex items-start gap-3">
-            <Users className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-700">
-              <p className="font-medium">Qualified Beneficiaries: {qualifiedBeneficiaries.length}</p>
-              <p>Only enrolled beneficiaries with pending status can be scanned for this event.</p>
+          <>
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 flex items-start gap-3">
+              <Users className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-blue-700">
+                <p className="font-medium">Qualified Beneficiaries: {qualifiedBeneficiaries.length}</p>
+                <p>Only enrolled beneficiaries with pending status can be scanned for this event.</p>
+              </div>
             </div>
-          </div>
+            
+            {/* Event Status Indicator */}
+            {(() => {
+              const currentEvent = distributionEvents.find(e => e.id === Number(selectedEvent));
+              if (!currentEvent) return null;
+              
+              const statusColors = {
+                scheduled: 'bg-yellow-50 border-yellow-200 text-yellow-700',
+                ongoing: 'bg-green-50 border-green-200 text-green-700',
+                completed: 'bg-gray-50 border-gray-200 text-gray-700'
+              };
+              
+              const statusMessages = {
+                scheduled: '⏸️ Session not started - Ask admin to start the session before scanning',
+                ongoing: '✅ Session active - Ready to scan RFID cards',
+                completed: '✓ Session completed - No more scans allowed'
+              };
+              
+              return (
+                <div className={`rounded-lg border p-4 flex items-start gap-3 ${statusColors[currentEvent.status] || statusColors.scheduled}`}>
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium">Event Status: {currentEvent.status.toUpperCase()}</p>
+                    <p>{statusMessages[currentEvent.status] || 'Unknown status'}</p>
+                  </div>
+                </div>
+              );
+            })()}
+          </>
         )}
       </div>
 

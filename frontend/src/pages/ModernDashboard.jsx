@@ -4,10 +4,27 @@ import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Cart
 import { dashboardApi, beneficiaryApi, announcementApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { 
-  Users, TrendingUp, DollarSign, FileText, 
+  Users, TrendingUp, FileText, 
   Clock, CheckCircle, XCircle, Calendar,
   Activity, Award, Target, Zap, ArrowRight, Megaphone, Smartphone, MapPin
 } from 'lucide-react';
+
+const PesoIcon = ({ className = "w-6 h-6" }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M6 3h6a5 5 0 0 1 0 10H6V3z" />
+    <path d="M6 13v8" />
+    <path d="M4 7.5h11" />
+    <path d="M4 11.5h11" />
+  </svg>
+);
 
 export default function ModernDashboard() {
   const { user } = useAuth();
@@ -104,10 +121,10 @@ export default function ModernDashboard() {
     },
     {
       title: 'Total Distributed',
-      value: `₱${(totalDistributedFunds / 1000).toFixed(1)}k`,
+      value: `₱${Number(totalDistributedFunds || 0).toLocaleString('en-PH', { maximumFractionDigits: 2 })}`,
       change: distributionTrend.value,
       trend: distributionTrend.isPositive ? 'up' : 'down',
-      icon: DollarSign,
+      icon: PesoIcon,
       gradient: 'from-green-500 to-green-600',
       iconBg: 'bg-green-100',
       iconColor: 'text-green-600',
@@ -236,7 +253,7 @@ export default function ModernDashboard() {
       </div>
 
       {/* UPCOMING ANNOUNCEMENTS & ACTIVITY FACILITATION WIDGET */}
-      {announcements.length > 0 && (
+      {user?.role !== 'admin' && announcements.length > 0 && (
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-dswd-blue text-white rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -382,7 +399,7 @@ export default function ModernDashboard() {
               <YAxis 
                 stroke="#64748B"
                 style={{ fontSize: '12px', fontWeight: '500' }}
-                tickFormatter={(value) => `₱${(value / 1000).toFixed(0)}k`}
+                tickFormatter={(value) => `₱${Number(value).toLocaleString()}`}
               />
               <Tooltip content={<CustomTooltip />} />
               <Area 
@@ -494,7 +511,7 @@ export default function ModernDashboard() {
           
           <div className="space-y-3">
             {[
-              { label: 'New Distribution', icon: DollarSign, path: '/dashboard/distributions' },
+              { label: 'New Distribution', icon: PesoIcon, path: '/dashboard/distributions' },
               { label: 'Review Applications', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' },
               { label: 'Manage Programs', icon: Target, path: '/dashboard/programs' },
               { label: 'View Reports', icon: FileText, path: '/dashboard/reports' }

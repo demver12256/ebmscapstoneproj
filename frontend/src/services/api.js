@@ -13,14 +13,28 @@ const apiClient = axios.create({
 export const setAuthToken = (token) => {
   if (token) {
     apiClient.defaults.headers.common.Authorization = `Bearer ${token}`;
+    console.log('Auth token set for API calls');
   } else {
     delete apiClient.defaults.headers.common.Authorization;
+    console.log('Auth token removed');
   }
 };
 
+// Initialize token from localStorage on app start
+const storedToken = localStorage.getItem('ebms_token');
+if (storedToken) {
+  setAuthToken(storedToken);
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => Promise.reject(error.response?.data || error.message)
+  (error) => {
+    // Preserve the full error structure for better error handling
+    if (error.response) {
+      return Promise.reject(error);
+    }
+    return Promise.reject(error);
+  }
 );
 
 export const authApi = {
@@ -36,9 +50,17 @@ export const dashboardApi = {
 export const reportsApi = {
   summary: () => apiClient.get('/reports/summary'),
   beneficiariesByProgram: () => apiClient.get('/reports/beneficiaries-by-program'),
-  recentDistributions: () => apiClient.get('/reports/recent-distributions'),
+  recentDistributions: (params) => apiClient.get('/reports/recent-distributions', { params }),
   distributionStatus: () => apiClient.get('/reports/distribution-status'),
   monthlyAid: () => apiClient.get('/reports/monthly-aid'),
+  getDistributionDetail: (id) => apiClient.get(`/reports/distribution/${id}`),
+  getTableBeneficiaries: (params) => apiClient.get('/reports/table/beneficiaries', { params }),
+  getTablePrograms: (params) => apiClient.get('/reports/table/programs', { params }),
+  getTableEnrollments: (params) => apiClient.get('/reports/table/enrollments', { params }),
+  exportBeneficiaries: (params) => apiClient.get('/reports/export/beneficiaries', { params, responseType: 'blob' }),
+  exportDistributions: (params) => apiClient.get('/reports/export/distributions', { params, responseType: 'blob' }),
+  exportPrograms: (params) => apiClient.get('/reports/export/programs', { params, responseType: 'blob' }),
+  exportEnrollments: (params) => apiClient.get('/reports/export/enrollments', { params, responseType: 'blob' }),
 };
 
 export const barangayApi = {
@@ -52,6 +74,12 @@ export const beneficiaryApi = {
   updateMe: (data) => apiClient.put('/beneficiaries/me', data),
   update: (id, data) => apiClient.put(`/beneficiaries/${id}`, data),
   uploadDocument: (formData) => apiClient.post('/beneficiaries/me/documents', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  reuploadDocument: (id, formData) => apiClient.put(`/beneficiaries/me/documents/${id}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  uploadProfilePicture: (formData) => apiClient.post('/beneficiaries/me/profile-picture', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
   deleteDocument: (id) => apiClient.delete(`/beneficiaries/me/documents/${id}`),
@@ -71,6 +99,7 @@ export const programApi = {
   toggleStatus: (id) => apiClient.patch(`/programs/${id}/status`),
   getEnrolledBeneficiaries: (id) => apiClient.get(`/programs/${id}/beneficiaries`),
   enrollBeneficiaries: (id, data) => apiClient.post(`/programs/${id}/enroll`, data),
+  autoEnrollBeneficiaries: (id) => apiClient.post(`/programs/${id}/auto-enroll`),
 };
 
 export const attendanceApi = {

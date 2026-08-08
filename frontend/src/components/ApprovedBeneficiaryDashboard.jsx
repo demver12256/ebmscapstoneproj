@@ -1,8 +1,25 @@
-import { Calendar, MapPin, Copy, Bell, FileText, CheckCircle2, Clock, DollarSign, Users, AlertTriangle, Megaphone, Check } from 'lucide-react';
+import { Calendar, MapPin, Copy, Bell, FileText, CheckCircle2, Clock, Users, AlertTriangle, Megaphone, Check } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { announcementApi } from '../services/api';
 import { Link } from 'react-router-dom';
+
+const PesoIcon = ({ className = "w-4 h-4" }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M6 3h6a5 5 0 0 1 0 10H6V3z" />
+    <path d="M6 13v8" />
+    <path d="M4 7.5h11" />
+    <path d="M4 11.5h11" />
+  </svg>
+);
 
 export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const [copied, setCopied] = useState(false);
@@ -49,7 +66,7 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const distributionsCount = beneficiary?.DistributionTransactions
     ?.filter(txn => txn.status === 'released')?.length || 0;
 
-  const enrolledProgram = beneficiary?.Enrollments?.[0]?.BenefitProgram;
+  const enrolledPrograms = beneficiary?.Enrollments?.filter(e => e.status === 'active').map(e => e.BenefitProgram) || [];
 
   const unreadAnnouncements = announcements.filter(a => !a.is_read);
 
@@ -209,13 +226,20 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
             <FileText className="w-5 h-5 text-amber-600" />
             <p className="text-sm font-semibold text-amber-900">Enrolled Program</p>
           </div>
-          {enrolledProgram ? (
-            <>
-              <h4 className="text-sm font-bold text-amber-900 leading-tight">{enrolledProgram.name}</h4>
-              <button className="mt-3 text-xs font-semibold text-amber-700 hover:text-amber-800 transition">
-                View Program Details
-              </button>
-            </>
+          {enrolledPrograms && enrolledPrograms.length > 0 ? (
+            <div className="space-y-2">
+              {enrolledPrograms.slice(0, 2).map((program, idx) => (
+                <div key={idx} className="bg-white rounded-lg p-3 border border-amber-200">
+                  <h4 className="text-sm font-bold text-amber-900 leading-tight line-clamp-2">{program.name}</h4>
+                  <p className="text-xs text-amber-700 mt-1">{program.eligibility_category || program.category}</p>
+                </div>
+              ))}
+              {enrolledPrograms.length > 2 && (
+                <p className="text-xs text-amber-700 font-semibold mt-2">
+                  +{enrolledPrograms.length - 2} more program(s)
+                </p>
+              )}
+            </div>
           ) : (
             <p className="text-xs text-amber-700">No program enrollment yet</p>
           )}
@@ -284,7 +308,7 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                         <span className="font-semibold">{upcomingDistribution.Event?.venue || 'TBA'}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4" />
+                        <PesoIcon className="w-4 h-4" />
                         <span>Amount:</span>
                         <span className="font-semibold text-green-600">
                           ₱{parseFloat(upcomingDistribution.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}

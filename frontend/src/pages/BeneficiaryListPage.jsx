@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { X, Users, Clock, Eye, CheckCircle2, AlertTriangle, FileCheck, ShieldAlert } from 'lucide-react';
+import { X, Users, Clock, Eye, CheckCircle2, AlertTriangle, FileCheck, ShieldAlert, Download } from 'lucide-react';
 import Table from '../components/ui/Table';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -37,8 +37,8 @@ export default function BeneficiaryListPage() {
 
   const CATEGORIES = [
     '4Ps Household Beneficiary',
-    'Senior Citizen (Social Pension)',
-    'Person with Disability (PWD)'
+    'Senior Citizens (Social Pension)',
+    'Persons with Disabilities (PWD)'
   ];
 
   const getBackendUrl = () => {
@@ -285,14 +285,7 @@ export default function BeneficiaryListPage() {
 
   const filteredBeneficiaries = beneficiaries.filter((b) => {
     const barangayMatch = !selectedBarangayId || b.barangay_id === Number(selectedBarangayId);
-    
-    let categoryMatch = true;
-    if (selectedCategory) {
-      const cleanSel = selectedCategory.replace('ies', '').replace('s', '').toLowerCase();
-      const cleanB = b.category ? b.category.replace('ies', '').replace('s', '').toLowerCase() : '';
-      categoryMatch = cleanB.includes(cleanSel) || cleanSel.includes(cleanB);
-    }
-
+    const categoryMatch = !selectedCategory || b.category === selectedCategory;
     const ipMatch = !selectedIpClassification || b.ip_classification === selectedIpClassification;
     return barangayMatch && categoryMatch && ipMatch;
   });
@@ -715,7 +708,11 @@ export default function BeneficiaryListPage() {
                     </div>
                     <div className="grid grid-cols-3">
                       <span className="text-slate-400 font-medium">Address:</span>
-                      <span className="col-span-2 font-semibold text-slate-800 text-xs">{selectedApp.address || '—'}</span>
+                      <span className="col-span-2 font-semibold text-slate-800 text-xs">
+                        {selectedApp.sitio ? `${selectedApp.sitio}, ` : ''}
+                        {selectedApp.Barangay?.barangay_name ? `Barangay ${selectedApp.Barangay.barangay_name}, ` : ''}
+                        Bongabong, Oriental Mindoro
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -802,15 +799,24 @@ export default function BeneficiaryListPage() {
                             <span className="text-[10px] text-slate-400 font-bold uppercase">{req.required ? 'Required' : 'Optional'}</span>
                           </div>
                           {file ? (
-                            <button
-                              onClick={() => {
-                                const cleanPath = (file.file_path || '').replace(/\\/g, '/').replace(/^\/+/, '');
-                                setPreviewUrl(`${backendUrl}/${cleanPath}`);
-                              }}
-                              className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1 shrink-0"
-                            >
-                              <Eye className="w-3.5 h-3.5" /> Preview Inline
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => {
+                                  const cleanPath = (file.file_path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+                                  setPreviewUrl(`${backendUrl}/${cleanPath}`);
+                                }}
+                                className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> Preview
+                              </button>
+                              <a
+                                href={`${backendUrl}/${(file.file_path || '').replace(/\\/g, '/').replace(/^\/+/, '')}`}
+                                download
+                                className="text-xs text-emerald-600 font-bold hover:underline flex items-center gap-1"
+                              >
+                                <Download className="w-3.5 h-3.5" /> Download
+                              </a>
+                            </div>
                           ) : (
                             <span className="text-xs text-red-600 font-bold">❌ Missing</span>
                           )}
