@@ -66,6 +66,14 @@ router.post('/register-beneficiary', async (req, res, next) => {
       status: 'active'
     });
 
+    let stdCategory = category || 'Persons with Disabilities (PWD)';
+    if (category) {
+      const lower = category.toLowerCase();
+      if (lower.includes('4ps')) stdCategory = '4Ps Household Beneficiaries';
+      else if (lower.includes('senior')) stdCategory = 'Senior Citizens (Social Pension)';
+      else if (lower.includes('pwd') || lower.includes('disabil')) stdCategory = 'Persons with Disabilities (PWD)';
+    }
+
     // Create corresponding Beneficiary record
     const beneficiary = await Beneficiary.create({
       user_id: user.id,
@@ -74,7 +82,7 @@ router.post('/register-beneficiary', async (req, res, next) => {
       sex: sex || 'Other',
       birthdate: birthdate || '2000-01-01',
       barangay_id,
-      category: category || 'Non-IP',
+      category: stdCategory,
       ip_classification: ip_classification || 'Non-IP',
       contact_number,
       sitio: sitio || '',

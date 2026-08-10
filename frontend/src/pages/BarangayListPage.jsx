@@ -91,17 +91,15 @@ export default function BarangayListPage() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-green-100 rounded-lg">
-            <MapPin className="w-6 h-6 text-green-600" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Barangays</h1>
-            <p className="text-sm text-slate-600 mt-1">Overview of beneficiary distribution across barangays.</p>
-          </div>
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center gap-2">
+          <MapPin className="w-8 h-8 text-yellow-300" />
+          <h1 className="text-3xl font-black tracking-tight">Barangay Directory & Demographics</h1>
         </div>
+        <p className="text-blue-100 text-sm mt-1 max-w-2xl">
+          Overview of municipal beneficiary distribution, 4Ps households, senior citizens, PWDs, and IP classifications across barangays.
+        </p>
       </div>
 
       {error && (

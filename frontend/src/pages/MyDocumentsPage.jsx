@@ -200,27 +200,26 @@ export default function MyDocumentsPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header with Breadcrumb */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-sm text-slate-600 mb-2">
-            <span>Dashboard</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-slate-900 font-medium">My Documents</span>
+          <div className="flex items-center gap-2">
+            <FileText className="w-8 h-8 text-yellow-300" />
+            <h1 className="text-3xl font-black tracking-tight">My Documents</h1>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">My Documents</h1>
-          <p className="text-slate-600 text-sm mt-1">
+          <p className="text-blue-100 text-sm mt-1 max-w-2xl">
             View and manage all documents you have uploaded for your assistance applications.
           </p>
         </div>
         <button
           onClick={() => document.getElementById('file-upload-input').click()}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition"
+          className="flex items-center gap-2 px-4 py-2.5 bg-yellow-400 text-slate-950 font-black rounded-xl hover:bg-yellow-300 transition shadow-md self-start md:self-auto"
         >
-          <Upload className="w-4 h-4" />
+          <Upload className="w-4 h-4 stroke-[2.5]" />
           Upload New Document
         </button>
+      </div>
         <input
           id="file-upload-input"
           type="file"
@@ -229,7 +228,6 @@ export default function MyDocumentsPage() {
           className="hidden"
           disabled={uploading}
         />
-      </div>
 
       {/* Alerts */}
       {error && (

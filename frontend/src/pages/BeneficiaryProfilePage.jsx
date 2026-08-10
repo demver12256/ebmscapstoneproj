@@ -82,9 +82,15 @@ export default function BeneficiaryProfilePage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900">My Profile</h1>
-        <p className="text-slate-600">View and manage your beneficiary profile information</p>
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center gap-2">
+          <User className="w-8 h-8 text-yellow-300" />
+          <h1 className="text-3xl font-black tracking-tight">My Profile</h1>
+        </div>
+        <p className="text-blue-100 text-sm mt-1 max-w-2xl">
+          View and manage your beneficiary profile information and uploaded avatar.
+        </p>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">

@@ -2,7 +2,7 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
-const { BenefitProgram, Enrollment, Beneficiary, Barangay, DistributionEvent, DistributionTransaction, AuditLog } = require('../db');
+const { BenefitProgram, Enrollment, Beneficiary, Barangay, DistributionEvent, DistributionTransaction, AuditLog, Notification } = require('../db');
 
 const router = express.Router();
 router.use(authenticate);
@@ -45,9 +45,20 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (r
       where.barangay_id = req.user.barangay_id;
       where.status = 'active';
     } else {
-      // Staff / Barangay — only active programs for their barangay
-      where.barangay_id = req.user.barangay_id;
-      where.status = 'active';
+      // Staff / Barangay — scoped to their assigned barangay, or all programs if unassigned/general
+      const staffBrgyId = req.user.barangay_id;
+      if (staffBrgyId) {
+        where[Op.or] = [
+          { barangay_id: staffBrgyId },
+          { barangay_id: String(staffBrgyId) },
+          { barangay_id: Number(staffBrgyId) },
+          { barangay_id: null },
+          { barangay_id: 0 }
+        ];
+      }
+      if (req.query.status) {
+        where.status = req.query.status;
+      }
     }
 
     const programs = await BenefitProgram.findAll({
@@ -147,14 +158,34 @@ router.post('/:id/auto-enroll', authorize('admin', 'staff'), async (req, res, ne
     const whereClause = {
       status: 'Approved',
       barangay_id: program.barangay_id,
-      id: { [Op.notIn]: alreadyEnrolledIds.length > 0 ? alreadyEnrolledIds : [0] } // Exclude already enrolled
+      id: { [Op.notIn]: alreadyEnrolledIds.length > 0 ? alreadyEnrolledIds : [0] }
     };
 
-    // If program has eligibility_category, filter by matching category
+    // If program has eligibility_category, filter by category using flexible matching
+    // Handles synonyms like "Person with Disability (PWD)" vs "Persons with Disabilities (PWD)"
     if (program.eligibility_category) {
-      whereClause.category = {
-        [Op.like]: `%${program.eligibility_category}%`
-      };
+      const cat = program.eligibility_category;
+      const isPwd = cat.toLowerCase().includes('pwd') || cat.toLowerCase().includes('disabilit');
+      const isSenior = cat.toLowerCase().includes('senior');
+      const is4ps = cat.toLowerCase().includes('4ps') || cat.toLowerCase().includes('4p');
+
+      if (isPwd) {
+        // Match any PWD-related category
+        whereClause.category = {
+          [Op.or]: [
+            { [Op.like]: '%PWD%' },
+            { [Op.like]: '%Disabilit%' },
+            { [Op.like]: '%Person with Disability%' },
+            { [Op.like]: '%Persons with Disabilities%' }
+          ]
+        };
+      } else if (isSenior) {
+        whereClause.category = { [Op.like]: '%Senior%' };
+      } else if (is4ps) {
+        whereClause.category = { [Op.like]: '%4Ps%' };
+      } else {
+        whereClause.category = { [Op.like]: `%${cat}%` };
+      }
     }
 
     // Find all eligible beneficiaries not yet enrolled
@@ -183,6 +214,40 @@ router.post('/:id/auto-enroll', authorize('admin', 'staff'), async (req, res, ne
     }));
 
     const enrollments = await Enrollment.bulkCreate(enrollmentData);
+
+    // Sync beneficiary categories to match program eligibility_category if applicable
+    if (program.eligibility_category) {
+      let stdCat = program.eligibility_category;
+      const lower = stdCat.toLowerCase();
+      if (lower.includes('4ps')) stdCat = '4Ps Household Beneficiaries';
+      else if (lower.includes('senior')) stdCat = 'Senior Citizens (Social Pension)';
+      else if (lower.includes('pwd') || lower.includes('disabil')) stdCat = 'Persons with Disabilities (PWD)';
+
+      await Beneficiary.update(
+        { category: stdCat },
+        { where: { id: eligibleBeneficiaries.map(b => b.id) } }
+      );
+    }
+
+    // Create notifications for enrolled beneficiaries who have a user account
+    const beneficiariesWithUsers = await Beneficiary.findAll({
+      where: { id: eligibleBeneficiaries.map(b => b.id) },
+      attributes: ['id', 'user_id']
+    });
+
+    const notificationPromises = beneficiariesWithUsers
+      .filter(b => b.user_id)
+      .map(b => Notification.create({
+        user_id: b.user_id,
+        title: 'Program Enrollment Confirmation',
+        message: `You have been officially enrolled in the program "${program.name}". Category: ${program.eligibility_category || 'General'}. Check your benefits dashboard for upcoming distributions and details.`,
+        type: 'program',
+        reference_id: program.id,
+        reference_type: 'BenefitProgram',
+        is_read: false,
+      }));
+
+    await Promise.all(notificationPromises);
 
     // Log auto-enrollment action
     await AuditLog.create({
@@ -332,6 +397,35 @@ router.post('/:id/enroll', authorize('admin', 'staff'), async (req, res, next) =
 
     const createdEnrollments = await Enrollment.bulkCreate(enrollmentData);
 
+    // Sync beneficiary categories to match program eligibility_category if applicable
+    if (program.eligibility_category && newBeneficiaryIds.length > 0) {
+      let stdCat = program.eligibility_category;
+      const lower = stdCat.toLowerCase();
+      if (lower.includes('4ps')) stdCat = '4Ps Household Beneficiaries';
+      else if (lower.includes('senior')) stdCat = 'Senior Citizens (Social Pension)';
+      else if (lower.includes('pwd') || lower.includes('disabil')) stdCat = 'Persons with Disabilities (PWD)';
+
+      await Beneficiary.update(
+        { category: stdCat },
+        { where: { id: newBeneficiaryIds } }
+      );
+    }
+
+    // Create notifications for enrolled beneficiaries who have a user account
+    const notificationPromises = beneficiaries
+      .filter(b => b.user_id)
+      .map(b => Notification.create({
+        user_id: b.user_id,
+        title: 'Program Enrollment Confirmation',
+        message: `You have been officially enrolled in the program "${program.name}". Category: ${program.eligibility_category || 'General'}. Check your benefits dashboard for upcoming distributions and details.`,
+        type: 'program',
+        reference_id: program.id,
+        reference_type: 'BenefitProgram',
+        is_read: false,
+      }));
+
+    await Promise.all(notificationPromises);
+
     // Log the action
     await AuditLog.create({
       user_id: req.user.id,
@@ -376,11 +470,29 @@ router.post('/', authorize('admin'), async (req, res, next) => {
         barangay_id: program.barangay_id
       };
 
-      // If program has eligibility_category, filter by matching category
+      // Flexible category matching — handles PWD synonyms
       if (program.eligibility_category) {
-        whereClause.category = {
-          [Op.like]: `%${program.eligibility_category}%`
-        };
+        const cat = program.eligibility_category;
+        const isPwd = cat.toLowerCase().includes('pwd') || cat.toLowerCase().includes('disabilit');
+        const isSenior = cat.toLowerCase().includes('senior');
+        const is4ps = cat.toLowerCase().includes('4ps') || cat.toLowerCase().includes('4p');
+
+        if (isPwd) {
+          whereClause.category = {
+            [Op.or]: [
+              { [Op.like]: '%PWD%' },
+              { [Op.like]: '%Disabilit%' },
+              { [Op.like]: '%Person with Disability%' },
+              { [Op.like]: '%Persons with Disabilities%' }
+            ]
+          };
+        } else if (isSenior) {
+          whereClause.category = { [Op.like]: '%Senior%' };
+        } else if (is4ps) {
+          whereClause.category = { [Op.like]: '%4Ps%' };
+        } else {
+          whereClause.category = { [Op.like]: `%${cat}%` };
+        }
       }
 
       // Find all eligible beneficiaries
@@ -429,8 +541,8 @@ router.post('/', authorize('admin'), async (req, res, next) => {
   }
 });
 
-// ── PUT /:id ── Edit a program (Admin only)
-router.put('/:id', authorize('admin'), async (req, res, next) => {
+// ── PUT /:id ── Edit/Archive a program (Admin, Staff, Barangay)
+router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const program = await BenefitProgram.findByPk(req.params.id);
     if (!program) {

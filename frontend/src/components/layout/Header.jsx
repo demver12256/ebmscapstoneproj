@@ -1,8 +1,37 @@
 import { useAuth } from '../../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { Search, Bell, Moon, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { notificationApi } from '../../services/api';
 
 export default function Header() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    // Fetch unread notification count
+    const fetchUnreadCount = async () => {
+      try {
+        const res = await notificationApi.unreadCount();
+        setUnreadCount(res.data?.data?.count || 0);
+      } catch (err) {
+        console.error('Failed to fetch unread count:', err);
+      }
+    };
+
+    if (user) {
+      fetchUnreadCount();
+      const handleUpdate = () => fetchUnreadCount();
+      window.addEventListener('notificationsUpdated', handleUpdate);
+      // Poll every 30 seconds for updates
+      const interval = setInterval(fetchUnreadCount, 30000);
+      return () => {
+        window.removeEventListener('notificationsUpdated', handleUpdate);
+        clearInterval(interval);
+      };
+    }
+  }, [user]);
 
   // Generate initials for avatar
   const getInitials = () => {
@@ -42,11 +71,16 @@ export default function Header() {
       {/* Right Side Header Items */}
       <div className="flex items-center gap-5 ml-auto">
         {/* Notifications Icon with count badge */}
-        <button className="relative p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 transition">
+        <button 
+          onClick={() => navigate('/dashboard/notifications')}
+          className="relative p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 transition"
+        >
           <Bell className="h-5 w-5" />
-          <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-dswd-red text-[9px] font-bold text-white shadow-sm ring-2 ring-white">
-            3
-          </span>
+          {unreadCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-dswd-red text-[9px] font-bold text-white shadow-sm ring-2 ring-white">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
         </button>
 
         {/* Dark Mode Moon Icon */}

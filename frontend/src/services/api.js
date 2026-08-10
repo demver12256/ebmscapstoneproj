@@ -175,6 +175,14 @@ export const announcementApi = {
   scanRfid: (id, data) => apiClient.post(`/announcements/${id}/scan-rfid`, data),
   getAttendanceStats: (id) => apiClient.get(`/announcements/${id}/attendance-stats`),
   exportAttendanceReport: (id) => apiClient.get(`/announcements/${id}/export`),
+  completeActivity: (id) => apiClient.post(`/announcements/${id}/complete`),
+};
+
+export const notificationApi = {
+  list: () => apiClient.get('/notifications'),
+  unreadCount: () => apiClient.get('/notifications/unread-count'),
+  markAsRead: (id) => apiClient.patch(`/notifications/${id}/read`),
+  markAllAsRead: () => apiClient.patch('/notifications/mark-all-read'),
 };
 
 export default apiClient;

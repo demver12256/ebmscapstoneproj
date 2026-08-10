@@ -18,6 +18,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: true,
       },
+      end_time: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
       venue: {
         type: DataTypes.STRING,
         allowNull: true,
@@ -28,7 +32,7 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 'Medium',
       },
       status: {
-        type: DataTypes.ENUM('draft', 'scheduled', 'published', 'archived'),
+        type: DataTypes.ENUM('draft', 'scheduled', 'published', 'completed', 'archived'),
         allowNull: false,
         defaultValue: 'published',
       },

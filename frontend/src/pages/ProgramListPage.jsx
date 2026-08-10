@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Table from '../components/ui/Table';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -100,17 +99,17 @@ const EMPTY_FORM = {
   name: '',
   description: '',
   category: '',
-  barangay_id: '',
+  barangay_ids: [], // array for multiple select
+  barangay_id: '',  // used for edit (single)
   total_budget: '',
   allocated_budget: '',
   start_date: '',
   end_date: '',
-  status: 'draft',
+  status: 'active',
 };
 
 export default function ProgramListPage() {
   const { user, token } = useAuth();
-  const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
   const [programs, setPrograms] = useState([]);
   const [barangays, setBarangays] = useState([]);
@@ -136,7 +135,7 @@ export default function ProgramListPage() {
   const [filterStatus, setFilterStatus] = useState('');
   
   // View mode: 'active' or 'archived'
-  const [viewMode, setViewMode] = useState('active');
+  const [viewMode] = useState('active');
   
   // Archived Programs Modal
   const [showArchivedModal, setShowArchivedModal] = useState(false);
@@ -144,7 +143,7 @@ export default function ProgramListPage() {
   const [loadingArchived, setLoadingArchived] = useState(false);
 
   // Find barangay name for non-admin header label
-  const userBarangayName = barangays.find(b => b.id === user?.barangay_id)?.barangay_name || '';
+  const userBarangayName = user?.Barangay?.barangay_name || barangays.find(b => Number(b.id) === Number(user?.barangay_id))?.barangay_name || '';
 
   // Helper to safely get program options for any category variation
   const getProgramOptions = (category) => {
@@ -172,14 +171,37 @@ export default function ProgramListPage() {
     try {
       const params = {};
       
-      if (isAdmin) {
-        if (filterBarangay) params.barangay_id = filterBarangay;
-        if (filterStatus) params.status = filterStatus;
-      }
+      if (isAdmin && filterBarangay) params.barangay_id = filterBarangay;
+      if (filterStatus) params.status = filterStatus;
 
       const programsResponse = await programApi.list(params);
       // Filter out archived programs from main list
-      const activePrograms = (programsResponse.data.data || []).filter(p => p.status !== 'archived');
+      let activePrograms = (programsResponse.data.data || []).filter(p => p.status !== 'archived');
+
+      // AUTO-ARCHIVE: automatically archive programs whose end_date has passed
+      if (isAdmin) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const toArchive = activePrograms.filter(p => {
+          if (!p.end_date) return false;
+          const endDate = new Date(p.end_date);
+          endDate.setHours(0, 0, 0, 0);
+          return endDate < today && p.status !== 'archived' && p.status !== 'completed';
+        });
+        for (const p of toArchive) {
+          try {
+            await programApi.update(p.id, { ...p, status: 'archived', eligibility_category: p.eligibility_category || p.category });
+          } catch (e) {
+            console.error('Auto-archive failed for program', p.id, e);
+          }
+        }
+        if (toArchive.length > 0) {
+          // Re-fetch after auto-archiving
+          const refreshed = await programApi.list(params);
+          activePrograms = (refreshed.data.data || []).filter(p => p.status !== 'archived');
+        }
+      }
+
       setPrograms(activePrograms);
     } catch (err) {
       setError(getErrorMessage(err, 'Unable to load programs'));
@@ -189,7 +211,7 @@ export default function ProgramListPage() {
   };
 
   const loadBarangays = async () => {
-    if (!token || !isAdmin) return;
+    if (!token) return;
 
     try {
       const barangaysResponse = await barangayApi.list();
@@ -202,10 +224,11 @@ export default function ProgramListPage() {
   useEffect(() => {
     loadBarangays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, isAdmin]);
+  }, [token]);
 
   useEffect(() => {
     loadPrograms();
+    loadArchivedPrograms();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, filterBarangay, filterStatus]);
 
@@ -245,6 +268,7 @@ export default function ProgramListPage() {
       description: program.description || '',
       category: program.eligibility_category || program.category || '',
       barangay_id: program.barangay_id || '',
+      barangay_ids: program.barangay_id ? [String(program.barangay_id)] : [],
       total_budget: program.total_budget || '',
       allocated_budget: program.allocated_budget || '',
       start_date: program.start_date || '',
@@ -255,33 +279,77 @@ export default function ProgramListPage() {
     setShowModal(true);
   };
 
+  // Toggle barangay selection
+  const toggleBarangay = (brgyId) => {
+    setForm(prev => {
+      const id = String(brgyId);
+      const current = prev.barangay_ids.map(String);
+      const updated = current.includes(id)
+        ? current.filter(b => b !== id)
+        : [...current, id];
+      return { ...prev, barangay_ids: updated, barangay_id: updated[0] || '' };
+    });
+  };
+
+  // Select/deselect all barangays
+  const toggleAllBarangays = () => {
+    setForm(prev => {
+      const allIds = barangays.map(b => String(b.id));
+      const allSelected = allIds.every(id => prev.barangay_ids.map(String).includes(id));
+      const updated = allSelected ? [] : allIds;
+      return { ...prev, barangay_ids: updated, barangay_id: updated[0] || '' };
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError(null);
     setSubmitting(true);
     try {
-      const payload = {
-        name: form.name,
-        description: form.description,
-        eligibility_category: form.category,
-        barangay_id: Number(form.barangay_id),
-        total_budget: Number(form.total_budget) || 0,
-        allocated_budget: Number(form.allocated_budget) || 0,
-        start_date: form.start_date,
-        end_date: form.end_date,
-        status: form.status,
-      };
-
       if (editingProgram) {
+        // Edit: single barangay (barangay_ids[0] or barangay_id)
+        const barangayId = form.barangay_ids.length > 0 ? Number(form.barangay_ids[0]) : Number(form.barangay_id);
+        const payload = {
+          name: form.name,
+          description: form.description,
+          eligibility_category: form.category,
+          barangay_id: barangayId,
+          total_budget: Number(form.total_budget) || 0,
+          allocated_budget: Number(form.allocated_budget) || 0,
+          start_date: form.start_date,
+          end_date: form.end_date,
+          status: form.status,
+        };
         await programApi.update(editingProgram.id, payload);
         setSuccess('Program updated successfully!');
       } else {
-        const res = await programApi.create(payload);
-        const autoEnrolled = res.data?.auto_enrolled_count || 0;
-        if (autoEnrolled > 0) {
-          setSuccess(`Program created successfully! ${autoEnrolled} eligible beneficiary(ies) automatically enrolled.`);
+        // Create: one program per selected barangay
+        if (form.barangay_ids.length === 0) {
+          setFormError('Please select at least one barangay.');
+          setSubmitting(false);
+          return;
+        }
+        let totalAutoEnrolled = 0;
+        for (const bId of form.barangay_ids) {
+          const payload = {
+            name: form.name,
+            description: form.description,
+            eligibility_category: form.category,
+            barangay_id: Number(bId),
+            total_budget: Number(form.total_budget) || 0,
+            allocated_budget: Number(form.allocated_budget) || 0,
+            start_date: form.start_date,
+            end_date: form.end_date,
+            status: form.status,
+          };
+          const res = await programApi.create(payload);
+          totalAutoEnrolled += res.data?.auto_enrolled_count || 0;
+        }
+        const count = form.barangay_ids.length;
+        if (totalAutoEnrolled > 0) {
+          setSuccess(`${count} program(s) created! ${totalAutoEnrolled} eligible beneficiary(ies) automatically enrolled.`);
         } else {
-          setSuccess('Program created successfully!');
+          setSuccess(`${count} program(s) created successfully across ${count} barangay(s)!`);
         }
       }
       setShowModal(false);
@@ -382,6 +450,7 @@ export default function ProgramListPage() {
       await programApi.update(program.id, { ...program, status: 'archived' });
       setError(null);
       await loadPrograms();
+      await loadArchivedPrograms();
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to archive program'));
     }
@@ -462,71 +531,97 @@ export default function ProgramListPage() {
       }`}>{row.status}</span>
     )},
     { header: 'Duration', accessor: 'start_date', cell: (row) => `${row.start_date || '—'} - ${row.end_date || '—'}` },
-    ...(isAdmin ? [{
+    {
       header: 'Actions',
       accessor: 'id',
       cell: (row) => (
         <div className="flex items-center gap-1">
+          {/* View Enrolled — visible to ALL users (admin and staff) */}
           <button
             onClick={() => handleViewDetails(row)}
             className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition"
-            title="View Details"
+            title="View Enrolled Beneficiaries"
           >
-            <Eye className="w-4 h-4" />
+            <Users className="w-4 h-4 text-blue-600" />
           </button>
-          <button
-            onClick={() => openEditModal(row)}
-            className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition"
-            title="Edit Program"
-          >
-            <Edit2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => handleToggleStatus(row)}
-            className={`p-1.5 rounded-lg transition ${
-              row.status === 'active'
-                ? 'text-orange-600 hover:bg-orange-50'
-                : 'text-emerald-600 hover:bg-emerald-50'
-            }`}
-            title={row.status === 'active' ? 'Deactivate' : 'Activate'}
-          >
-            {row.status === 'active' ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-          </button>
+
+          {/* Archive Program — visible to ALL users (admin and staff) */}
           <button
             onClick={() => handleArchive(row)}
-            className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition"
+            className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition"
             title="Archive Program"
           >
-            <Archive className="w-4 h-4" />
+            <Archive className="w-4 h-4 text-purple-600" />
           </button>
+
+          {/* Admin-only actions */}
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => openEditModal(row)}
+                className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition"
+                title="Edit Program"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleToggleStatus(row)}
+                className={`p-1.5 rounded-lg transition ${
+                  row.status === 'active'
+                    ? 'text-orange-600 hover:bg-orange-50'
+                    : 'text-emerald-600 hover:bg-emerald-50'
+                }`}
+                title={row.status === 'active' ? 'Deactivate' : 'Activate'}
+              >
+                {row.status === 'active' ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={() => setDeleteConfirm(row)}
+                className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition"
+                title="Delete Program"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       ),
-    }] : []),
+    },
   ];
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-purple-100 rounded-lg">
-            <Briefcase className="w-6 h-6 text-purple-600" />
+      {/* Header Banner */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Briefcase className="w-8 h-8 text-yellow-300" />
+            <h1 className="text-3xl font-black tracking-tight">Benefit Programs Module</h1>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Programs</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              {isAdmin
-                ? 'Create and manage benefit programs for LGU/MSWD operations.'
-                : `Showing programs assigned to Barangay ${userBarangayName || 'your barangay'}.`}
-            </p>
-          </div>
+          <p className="text-blue-100 text-sm max-w-2xl">
+            {isAdmin
+              ? 'Create and manage municipal benefit programs, set eligibility categories, and oversee assistance allocations.'
+              : `Showing programs assigned to ${userBarangayName ? `Barangay ${userBarangayName}` : 'your assigned barangay'}.`}
+          </p>
         </div>
-        {isAdmin && (
-          <Button onClick={openCreateModal} className="gap-2 bg-purple-600 hover:bg-purple-700 whitespace-nowrap">
-            <Plus className="h-4 w-4" />
-            Create Program
-          </Button>
-        )}
+        <div className="flex items-center gap-3 flex-wrap">
+          {isAdmin && (
+            <button
+              onClick={openCreateModal}
+              className="flex items-center gap-2.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95 text-sm"
+            >
+              <Plus className="w-5 h-5 stroke-[3]" />
+              Create Program
+            </button>
+          )}
+          <button
+            onClick={openArchivedModal}
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-3 rounded-xl shadow transition border border-white/20 text-sm"
+          >
+            <Archive className="w-5 h-5 text-purple-300" />
+            <span>Archived ({archivedPrograms.length})</span>
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -631,16 +726,6 @@ export default function ProgramListPage() {
         ) : (
           <>
             <Table columns={columns} data={programs} />
-            {/* View Archived Programs Button */}
-            <div className="px-4 py-3 border-t-2 border-slate-200 bg-slate-50">
-              <button
-                onClick={openArchivedModal}
-                className="text-sm font-semibold text-slate-700 hover:text-purple-600 transition-colors flex items-center gap-2"
-              >
-                <Archive className="w-4 h-4" />
-                View Archived Programs
-              </button>
-            </div>
           </>
         )}
       </div>
@@ -765,23 +850,75 @@ export default function ProgramListPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Target Barangay <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="barangay_id"
-                  value={form.barangay_id}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-                  required
-                >
-                  <option value="">Select Barangay</option>
-                  {barangays.map((brgy) => (
-                    <option key={brgy.id} value={brgy.id}>{brgy.barangay_name}</option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Target Barangay <span className="text-red-500">*</span>
+                    {form.barangay_ids.length > 0 && (
+                      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                        {form.barangay_ids.length} selected
+                      </span>
+                    )}
+                  </label>
+                  {!editingProgram && (
+                    <button
+                      type="button"
+                      onClick={toggleAllBarangays}
+                      className="text-xs text-purple-600 hover:text-purple-800 font-medium transition"
+                    >
+                      {barangays.length > 0 && barangays.every(b => form.barangay_ids.map(String).includes(String(b.id)))
+                        ? 'Deselect All'
+                        : 'Select All'
+                      }
+                    </button>
+                  )}
+                </div>
+                <div className="w-full rounded-lg border border-slate-300 bg-white overflow-hidden">
+                  {editingProgram ? (
+                    // Edit mode: single select (keep existing behavior)
+                    <select
+                      value={form.barangay_ids[0] || ''}
+                      onChange={(e) => setForm(prev => ({ ...prev, barangay_ids: [e.target.value], barangay_id: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500"
+                      required
+                    >
+                      <option value="">Select Barangay</option>
+                      {barangays.map((brgy) => (
+                        <option key={brgy.id} value={brgy.id}>{brgy.barangay_name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    // Create mode: checkbox multi-select
+                    <div className="max-h-44 overflow-y-auto divide-y divide-slate-100">
+                      {barangays.map((brgy) => {
+                        const isChecked = form.barangay_ids.map(String).includes(String(brgy.id));
+                        return (
+                          <label
+                            key={brgy.id}
+                            className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer transition hover:bg-purple-50 ${
+                              isChecked ? 'bg-purple-50' : 'bg-white'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleBarangay(brgy.id)}
+                              className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                            />
+                            <span className={`text-sm select-none ${
+                              isChecked ? 'text-purple-800 font-medium' : 'text-slate-700'
+                            }`}>
+                              {brgy.barangay_name}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  This program will only be visible to staff and beneficiaries of the selected barangay.
+                  {editingProgram
+                    ? 'Update the barangay this program is assigned to.'
+                    : 'A separate program record will be created for each selected barangay.'}
                 </p>
               </div>
 
@@ -819,8 +956,8 @@ export default function ProgramListPage() {
                   <option value="draft">Draft</option>
                   <option value="active">Active</option>
                   <option value="completed">Completed</option>
-                  <option value="archived">Archived</option>
                 </select>
+                <p className="text-xs text-slate-400 mt-1">⚠️ Programs are automatically archived when their end date has passed.</p>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
@@ -1106,7 +1243,7 @@ export default function ProgramListPage() {
                         <th className="px-4 py-3 text-left font-semibold text-slate-700">Category</th>
                         <th className="px-4 py-3 text-left font-semibold text-slate-700">Duration</th>
                         <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
-                        {isAdmin && <th className="px-4 py-3 text-left font-semibold text-slate-700">Actions</th>}
+                        <th className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -1130,26 +1267,24 @@ export default function ProgramListPage() {
                               archived
                             </span>
                           </td>
-                          {isAdmin && (
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => handleViewDetails(program)}
-                                  className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition"
-                                  title="View Details"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleUnarchive(program)}
-                                  className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition"
-                                  title="Unarchive Program"
-                                >
-                                  <ArchiveRestore className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          )}
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => handleViewDetails(program)}
+                                className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition"
+                                title="View Details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleUnarchive(program)}
+                                className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition"
+                                title="Unarchive Program"
+                              >
+                                <ArchiveRestore className="w-4 h-4 text-emerald-600" />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

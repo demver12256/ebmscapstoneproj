@@ -154,21 +154,24 @@ export default function UserListPage() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-indigo-100 rounded-lg">
-            <Users className="w-6 h-6 text-indigo-600" />
+      {/* Header Banner */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Users className="w-8 h-8 text-yellow-300" />
+            <h1 className="text-3xl font-black tracking-tight">{pageTitle}</h1>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">{pageTitle}</h1>
-            <p className="text-sm text-slate-600 mt-1">{pageDescription}</p>
-          </div>
+          <p className="text-blue-100 text-sm max-w-2xl">{pageDescription}</p>
         </div>
-        <Button onClick={() => setShowModal(true)} className="gap-2 bg-indigo-600 hover:bg-indigo-700 whitespace-nowrap">
-          <UserPlus className="h-4 w-4" />
-          Create Account
-        </Button>
+        <div>
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95 text-sm"
+          >
+            <UserPlus className="w-5 h-5 stroke-[3]" />
+            Create Account
+          </button>
+        </div>
       </div>
 
       {error && (

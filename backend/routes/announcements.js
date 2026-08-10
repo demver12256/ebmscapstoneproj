@@ -38,8 +38,8 @@ async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsI
     }
   });
 
-  // If program IDs were passed, resolve their category strings
-  if (programIds.length > 0) {
+  // Only resolve categories from program IDs if NO direct string categories were provided
+  if (categories.length === 0 && programIds.length > 0) {
     const progs = await BenefitProgram.findAll({
       where: { id: programIds },
       attributes: ['eligibility_category', 'category'],
@@ -63,7 +63,7 @@ async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsI
     return [];
   }
 
-  // Build category match filters
+  // Build category match filters strictly based on selected category names
   const categoryConditions = [];
   categories.forEach(cat => {
     const norm = String(cat).toLowerCase();
@@ -113,6 +113,25 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
     announcement.target_barangays
   );
 
+  const matchingBeneficiaryIds = matchingBeneficiaries.map(b => b.id);
+  const matchingUserIds = matchingBeneficiaries.map(b => b.user_id).filter(Boolean);
+
+  // Clean up any old recipient links & in-app notifications for beneficiaries who no longer match
+  await AnnouncementRecipient.destroy({
+    where: {
+      announcement_id: announcement.id,
+      beneficiary_id: { [Op.notIn]: matchingBeneficiaryIds.length > 0 ? matchingBeneficiaryIds : [0] },
+    },
+  });
+
+  await Notification.destroy({
+    where: {
+      reference_id: announcement.id,
+      reference_type: 'announcement',
+      user_id: { [Op.notIn]: matchingUserIds.length > 0 ? matchingUserIds : [0] },
+    },
+  });
+
   if (matchingBeneficiaries.length === 0) {
     await announcement.update({ recipient_count: 0 });
   } else {
@@ -132,11 +151,14 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
         sms_sent: !!b.contact_number,
       });
 
+      const formattedTime = `${announcement.event_time || ''}${announcement.end_time ? ` - ${announcement.end_time}` : ''}`.trim();
+      const schedText = announcement.event_date ? `Date: ${announcement.event_date}${formattedTime ? ` at ${formattedTime}` : ''}` : '';
+
       inAppNotifications.push({
         user_id: b.user_id,
         title: announcement.title,
-        message: announcement.message,
-        type: 'program',
+        message: `${announcement.message}${schedText ? `\n\n📅 ${schedText}` : ''}${announcement.venue ? `\n📍 Venue: ${announcement.venue}` : ''}`,
+        type: 'announcement',
         reference_id: announcement.id,
         reference_type: 'announcement',
         is_read: false,
@@ -146,7 +168,7 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
         smsNotifications.push({
           beneficiary_id: b.id,
           phone_number: b.contact_number,
-          message: `[EBMS ANNOUNCEMENT] ${announcement.title}: ${announcement.message.substring(0, 120)}... Date: ${announcement.event_date || 'N/A'} ${announcement.event_time || ''}`,
+          message: `[EBMS ANNOUNCEMENT] ${announcement.title}: ${announcement.message.substring(0, 90)}... ${schedText}`,
           status: 'sent',
           sent_at: new Date(),
         });
@@ -176,16 +198,15 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
     await announcement.update({ recipient_count: recipientCount });
   }
 
-  // NOTIFY ASSIGNED BARANGAY STAFF
+  // NOTIFY ONLY ASSIGNED BARANGAY STAFF (NOT ADMIN)
   const targetBarangayIds = (Array.isArray(announcement.target_barangays) ? announcement.target_barangays : [announcement.target_barangays]).map(Number).filter(Boolean);
+  
+  // Only notify barangay staff assigned to the target barangays - EXCLUDE admin role
   const staffUsers = await User.findAll({
     where: {
-      role: { [Op.in]: ['staff', 'barangay'] },
+      role: { [Op.in]: ['staff', 'barangay'] }, // Exclude 'admin' role
       status: 'active',
-      [Op.or]: [
-        { barangay_id: { [Op.in]: targetBarangayIds } },
-        { barangay_id: null }, // system staff
-      ],
+      barangay_id: { [Op.in]: targetBarangayIds }, // Only staff assigned to target barangays
     },
   });
 
@@ -226,14 +247,217 @@ router.get('/preview-count', authorize('admin', 'staff', 'barangay'), async (req
   }
 });
 
+function parseDateTime(dateStr, timeStr) {
+  if (!dateStr) return null;
+  let hours = 23;
+  let minutes = 59;
+
+  if (timeStr) {
+    const timeMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+    if (timeMatch) {
+      let h = parseInt(timeMatch[1], 10);
+      const m = parseInt(timeMatch[2], 10);
+      const ampm = timeMatch[3] ? timeMatch[3].toUpperCase() : null;
+      if (ampm === 'PM' && h < 12) h += 12;
+      if (ampm === 'AM' && h === 12) h = 0;
+      hours = h;
+      minutes = m;
+    }
+  }
+
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day, hours, minutes, 59);
+}
+
+async function autoCompleteExpiredAnnouncements() {
+  try {
+    const publishedAnnouncements = await Announcement.findAll({
+      where: { status: 'published' },
+    });
+
+    const now = new Date();
+
+    for (const ann of publishedAnnouncements) {
+
+      const timeToCheck = ann.end_time || ann.event_time;
+      const expireTime = parseDateTime(ann.event_date, timeToCheck);
+
+      if (expireTime && now > expireTime) {
+        console.log(`⏰ Auto-completing expired announcement ID ${ann.id}: "${ann.title}"`);
+
+        const [absentCount] = await AnnouncementRecipient.update(
+          { attendance_status: 'Absent' },
+          {
+            where: {
+              announcement_id: ann.id,
+              attendance_status: 'Pending',
+            },
+          }
+        );
+
+        const absentRecipients = await AnnouncementRecipient.findAll({
+          where: {
+            announcement_id: ann.id,
+            attendance_status: 'Absent',
+          },
+          include: [
+            {
+              model: Beneficiary,
+              as: 'Beneficiary',
+              include: [
+                { model: User, attributes: ['id', 'email', 'contact_number'] },
+                { model: Barangay, attributes: ['barangay_name'] },
+              ],
+            },
+          ],
+        });
+
+        const inAppNotifications = [];
+        const smsNotifications = [];
+
+        for (const recipient of absentRecipients) {
+          const b = recipient.Beneficiary;
+          if (!b || !b.User) continue;
+
+          inAppNotifications.push({
+            user_id: b.User.id,
+            title: `Absent: ${ann.title}`,
+            message: `You were marked absent for "${ann.title}" held on ${ann.event_date || 'N/A'}. Please contact the municipal office for more information.`,
+            type: 'program',
+            reference_id: ann.id,
+            reference_type: 'announcement_absence',
+            is_read: false,
+          });
+
+          if (b.contact_number) {
+            smsNotifications.push({
+              beneficiary_id: b.id,
+              phone_number: b.contact_number,
+              message: `[EBMS] You were marked ABSENT for "${ann.title}" on ${ann.event_date || 'today'}. Please contact DSWD for details.`,
+              status: 'sent',
+              sent_at: new Date(),
+            });
+          }
+        }
+
+        if (inAppNotifications.length > 0) {
+          await Notification.bulkCreate(inAppNotifications, { ignoreDuplicates: true });
+        }
+        if (smsNotifications.length > 0) {
+          await SMSNotification.bulkCreate(smsNotifications, { ignoreDuplicates: true });
+        }
+
+        await ann.update({ status: 'completed' });
+
+        await AuditLog.create({
+          user_id: ann.created_by_user_id || 1,
+          action: `AUTO_COMPLETED_ACTIVITY: "${ann.title}" - Marked ${absentCount} beneficiaries as absent`,
+          module: 'Announcements',
+          timestamp: new Date(),
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error in autoCompleteExpiredAnnouncements:', err);
+  }
+}
+
 // ── GET / ── List announcements
 router.get('/', async (req, res, next) => {
   try {
+    await autoCompleteExpiredAnnouncements();
     if (req.user.role === 'beneficiary') {
       // Find beneficiary record
-      const beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id } });
+      let beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id } });
       if (!beneficiary) {
         return res.json({ success: true, data: [] });
+      }
+
+      // Sync category from active enrollment if available
+      try {
+        const activeEnrollment = await Enrollment.findOne({
+          where: { beneficiary_id: beneficiary.id, status: 'active' },
+          include: [{ model: BenefitProgram }],
+          order: [['created_at', 'DESC']],
+        });
+
+        if (activeEnrollment && activeEnrollment.BenefitProgram) {
+          const prog = activeEnrollment.BenefitProgram;
+          const progCat = prog.eligibility_category || prog.category;
+          if (progCat) {
+            let stdCat = progCat;
+            const lower = progCat.toLowerCase();
+            if (lower.includes('4ps')) stdCat = '4Ps Household Beneficiaries';
+            else if (lower.includes('senior')) stdCat = 'Senior Citizens (Social Pension)';
+            else if (lower.includes('pwd') || lower.includes('disabil')) stdCat = 'Persons with Disabilities (PWD)';
+
+            if (beneficiary.category !== stdCat) {
+              await beneficiary.update({ category: stdCat });
+              beneficiary.category = stdCat;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error syncing beneficiary category:', e);
+      }
+
+      // Auto-link any published announcements targeting this beneficiary's barangay/category
+      const publishedAnnouncements = await Announcement.findAll({
+        where: { status: 'published' },
+      });
+
+      for (const ann of publishedAnnouncements) {
+        let targetBarangays = [];
+        if (typeof ann.target_barangays === 'string') {
+          try { targetBarangays = JSON.parse(ann.target_barangays); } catch (e) { targetBarangays = [ann.target_barangays]; }
+        } else if (Array.isArray(ann.target_barangays)) {
+          targetBarangays = ann.target_barangays;
+        }
+        targetBarangays = targetBarangays.map(Number).filter(Boolean);
+
+        // Check category match
+        let targetPrograms = [];
+        if (typeof ann.target_programs === 'string') {
+          try { targetPrograms = JSON.parse(ann.target_programs); } catch (e) { targetPrograms = [ann.target_programs]; }
+        } else if (Array.isArray(ann.target_programs)) {
+          targetPrograms = ann.target_programs;
+        }
+
+        let matchesCategory = false;
+        if (targetPrograms.length === 0) {
+          matchesCategory = true;
+        } else {
+          const benCategory = (beneficiary.category || '').toLowerCase();
+          matchesCategory = targetPrograms.some(cat => {
+            const normCat = String(cat).toLowerCase();
+            if (normCat.includes('4ps')) return benCategory.includes('4ps');
+            if (normCat.includes('senior')) return benCategory.includes('senior');
+            if (normCat.includes('pwd') || normCat.includes('disabil')) return benCategory.includes('pwd') || benCategory.includes('disabil');
+            return benCategory.includes(normCat);
+          });
+        }
+
+        const matchesBarangay =
+          targetBarangays.length === 0 ||
+          (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
+
+        if (matchesBarangay && matchesCategory) {
+          await AnnouncementRecipient.findOrCreate({
+            where: {
+              announcement_id: ann.id,
+              beneficiary_id: beneficiary.id,
+            },
+            defaults: {
+              announcement_id: ann.id,
+              beneficiary_id: beneficiary.id,
+              user_id: req.user.id,
+              is_read: false,
+              attendance_status: 'Pending',
+              notification_sent: true,
+            },
+          });
+        }
       }
 
       // Get recipient links for this beneficiary
@@ -254,19 +478,73 @@ router.get('/', async (req, res, next) => {
         order: [['created_at', 'DESC']],
       });
 
-      const announcements = recipientLinks
-        .filter((r) => r.Announcement && r.Announcement.status === 'published')
-        .map((r) => {
+      const benCategory = (beneficiary.category || '').toLowerCase();
+      const validAnnouncements = [];
+      const invalidRecipientIds = [];
+      const invalidAnnouncementIds = [];
+
+      for (const r of recipientLinks) {
+        if (!r.Announcement || r.Announcement.status !== 'published') continue;
+
+        let targetBarangays = [];
+        if (typeof r.Announcement.target_barangays === 'string') {
+          try { targetBarangays = JSON.parse(r.Announcement.target_barangays); } catch (e) { targetBarangays = [r.Announcement.target_barangays]; }
+        } else if (Array.isArray(r.Announcement.target_barangays)) {
+          targetBarangays = r.Announcement.target_barangays;
+        }
+        targetBarangays = targetBarangays.map(Number).filter(Boolean);
+
+        let targetPrograms = [];
+        if (typeof r.Announcement.target_programs === 'string') {
+          try { targetPrograms = JSON.parse(r.Announcement.target_programs); } catch (e) { targetPrograms = [r.Announcement.target_programs]; }
+        } else if (Array.isArray(r.Announcement.target_programs)) {
+          targetPrograms = r.Announcement.target_programs;
+        }
+
+        const matchesBarangay =
+          targetBarangays.length === 0 ||
+          (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
+
+        let matchesCategory = false;
+        if (targetPrograms.length === 0) {
+          matchesCategory = true;
+        } else {
+          matchesCategory = targetPrograms.some(cat => {
+            const normCat = String(cat).toLowerCase();
+            if (normCat.includes('4ps')) return benCategory.includes('4ps');
+            if (normCat.includes('senior')) return benCategory.includes('senior');
+            if (normCat.includes('pwd') || normCat.includes('disabil')) return benCategory.includes('pwd') || benCategory.includes('disabil');
+            return benCategory.includes(normCat);
+          });
+        }
+
+        if (matchesBarangay && matchesCategory) {
           const plain = r.Announcement.toJSON();
           plain.is_read = r.is_read;
           plain.read_at = r.read_at;
           plain.attendance_status = r.attendance_status;
           plain.scanned_at = r.scanned_at;
           plain.recipient_id = r.id;
-          return plain;
-        });
+          validAnnouncements.push(plain);
+        } else {
+          invalidRecipientIds.push(r.id);
+          invalidAnnouncementIds.push(r.Announcement.id);
+        }
+      }
 
-      return res.json({ success: true, data: announcements });
+      // Cleanup any non-matching recipient links and in-app notifications
+      if (invalidRecipientIds.length > 0) {
+        await AnnouncementRecipient.destroy({ where: { id: invalidRecipientIds } });
+        await Notification.destroy({
+          where: {
+            user_id: req.user.id,
+            reference_type: 'announcement',
+            reference_id: invalidAnnouncementIds,
+          },
+        });
+      }
+
+      return res.json({ success: true, data: validAnnouncements });
     }
 
     // Admin & Staff view
@@ -392,6 +670,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       message,
       event_date,
       event_time,
+      end_time,
       venue,
       priority = 'Medium',
       status = 'published',
@@ -418,6 +697,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       message,
       event_date: event_date || null,
       event_time: event_time || null,
+      end_time: end_time || null,
       venue: venue || null,
       priority,
       status,
@@ -641,6 +921,107 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
   }
 });
 
+// ── POST /:id/complete ── Auto-complete activity and notify absent beneficiaries
+router.post('/:id/complete', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+  try {
+    const announcement = await Announcement.findByPk(req.params.id);
+    if (!announcement) {
+      return res.status(404).json({ success: false, message: 'Announcement not found' });
+    }
+
+    // Update all pending recipients to absent
+    const absentCount = await AnnouncementRecipient.update(
+      { attendance_status: 'Absent' },
+      { 
+        where: { 
+          announcement_id: announcement.id,
+          attendance_status: 'Pending'
+        } 
+      }
+    );
+
+    // Get all absent beneficiaries
+    const absentRecipients = await AnnouncementRecipient.findAll({
+      where: { 
+        announcement_id: announcement.id,
+        attendance_status: 'Absent'
+      },
+      include: [
+        {
+          model: Beneficiary,
+          as: 'Beneficiary',
+          include: [
+            { model: User, attributes: ['id', 'email', 'contact_number'] },
+            { model: Barangay, attributes: ['barangay_name'] }
+          ],
+        },
+      ],
+    });
+
+    // Send notifications to absent beneficiaries
+    const inAppNotifications = [];
+    const smsNotifications = [];
+
+    for (const recipient of absentRecipients) {
+      const b = recipient.Beneficiary;
+      if (!b || !b.User) continue;
+
+      // In-app notification
+      inAppNotifications.push({
+        user_id: b.User.id,
+        title: `Absent: ${announcement.title}`,
+        message: `You were marked absent for "${announcement.title}" held on ${announcement.event_date || 'N/A'}. Please contact the municipal office for more information.`,
+        type: 'program',
+        reference_id: announcement.id,
+        reference_type: 'announcement_absence',
+        is_read: false,
+      });
+
+      // SMS notification (if contact number available)
+      if (b.contact_number) {
+        smsNotifications.push({
+          beneficiary_id: b.id,
+          phone_number: b.contact_number,
+          message: `[EBMS] You were marked ABSENT for "${announcement.title}" on ${announcement.event_date || 'today'}. Please contact DSWD for details.`,
+          status: 'sent',
+          sent_at: new Date(),
+        });
+      }
+    }
+
+    // Bulk insert notifications
+    if (inAppNotifications.length > 0) {
+      await Notification.bulkCreate(inAppNotifications);
+    }
+    if (smsNotifications.length > 0) {
+      await SMSNotification.bulkCreate(smsNotifications);
+    }
+
+    // Update announcement status to completed
+    await announcement.update({ status: 'completed' });
+
+    // Log to audit trail
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: `COMPLETED_ACTIVITY: "${announcement.title}" - Marked ${absentCount[0]} beneficiaries as absent and sent ${inAppNotifications.length} notifications`,
+      module: 'Announcements',
+      timestamp: new Date(),
+    });
+
+    res.json({
+      success: true,
+      message: `Activity completed successfully. ${absentCount[0]} beneficiaries marked as absent and notified.`,
+      data: {
+        total_absent: absentRecipients.length,
+        notifications_sent: inAppNotifications.length,
+        sms_sent: smsNotifications.length,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ── GET /:id/export ── Export Full Attendance Report (JSON/CSV Dataset for PDF/Excel)
 router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
@@ -710,7 +1091,7 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
 });
 
 // ── PUT /:id ── Edit/Update announcement (Admin/Staff/Barangay)
-router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.put('/:id', authorize('admin'), async (req, res, next) => {
   try {
     const announcement = await Announcement.findByPk(req.params.id);
     if (!announcement) {
@@ -722,31 +1103,37 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
       message,
       event_date,
       event_time,
+      end_time,
       venue,
       priority,
       status,
       expiration_date,
       target_programs,
+      target_categories,
       target_barangays,
     } = req.body;
 
     const previousStatus = announcement.status;
+    const targetCatsOrProgs = target_categories || target_programs || announcement.target_programs;
 
     await announcement.update({
       title: title ?? announcement.title,
       message: message ?? announcement.message,
       event_date: event_date !== undefined ? event_date : announcement.event_date,
       event_time: event_time !== undefined ? event_time : announcement.event_time,
+      end_time: end_time !== undefined ? end_time : announcement.end_time,
       venue: venue !== undefined ? venue : announcement.venue,
       priority: priority ?? announcement.priority,
       status: status ?? announcement.status,
       expiration_date: expiration_date !== undefined ? expiration_date : announcement.expiration_date,
-      target_programs: target_programs ?? announcement.target_programs,
+      target_programs: targetCatsOrProgs,
       target_barangays: target_barangays ?? announcement.target_barangays,
     });
 
-    if (status === 'published' && previousStatus !== 'published') {
-      await announcement.update({ publish_date: new Date() });
+    if (announcement.status === 'published') {
+      if (previousStatus !== 'published') {
+        await announcement.update({ publish_date: new Date() });
+      }
       await dispatchAnnouncementNotifications(announcement, req.user.id);
     } else {
       await AuditLog.create({

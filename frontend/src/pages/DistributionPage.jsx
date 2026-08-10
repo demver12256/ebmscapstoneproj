@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { 
   Package, Plus, Calendar, MapPin, Users, DollarSign, 
   Eye, Edit, Trash2, CheckCircle, XCircle, Clock,
-  Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw
+  Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw, Archive
 } from 'lucide-react';
 import { distributionApi, programApi, barangayApi, userApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -65,33 +65,7 @@ export default function DistributionPage() {
     archived: { label: 'Archived', color: 'bg-gray-100 text-gray-500', icon: Square }
   };
 
-  // Load initial data
-  useEffect(() => {
-    loadEvents();
-    loadDashboardStats();
-    loadReferenceData();
-  }, []);
-
-  // Reload events when filters change
-  useEffect(() => {
-    loadEvents();
-  }, [statusFilter, barangayFilter]);
-
-  // Auto-refresh every 5 seconds if there are ongoing events
-  useEffect(() => {
-    const hasOngoingEvents = events.some(e => e.status === 'ongoing' || e.status === 'scheduled');
-    
-    if (hasOngoingEvents) {
-      const interval = setInterval(() => {
-        loadEvents();
-        loadDashboardStats();
-      }, 5000); // Refresh every 5 seconds
-      
-      return () => clearInterval(interval);
-    }
-  }, [events]);
-
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     setLoading(true);
     try {
       const params = {};
@@ -107,9 +81,9 @@ export default function DistributionPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, barangayFilter]);
 
-  const loadDashboardStats = async () => {
+  const loadDashboardStats = useCallback(async () => {
     try {
       const res = await distributionApi.getDashboardStats();
       setStats(res.data.data);
@@ -118,9 +92,9 @@ export default function DistributionPage() {
       console.error('Error response:', err.response?.data);
       // Don't show error to user for stats - it's not critical
     }
-  };
+  }, []);
 
-  const loadReferenceData = async () => {
+  const loadReferenceData = useCallback(async () => {
     try {
       const [programsRes, barangaysRes, usersRes] = await Promise.all([
         programApi.list(),
@@ -137,7 +111,32 @@ export default function DistributionPage() {
     } catch (err) {
       console.error('Failed to load reference data:', err);
     }
-  };
+  }, []);
+
+  // Load reference data on mount
+  useEffect(() => {
+    loadReferenceData();
+  }, [loadReferenceData]);
+
+  // Load events & dashboard stats when filters change or on mount
+  useEffect(() => {
+    loadEvents();
+    loadDashboardStats();
+  }, [loadEvents, loadDashboardStats]);
+
+  // Auto-refresh every 5 seconds if there are ongoing events
+  useEffect(() => {
+    const hasOngoingEvents = events.some(e => e.status === 'ongoing' || e.status === 'scheduled');
+    
+    if (hasOngoingEvents) {
+      const interval = setInterval(() => {
+        loadEvents();
+        loadDashboardStats();
+      }, 5000); // Refresh every 5 seconds
+      
+      return () => clearInterval(interval);
+    }
+  }, [events, loadEvents, loadDashboardStats]);
 
   // Handle program selection — auto-fill barangay & category from program data
   const handleProgramChange = async (programId) => {
@@ -525,12 +524,6 @@ export default function DistributionPage() {
     }
   };
 
-  useEffect(() => {
-    if (statusFilter || barangayFilter) {
-      loadEvents();
-    }
-  }, [statusFilter, barangayFilter]);
-
   // Pagination calculations
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
@@ -552,29 +545,27 @@ export default function DistributionPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-purple-100 rounded-lg">
-            <Package className="w-6 h-6 text-purple-600" />
+      {/* Header Banner */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Package className="w-8 h-8 text-yellow-300" />
+            <h1 className="text-3xl font-black tracking-tight">Distribution & Assistance Module</h1>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Distribution Management</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Create, manage, and monitor benefit distributions
-              {lastUpdated && (
-                <span className="ml-2 text-xs text-slate-500">
-                  • Last updated: {lastUpdated.toLocaleTimeString()}
-                </span>
-              )}
-            </p>
-          </div>
+          <p className="text-blue-100 text-sm max-w-xl">
+            Create, manage, and monitor benefit distributions and assistance events in real time.
+            {lastUpdated && (
+              <span className="ml-2 text-xs text-yellow-300 font-semibold">
+                • Updated: {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
           <button
             onClick={() => { loadEvents(); loadDashboardStats(); }}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded-lg transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-3.5 py-2.5 rounded-xl shadow transition border border-white/20 text-sm disabled:opacity-50"
             title="Refresh data"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -583,12 +574,23 @@ export default function DistributionPage() {
           {user?.role === 'admin' && (
             <button
               onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95 text-sm whitespace-nowrap"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 stroke-[3]" />
               Create Distribution
             </button>
           )}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'archived' ? 'all' : 'archived')}
+            className={`flex items-center gap-1.5 font-bold px-3.5 py-2.5 rounded-xl shadow transition text-sm whitespace-nowrap ${
+              statusFilter === 'archived'
+                ? 'bg-yellow-400 text-slate-950 border border-yellow-400'
+                : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
+            }`}
+          >
+            <Archive className="w-4 h-4 text-purple-300" />
+            <span>Archived ({events.filter(e => e.status === 'archived').length})</span>
+          </button>
         </div>
       </div>
 
@@ -975,9 +977,9 @@ export default function DistributionPage() {
                   required
                 >
                   <option value="">Select Program</option>
-                  {programs.filter(p => p.status !== 'archived').map((program) => (
+                  {programs.filter(p => p.status === 'active' || String(p.id) === String(formData.program_id)).map((program) => (
                     <option key={program.id} value={program.id}>
-                      {program.name} {program.eligibility_category ? `[${program.eligibility_category}]` : ''} — {program.status}
+                      {program.name} {program.eligibility_category ? `[${program.eligibility_category}]` : ''}
                     </option>
                   ))}
                 </select>

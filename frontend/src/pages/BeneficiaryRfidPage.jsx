@@ -151,15 +151,15 @@ export default function BeneficiaryRfidPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-3 bg-blue-100 rounded-lg">
-          <Smartphone className="w-6 h-6 text-blue-600" />
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center gap-2">
+          <Smartphone className="w-8 h-8 text-yellow-300" />
+          <h1 className="text-3xl font-black tracking-tight">RFID Registration</h1>
         </div>
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">RFID Registration</h1>
-          <p className="text-sm text-slate-600 mt-1">Assign RFID cards to beneficiaries for attendance tracking.</p>
-        </div>
+        <p className="text-blue-100 text-sm mt-1 max-w-2xl">
+          Assign RFID cards to beneficiaries for automated event attendance tracking and benefit releases.
+        </p>
       </div>
 
       {/* Beneficiaries Table */}

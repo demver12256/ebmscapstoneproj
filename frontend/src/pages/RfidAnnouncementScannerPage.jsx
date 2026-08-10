@@ -98,49 +98,92 @@ export default function RfidAnnouncementScannerPage() {
     }
   }, [selectedAnnouncement]);
 
-  const handleExportToExcel = () => {
-    if (scannedRecords.length === 0) {
-      setError('No records to export');
+  const handleExportToExcel = async () => {
+    if (!selectedAnnouncement) {
+      setError('Please select an announcement first');
       return;
     }
 
-    const selectedAnn = announcements.find((a) => a.id === Number(selectedAnnouncement));
-    const worksheetData = [
-      ['RFID Announcement Attendance Record'],
-      ['Announcement:', eventName],
-      ['Event Date:', selectedAnn?.event_date || 'N/A'],
-      ['Venue:', selectedAnn?.venue || 'N/A'],
-      ['Date Exported:', new Date().toLocaleDateString()],
-      ['Total Scanned:', scannedRecords.length],
-      [],
-      ['#', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Time Scanned', 'Status'],
-    ];
+    try {
+      // Fetch full attendance stats including absent beneficiaries
+      const res = await announcementApi.getAttendanceStats(selectedAnnouncement);
+      const data = res.data?.data;
+      
+      if (!data) {
+        setError('Failed to load attendance data');
+        return;
+      }
 
-    scannedRecords.forEach((record, index) => {
-      worksheetData.push([
-        index + 1,
-        record.rfid,
-        record.name,
-        record.beneficiary_id_code || 'N/A',
-        record.barangay || 'N/A',
-        record.category || 'N/A',
-        record.time,
-        record.status,
-      ]);
-    });
+      const selectedAnn = announcements.find((a) => a.id === Number(selectedAnnouncement));
+      const presentAttendees = data.present_attendees || [];
+      const absentAttendees = data.absent_attendees || [];
 
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance');
+      // Prepare Excel data
+      const worksheetData = [
+        ['RFID Announcement Attendance Record'],
+        ['Announcement:', eventName],
+        ['Event Date:', selectedAnn?.event_date || 'N/A'],
+        ['Venue:', selectedAnn?.venue || 'N/A'],
+        ['Date Exported:', new Date().toLocaleDateString()],
+        ['Total Expected:', data.stats?.total_expected || 0],
+        ['Total Present:', data.stats?.total_present || 0],
+        ['Total Absent:', data.stats?.total_absent || 0],
+        [],
+        ['PRESENT ATTENDEES'],
+        ['#', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Time Scanned'],
+      ];
 
-    const maxWidth = worksheetData.reduce((w, r) => Math.max(w, r.length), 10);
-    worksheet['!cols'] = Array(maxWidth).fill({ wch: 18 });
+      // Add present attendees
+      presentAttendees.forEach((att, index) => {
+        worksheetData.push([
+          index + 1,
+          att.Beneficiary?.RFID_number || 'N/A',
+          `${att.Beneficiary?.first_name || ''} ${att.Beneficiary?.last_name || ''}`.trim(),
+          att.Beneficiary?.beneficiary_id_code || 'N/A',
+          att.Beneficiary?.Barangay?.barangay_name || 'N/A',
+          att.Beneficiary?.category || 'N/A',
+          att.scanned_at ? new Date(att.scanned_at).toLocaleString() : 'N/A',
+        ]);
+      });
 
-    const fileName = `${eventName.replace(/\s+/g, '_')}_Attendance_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+      // Add separator and absent section
+      worksheetData.push([]);
+      worksheetData.push(['ABSENT BENEFICIARIES']);
+      worksheetData.push(['#', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Contact Number']);
 
-    setSuccess('Excel file exported successfully!');
-    setTimeout(() => setSuccess(null), 3000);
+      // Add absent beneficiaries
+      absentAttendees.forEach((att, index) => {
+        worksheetData.push([
+          index + 1,
+          att.Beneficiary?.RFID_number || 'N/A',
+          `${att.Beneficiary?.first_name || ''} ${att.Beneficiary?.last_name || ''}`.trim(),
+          att.Beneficiary?.beneficiary_id_code || 'N/A',
+          att.Beneficiary?.Barangay?.barangay_name || 'N/A',
+          att.Beneficiary?.category || 'N/A',
+          att.Beneficiary?.contact_number || 'N/A',
+        ]);
+      });
+
+      // Create worksheet and workbook
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance');
+
+      // Auto-size columns
+      const maxWidth = worksheetData.reduce((w, r) => Math.max(w, r.length), 10);
+      worksheet['!cols'] = Array(maxWidth).fill({ wch: 18 });
+
+      // Download file
+      const fileName = `${eventName.replace(/\s+/g, '_')}_Attendance_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      setSuccess('Excel file exported successfully with absent beneficiaries list!');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      console.error('Failed to export attendance:', err);
+      setError('Failed to export attendance data');
+      setTimeout(() => setError(null), 3000);
+    }
   };
 
   const handleScan = async (e) => {

@@ -9,7 +9,6 @@ import {
   Clock,
   MapPin,
   Users,
-  Eye,
   RefreshCw,
   Edit3,
   Trash2,
@@ -17,7 +16,6 @@ import {
   AlertCircle,
   X,
   Send,
-  FileText,
   BarChart2,
   BellRing,
   CheckSquare,
@@ -26,6 +24,8 @@ import {
   Download,
   Smartphone,
   Check,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react';
 import { announcementApi, programApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -35,6 +35,31 @@ const TARGET_CATEGORIES = [
   'Senior Citizens (Social Pension)',
   'Persons with Disabilities (PWD)',
 ];
+
+const calculatePriorityFromDate = (dateStr) => {
+  if (!dateStr) return 'Medium';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) return 'Medium';
+
+  const eventDate = new Date(year, month - 1, day);
+  eventDate.setHours(0, 0, 0, 0);
+
+  const diffTime = eventDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 1) {
+    return 'Urgent';
+  } else if (diffDays <= 3) {
+    return 'High';
+  } else if (diffDays <= 7) {
+    return 'Medium';
+  } else {
+    return 'Low';
+  }
+};
 
 export default function AnnouncementManagementPage() {
   const { user } = useAuth();
@@ -55,6 +80,7 @@ export default function AnnouncementManagementPage() {
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showArchivedModal, setShowArchivedModal] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [previewCount, setPreviewCount] = useState(0);
@@ -68,7 +94,8 @@ export default function AnnouncementManagementPage() {
     title: '',
     message: '',
     event_date: '',
-    event_time: '',
+    event_time: '08:00',
+    end_time: '17:00',
     venue: '',
     priority: 'Medium',
     status: 'published',
@@ -132,10 +159,10 @@ export default function AnnouncementManagementPage() {
 
   // Live preview counter when target selections change
   const updateTargetPreview = useCallback(async (categories, bIds) => {
-    const activeCats = (categories && categories.length > 0) ? categories : TARGET_CATEGORIES;
-    const activeBgrais = (bIds && bIds.length > 0) ? bIds : barangays.map((b) => b.id);
+    const activeCats = categories || [];
+    const activeBgrais = bIds || [];
 
-    if (!activeCats.length || !activeBgrais.length) {
+    if (activeCats.length === 0 || activeBgrais.length === 0) {
       setPreviewCount(0);
       return;
     }
@@ -143,7 +170,6 @@ export default function AnnouncementManagementPage() {
     try {
       const res = await announcementApi.previewTargetCount({
         target_categories: JSON.stringify(activeCats),
-        target_programs: JSON.stringify(activeCats),
         target_barangays: JSON.stringify(activeBgrais),
       });
       setPreviewCount(res.data?.count || 0);
@@ -152,38 +178,31 @@ export default function AnnouncementManagementPage() {
     } finally {
       setPreviewLoading(false);
     }
-  }, [barangays]);
+  }, []);
 
   useEffect(() => {
     if (isModalOpen) {
-      const catsToPreview = (formData.target_categories && formData.target_categories.length > 0)
-        ? formData.target_categories
-        : TARGET_CATEGORIES;
-      const bIdsToPreview = (formData.target_barangays && formData.target_barangays.length > 0)
-        ? formData.target_barangays
-        : barangays.map((b) => b.id);
-
-      updateTargetPreview(catsToPreview, bIdsToPreview);
+      updateTargetPreview(formData.target_categories || [], formData.target_barangays || []);
     }
-  }, [formData.target_categories, formData.target_barangays, isModalOpen, barangays, updateTargetPreview]);
+  }, [formData.target_categories, formData.target_barangays, isModalOpen, updateTargetPreview]);
 
-const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
-  if (!selectedCategories || selectedCategories.length === 0) return [];
-  if (selectedCategories.length === TARGET_CATEGORIES.length) return allPrograms.map((p) => p.id);
+  const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
+    if (!selectedCategories || selectedCategories.length === 0) return [];
+    if (selectedCategories.length === TARGET_CATEGORIES.length) return allPrograms.map((p) => p.id);
 
-  return allPrograms
-    .filter((p) => {
-      const pCat = (p.eligibility_category || p.category || '').toLowerCase();
-      return selectedCategories.some((c) => {
-        const normC = c.toLowerCase();
-        return pCat.includes(normC) || normC.includes(pCat) ||
-          (normC.includes('4ps') && pCat.includes('4ps')) ||
-          (normC.includes('senior') && pCat.includes('senior')) ||
-          (normC.includes('pwd') && pCat.includes('pwd'));
-      });
-    })
-    .map((p) => p.id);
-};
+    return allPrograms
+      .filter((p) => {
+        const pCat = (p.eligibility_category || p.category || '').toLowerCase();
+        return selectedCategories.some((c) => {
+          const normC = c.toLowerCase();
+          return pCat.includes(normC) || normC.includes(pCat) ||
+            (normC.includes('4ps') && pCat.includes('4ps')) ||
+            (normC.includes('senior') && pCat.includes('senior')) ||
+            (normC.includes('pwd') && pCat.includes('pwd'));
+        });
+      })
+      .map((p) => p.id);
+  };
 
   // Reset form
   const handleOpenCreateModal = () => {
@@ -191,8 +210,9 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
     setFormData({
       title: '',
       message: '',
-      event_date: '',
-      event_time: '',
+      event_date: new Date().toISOString().split('T')[0],
+      event_time: '08:00',
+      end_time: '17:00',
       venue: '',
       venue_barangay: '',
       venue_detail: '',
@@ -233,6 +253,7 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
       message: ann.message || '',
       event_date: ann.event_date || '',
       event_time: ann.event_time || '',
+      end_time: ann.end_time || '',
       venue: existingVenue,
       venue_barangay: foundBarangay,
       venue_detail: foundDetail,
@@ -304,8 +325,9 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
   // Submit announcement
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (formData.target_programs.length === 0) {
-      alert('Please select at least one benefit program');
+    const activeCats = formData.target_categories || [];
+    if (activeCats.length === 0) {
+      alert('Please select at least one target category');
       return;
     }
     if (formData.target_barangays.length === 0) {
@@ -313,13 +335,19 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
       return;
     }
 
+    const payload = {
+      ...formData,
+      target_categories: activeCats,
+      target_programs: activeCats,
+    };
+
     setModalLoading(true);
     try {
       if (editingAnnouncement) {
-        await announcementApi.update(editingAnnouncement.id, formData);
+        await announcementApi.update(editingAnnouncement.id, payload);
         setSuccessMessage('Announcement updated successfully!');
       } else {
-        await announcementApi.create(formData);
+        await announcementApi.create(payload);
         setSuccessMessage('Announcement created, published, and notifications dispatched successfully!');
       }
       setIsModalOpen(false);
@@ -347,7 +375,7 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
 
   // Delete Announcement
   const handleDelete = async (annId) => {
-    if (!window.confirm('Are you sure you want to delete this announcement? This action cannot be undone.')) return;
+    if (!window.confirm('Are you sure you want to delete this announcement permanently? This action cannot be undone.')) return;
     try {
       await announcementApi.remove(annId);
       setSuccessMessage('Announcement deleted successfully');
@@ -358,6 +386,59 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
     }
   };
 
+  // Archive Announcement
+  const handleArchive = async (annId) => {
+    if (!window.confirm('Are you sure you want to archive this announcement? It will be moved to the Archived Announcements section.')) return;
+    try {
+      await announcementApi.update(annId, { status: 'archived' });
+      setSuccessMessage('Announcement archived successfully');
+      fetchAnnouncements();
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err) {
+      alert(err.message || 'Failed to archive announcement');
+    }
+  };
+
+  // Unarchive / Restore Announcement
+  const handleUnarchive = async (annId) => {
+    try {
+      await announcementApi.update(annId, { status: 'published' });
+      setSuccessMessage('Announcement restored to Published status successfully');
+      fetchAnnouncements();
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err) {
+      alert(err.message || 'Failed to restore announcement');
+    }
+  };
+
+  // Check if announcement is currently active (published and end time not passed)
+  const isAnnouncementActive = (ann) => {
+    if (ann.status !== 'published') return false;
+    if (!ann.event_date) return true;
+
+    const timeToCheck = ann.end_time || ann.event_time;
+    if (!timeToCheck) return true;
+
+    const [year, month, day] = ann.event_date.split('-').map(Number);
+    if (!year || !month || !day) return true;
+
+    let hours = 23;
+    let minutes = 59;
+    const timeMatch = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+    if (timeMatch) {
+      let h = parseInt(timeMatch[1], 10);
+      const m = parseInt(timeMatch[2], 10);
+      const ampm = timeMatch[3] ? timeMatch[3].toUpperCase() : null;
+      if (ampm === 'PM' && h < 12) h += 12;
+      if (ampm === 'AM' && h === 12) h = 0;
+      hours = h;
+      minutes = m;
+    }
+
+    const endTime = new Date(year, month - 1, day, hours, minutes, 59);
+    return new Date() < endTime;
+  };
+
   // View Recipient Stats Modal
   const handleViewStats = async (annId) => {
     try {
@@ -365,6 +446,21 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
       setSelectedAnnouncementStats(res.data?.data || null);
     } catch (err) {
       alert(err.message || 'Failed to load announcement recipient stats');
+    }
+  };
+
+  // Complete Activity and Notify Absent Beneficiaries
+  const handleCompleteActivity = async (ann) => {
+    if (!window.confirm(`Complete "${ann.title}" and notify all absent beneficiaries? This will mark all pending beneficiaries as absent and send them notifications.`)) {
+      return;
+    }
+    try {
+      const res = await announcementApi.completeActivity(ann.id);
+      setSuccessMessage(res.data?.message || 'Activity completed and absent beneficiaries notified!');
+      fetchAnnouncements();
+      setTimeout(() => setSuccessMessage(''), 5000);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to complete activity');
     }
   };
 
@@ -438,7 +534,7 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
             Create targeted municipal announcements, notify assigned Barangay Staff, facilitate RFID-based event attendance, and monitor attendance reports in real time.
           </p>
         </div>
-        <div>
+        <div className="flex items-center gap-3 flex-wrap">
           {user?.role === 'admin' && (
             <button
               onClick={handleOpenCreateModal}
@@ -448,6 +544,13 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
               New Announcement
             </button>
           )}
+          <button
+            onClick={() => setShowArchivedModal(true)}
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-3 rounded-xl shadow transition border border-white/20"
+          >
+            <Archive className="w-5 h-5 text-purple-300" />
+            <span>Archived ({announcements.filter((a) => a.status === 'archived').length})</span>
+          </button>
         </div>
       </div>
 
@@ -574,6 +677,7 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
             >
               <option value="">All Statuses</option>
               <option value="published">Published</option>
+              <option value="completed">Completed</option>
               <option value="scheduled">Scheduled</option>
               <option value="draft">Draft</option>
               <option value="archived">Archived</option>
@@ -594,7 +698,7 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
             <AlertCircle className="w-8 h-8 mx-auto mb-2" />
             <p className="font-bold text-sm">{error}</p>
           </div>
-        ) : announcements.length === 0 ? (
+        ) : announcements.filter(a => filterStatus === 'archived' ? a.status === 'archived' : a.status !== 'archived').length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <Megaphone className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <p className="font-bold text-slate-700">No Announcements Found</p>
@@ -614,7 +718,9 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-sm">
-                {announcements.map((ann) => {
+                {announcements
+                  .filter((a) => (filterStatus === 'archived' ? a.status === 'archived' : a.status !== 'archived'))
+                  .map((ann) => {
                   const presentCount = ann.present_count || 0;
                   const totalExpected = ann.recipient_count || 0;
                   const attPercentage = totalExpected > 0 ? Math.round((presentCount / totalExpected) * 100) : 0;
@@ -660,7 +766,11 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
                           {ann.event_date ? (
                             <div className="flex items-center gap-1.5 text-slate-700 font-semibold">
                               <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                              <span>{ann.event_date} {ann.event_time && `at ${ann.event_time}`}</span>
+                              <span>
+                                {ann.event_date}{' '}
+                                {ann.event_time &&
+                                  `at ${ann.event_time}${ann.end_time ? ` - ${ann.end_time}` : ''}`}
+                              </span>
                             </div>
                           ) : (
                             <span className="text-slate-400 italic">No event date</span>
@@ -702,6 +812,10 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
                               <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">
                                 <CheckCircle2 className="w-3 h-3" /> Published
                               </span>
+                            ) : ann.status === 'completed' ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                                <CheckCircle2 className="w-3 h-3" /> Completed
+                              </span>
                             ) : ann.status === 'scheduled' ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
                                 <Clock className="w-3 h-3" /> Scheduled
@@ -734,12 +848,14 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
                           </div>
 
                           <div className="flex items-center gap-2 pt-0.5">
-                            <button
-                              onClick={() => navigate(`/dashboard/announcement-scanner?id=${ann.id}`)}
-                              className="text-[11px] font-bold text-amber-700 hover:text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded flex items-center gap-1 shadow-sm transition"
-                            >
-                              <Smartphone className="w-3 h-3 text-amber-600" /> Start Scanner
-                            </button>
+                            {isAnnouncementActive(ann) && (
+                              <button
+                                onClick={() => navigate(`/dashboard/announcement-scanner?id=${ann.id}`)}
+                                className="text-[11px] font-bold text-amber-700 hover:text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded flex items-center gap-1 shadow-sm transition"
+                              >
+                                <Smartphone className="w-3 h-3 text-amber-600" /> Start Scanner
+                              </button>
+                            )}
                             <button
                               onClick={() => handleViewStats(ann.id)}
                               className="text-[11px] font-bold text-dswd-blue hover:underline"
@@ -769,19 +885,21 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
                               <Send className="w-4 h-4" />
                             </button>
                           )}
+                          {user?.role === 'admin' && (
+                            <button
+                              onClick={() => handleOpenEditModal(ann)}
+                              title="Edit announcement"
+                              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleOpenEditModal(ann)}
-                            title="Edit announcement"
-                            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                            onClick={() => handleArchive(ann.id)}
+                            title="Archive announcement"
+                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition"
                           >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(ann.id)}
-                            title="Delete announcement"
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                          >
-                            <Trash2 className="w-4 h-4" />
+                            <Archive className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -829,24 +947,40 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Event Date</label>
                     <input
                       type="date"
                       value={formData.event_date}
-                      onChange={(e) => setFormData({ ...formData, event_date: e.target.value })}
+                      onChange={(e) => {
+                        const newDate = e.target.value;
+                        const autoPriority = calculatePriorityFromDate(newDate);
+                        setFormData({
+                          ...formData,
+                          event_date: newDate,
+                          priority: autoPriority,
+                        });
+                      }}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Time</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Start Time</label>
                     <input
-                      type="text"
-                      placeholder="9:00 AM"
+                      type="time"
                       value={formData.event_time}
                       onChange={(e) => setFormData({ ...formData, event_time: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">End Time</label>
+                    <input
+                      type="time"
+                      value={formData.end_time}
+                      onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                 </div>
@@ -941,11 +1075,10 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
                           <div
                             key={cat}
                             onClick={() => toggleCategoryTarget(cat)}
-                            className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition text-xs font-bold ${
-                              selected
-                                ? 'bg-blue-100/80 text-blue-950 border-2 border-blue-400 shadow-sm'
-                                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-                            }`}
+                            className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition text-xs font-bold ${selected
+                              ? 'bg-blue-100/80 text-blue-950 border-2 border-blue-400 shadow-sm'
+                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                              }`}
                           >
                             {selected ? (
                               <CheckSquare className="w-4 h-4 text-dswd-blue shrink-0" />
@@ -981,11 +1114,10 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
                           <div
                             key={b.id}
                             onClick={() => toggleBarangayTarget(b.id)}
-                            className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition text-xs font-bold ${
-                              selected
-                                ? 'bg-emerald-100/90 text-emerald-950 border-2 border-emerald-400 shadow-sm'
-                                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-                            }`}
+                            className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition text-xs font-bold ${selected
+                              ? 'bg-emerald-100/90 text-emerald-950 border-2 border-emerald-400 shadow-sm'
+                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                              }`}
                           >
                             {selected ? (
                               <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
@@ -1148,6 +1280,123 @@ const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
         </div>
       )}
 
+      {/* ARCHIVED ANNOUNCEMENTS MODAL */}
+      {showArchivedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-purple-100 rounded-lg">
+                  <Archive className="w-6 h-6 text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Archived Announcements</h2>
+                  <p className="text-sm text-slate-600 mt-1">View and manage archived municipal announcements.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowArchivedModal(false)}
+                className="text-slate-500 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {announcements.filter((a) => a.status === 'archived').length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 rounded-lg border border-slate-200">
+                  <Archive className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-600 font-medium">No archived announcements found</p>
+                  <p className="text-sm text-slate-500 mt-1">Announcements that you archive will appear here</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-100 border-b border-slate-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Announcement Title</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Target Audience</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Schedule & Venue</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
+                        <th className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {announcements
+                        .filter((a) => a.status === 'archived')
+                        .map((ann) => (
+                          <tr key={ann.id} className="hover:bg-blue-50 transition-colors">
+                            <td className="px-4 py-3 font-medium text-slate-900">
+                              <p className="font-bold text-slate-900">{ann.title}</p>
+                              <p className="text-xs text-slate-500 line-clamp-1">{ann.message}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+                                {ann.target_categories ? (
+                                  Array.isArray(ann.target_categories)
+                                    ? ann.target_categories.join(', ')
+                                    : String(ann.target_categories)
+                                ) : 'All Beneficiaries'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-slate-600">
+                              {ann.event_date ? (
+                                <div className="text-xs space-y-0.5">
+                                  <p className="font-semibold text-slate-800">
+                                    📅 {ann.event_date} {ann.event_time && `at ${ann.event_time}`}{ann.end_time ? ` - ${ann.end_time}` : ''}
+                                  </p>
+                                  {ann.venue && <p className="text-slate-500">📍 {ann.venue}</p>}
+                                </div>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
+                                archived
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => handleUnarchive(ann.id)}
+                                  className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition flex items-center gap-1 font-bold text-xs"
+                                  title="Unarchive Announcement"
+                                >
+                                  <ArchiveRestore className="w-4 h-4" />
+                                  <span>Unarchive</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(ann.id)}
+                                  className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition"
+                                  title="Delete permanently"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-200 flex justify-end">
+              <button
+                onClick={() => setShowArchivedModal(false)}
+                className="px-6 py-2 bg-slate-700 text-white font-semibold rounded-lg hover:bg-slate-800 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

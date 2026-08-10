@@ -1,7 +1,7 @@
-import { Calendar, MapPin, Copy, Bell, FileText, CheckCircle2, Clock, Users, AlertTriangle, Megaphone, Check } from 'lucide-react';
+import { Calendar, MapPin, Copy, Bell, FileText, CheckCircle2, Clock, Users, AlertTriangle, Megaphone, Check, X, Award, Gift } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { announcementApi } from '../services/api';
+import { announcementApi, notificationApi } from '../services/api';
 import { Link } from 'react-router-dom';
 
 const PesoIcon = ({ className = "w-4 h-4" }) => (
@@ -25,23 +25,84 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const [copied, setCopied] = useState(false);
   const { user } = useAuth();
   const [announcements, setAnnouncements] = useState([]);
+  const [modalItems, setModalItems] = useState([]);
+  const [showPopupModal, setShowPopupModal] = useState(false);
+  const [currentPopupIndex, setCurrentPopupIndex] = useState(0);
+
+  // Track IDs already dismissed/shown so we don't re-popup them on each poll
+  const [shownIds, setShownIds] = useState(new Set());
 
   useEffect(() => {
-    const loadAnnouncements = async () => {
+    const loadPopups = async () => {
       try {
-        const res = await announcementApi.list();
-        setAnnouncements(res.data?.data || []);
+        const [annRes, notifRes] = await Promise.all([
+          announcementApi.list(),
+          notificationApi.list()
+        ]);
+        const annList = annRes.data?.data || [];
+        const notifList = notifRes.data?.data || [];
+
+        setAnnouncements(annList);
+
+        const unreadAnn = annList
+          .filter(a => !a.is_read && a.status === 'published')
+          .map(a => ({ ...a, popupType: 'announcement' }));
+
+        // Exclude announcement-type notifications — they are already shown via unreadAnn above.
+        // Only show program enrollment and distribution system notifications here.
+        const unreadNotif = notifList
+          .filter(n => !n.is_read && n.type !== 'announcement' && n.reference_type !== 'announcement')
+          .map(n => ({ ...n, popupType: 'notification' }));
+
+        const combined = [...unreadAnn, ...unreadNotif];
+
+        // Only show items that haven't been dismissed in this session
+        const newItems = combined.filter(item => {
+          const key = `${item.popupType}-${item.id}`;
+          return !shownIds.has(key);
+        });
+
+        if (newItems.length > 0) {
+          setModalItems(newItems);
+          setCurrentPopupIndex(0);
+          setShowPopupModal(true);
+        }
       } catch (err) {
-        console.error('Failed to load beneficiary dashboard announcements:', err);
+        console.error('Failed to load beneficiary dashboard popups:', err);
       }
     };
-    loadAnnouncements();
+
+    // Run immediately on mount
+    loadPopups();
+
+    // Poll every 30 seconds to catch new enrollment/distribution notifications
+    const pollInterval = setInterval(loadPopups, 30000);
+
+    // Also re-check when another part of the app marks notifications updated
+    const handleNotifUpdate = () => loadPopups();
+    window.addEventListener('notificationsUpdated', handleNotifUpdate);
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('notificationsUpdated', handleNotifUpdate);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleMarkAsRead = async (annId) => {
+  const handleMarkAsRead = async (item) => {
     try {
-      await announcementApi.markAsRead(annId);
-      setAnnouncements(prev => prev.map(a => a.id === annId ? { ...a, is_read: true } : a));
+      const key = `${item.popupType}-${item.id}`;
+      // Add to shownIds so polling won't re-show this item
+      setShownIds(prev => new Set([...prev, key]));
+
+      if (item.popupType === 'announcement') {
+        await announcementApi.markAsRead(item.id);
+        setAnnouncements(prev => prev.map(a => a.id === item.id ? { ...a, is_read: true } : a));
+      } else {
+        await notificationApi.markAsRead(item.id);
+      }
+      setModalItems(prev => prev.filter(i => !(i.id === item.id && i.popupType === item.popupType)));
+      window.dispatchEvent(new Event('notificationsUpdated'));
     } catch (err) {
       console.error('Failed to mark read:', err);
     }
@@ -72,13 +133,21 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900">Beneficiary Dashboard</h1>
-        <p className="text-slate-600">Welcome back, {beneficiary?.first_name}! Here is your application and benefit overview.</p>
-        <p className="text-sm text-slate-500 mt-1">
-          Date Today: {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} | {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-        </p>
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Users className="w-8 h-8 text-yellow-300" />
+            <h1 className="text-3xl font-black tracking-tight">Beneficiary Dashboard</h1>
+          </div>
+          <p className="text-blue-100 text-sm max-w-2xl">
+            Welcome back, {beneficiary?.first_name}! Here is your application, program enrollment, and assistance payout overview.
+          </p>
+        </div>
+        <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-xl border border-white/15 text-xs text-blue-100 font-semibold self-start md:self-auto">
+          <div>📅 {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
+          <div className="text-yellow-300 font-mono font-bold mt-0.5">⏱️ {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
       </div>
 
       {/* Banner - Show different message based on status */}
@@ -455,6 +524,192 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
           </div>
         </div>
       </div>
+
+      {/* AUTO POP-UP ANNOUNCEMENT & SYSTEM NOTIFICATION MODAL ON LOGIN/DASHBOARD */}
+      {showPopupModal && modalItems.length > 0 && (() => {
+        const currentItem = modalItems[currentPopupIndex] || modalItems[0];
+        // popupType is stamped at load time: 'announcement' for announcementApi items, 'notification' for notificationApi items.
+        // ALWAYS use popupType first to avoid old/misclassified DB records polluting the display.
+        const isAnnouncement = currentItem?.popupType === 'announcement';
+        const isProgram = !isAnnouncement && (currentItem?.type === 'program' || currentItem?.reference_type === 'BenefitProgram');
+        const isDistribution = !isAnnouncement && (currentItem?.type === 'distribution' || currentItem?.reference_type === 'DistributionEvent');
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-xl w-full overflow-hidden relative space-y-0">
+              {/* Header Banner */}
+              <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white p-6 relative">
+                <button
+                  onClick={() => setShowPopupModal(false)}
+                  className="absolute top-4 right-4 p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className={`p-3 rounded-2xl shadow-md ${
+                    isProgram
+                      ? 'bg-purple-400 text-slate-950'
+                      : isDistribution
+                      ? 'bg-emerald-400 text-slate-950'
+                      : 'bg-yellow-400 text-slate-950'
+                  }`}>
+                    {isProgram ? (
+                      <Award className="w-6 h-6 animate-bounce" />
+                    ) : isDistribution ? (
+                      <Gift className="w-6 h-6 animate-bounce" />
+                    ) : (
+                      <Megaphone className="w-6 h-6 animate-bounce" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-yellow-300 text-xs font-extrabold uppercase tracking-wider block">
+                      {isProgram
+                        ? 'Program Enrollment Notification'
+                        : isDistribution
+                        ? 'New Benefit Distribution'
+                        : 'Important Announcement'}
+                    </span>
+                    <h2 className="text-xl font-black tracking-tight text-white">
+                      {currentItem?.title}
+                    </h2>
+                  </div>
+                </div>
+              </div>
+
+              {/* Content Body */}
+              <div className="p-6 space-y-4">
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  {isProgram ? (
+                    <span className="bg-purple-100 text-purple-800 font-bold px-2.5 py-0.5 rounded-md border border-purple-200">
+                      🎓 PROGRAM ENROLLMENT
+                    </span>
+                  ) : isDistribution ? (
+                    <span className="bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-md border border-emerald-200">
+                      💰 PAYOUT SCHEDULED
+                    </span>
+                  ) : currentItem?.priority === 'Urgent' ? (
+                    <span className="bg-red-100 text-red-800 font-black px-2.5 py-0.5 rounded-md border border-red-300">
+                      🔴 URGENT
+                    </span>
+                  ) : currentItem?.priority === 'High' ? (
+                    <span className="bg-orange-100 text-orange-800 font-bold px-2.5 py-0.5 rounded-md border border-orange-200">
+                      🟠 HIGH PRIORITY
+                    </span>
+                  ) : (
+                    <span className="bg-blue-100 text-blue-800 font-bold px-2.5 py-0.5 rounded-md border border-blue-200">
+                      📢 EVENT ANNOUNCEMENT
+                    </span>
+                  )}
+                  <span className="text-slate-400 font-semibold">•</span>
+                  <span className="text-slate-500 font-medium">
+                    {new Date(currentItem?.created_at || currentItem?.createdAt || Date.now()).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </span>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-slate-800 text-sm leading-relaxed max-h-48 overflow-y-auto whitespace-pre-line font-medium">
+                  {currentItem?.message}
+                </div>
+
+                {/* Schedule & Venue Details for Announcement or Distribution */}
+                {(currentItem?.event_date || currentItem?.venue || isAnnouncement) && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2 text-xs">
+                    {currentItem?.event_date && (
+                      <div className="flex items-center gap-2 text-amber-900 font-bold">
+                        <Calendar className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>
+                          Schedule: {currentItem?.event_date}{' '}
+                          {currentItem?.event_time &&
+                            `at ${currentItem?.event_time}${
+                              currentItem?.end_time
+                                ? ` - ${currentItem?.end_time}`
+                                : ''
+                            }`}
+                        </span>
+                      </div>
+                    )}
+                    {currentItem?.venue && (
+                      <div className="flex items-center gap-2 text-amber-900 font-bold">
+                        <MapPin className="w-4 h-4 text-red-500 shrink-0" />
+                        <span>Venue: {currentItem?.venue}</span>
+                      </div>
+                    )}
+                    {isAnnouncement && (
+                      <div className="flex items-center gap-2 text-amber-950 font-bold pt-1 border-t border-amber-200/60">
+                        <span>💳 Instruction: Bring your RFID card for your Attendance.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Pagination if multiple unread */}
+                {modalItems.length > 1 && (
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500 font-semibold">
+                    <span>
+                      Unread Notification {currentPopupIndex + 1} of {modalItems.length}
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={currentPopupIndex === 0}
+                        onClick={() => setCurrentPopupIndex((prev) => Math.max(0, prev - 1))}
+                        className="px-2.5 py-1 bg-slate-100 rounded-lg disabled:opacity-40 font-bold text-slate-700 hover:bg-slate-200 transition"
+                      >
+                        Prev
+                      </button>
+                      <button
+                        disabled={currentPopupIndex === modalItems.length - 1}
+                        onClick={() => setCurrentPopupIndex((prev) => Math.min(modalItems.length - 1, prev + 1))}
+                        className="px-2.5 py-1 bg-slate-100 rounded-lg disabled:opacity-40 font-bold text-slate-700 hover:bg-slate-200 transition"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => {
+                    // Mark all currently shown items as "seen this session" so they don't re-popup on next poll
+                    setShownIds(prev => {
+                      const next = new Set(prev);
+                      modalItems.forEach(item => next.add(`${item.popupType}-${item.id}`));
+                      return next;
+                    });
+                    setShowPopupModal(false);
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition"
+                >
+                  Close for Now
+                </button>
+                <button
+                  onClick={async () => {
+                    const itemToMark = modalItems[currentPopupIndex] || modalItems[0];
+                    if (itemToMark) {
+                      await handleMarkAsRead(itemToMark);
+                    }
+                    if (modalItems.length <= 1) {
+                      setShowPopupModal(false);
+                    } else {
+                      setCurrentPopupIndex(0);
+                    }
+                  }}
+                  className="px-5 py-2.5 text-xs font-extrabold bg-dswd-blue hover:bg-blue-800 text-white rounded-xl shadow-md transition flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Mark as Read & Continue</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

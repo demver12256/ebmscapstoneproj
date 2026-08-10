@@ -34,6 +34,33 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [beneficiaryStatus, setBeneficiaryStatus] = React.useState(null);
+  const [unreadCount, setUnreadCount] = React.useState(0);
+
+  // Fetch unread notification count
+  React.useEffect(() => {
+    const fetchUnreadCount = async () => {
+      if (user) {
+        try {
+          const { notificationApi } = await import('../../services/api');
+          const res = await notificationApi.unreadCount();
+          setUnreadCount(res.data?.data?.count || 0);
+        } catch (err) {
+          console.error('Failed to fetch unread count in sidebar:', err);
+        }
+      }
+    };
+
+    if (user) {
+      fetchUnreadCount();
+      const handleUpdate = () => fetchUnreadCount();
+      window.addEventListener('notificationsUpdated', handleUpdate);
+      const interval = setInterval(fetchUnreadCount, 30000);
+      return () => {
+        window.removeEventListener('notificationsUpdated', handleUpdate);
+        clearInterval(interval);
+      };
+    }
+  }, [user]);
 
   // Fetch beneficiary status if user is a beneficiary
   React.useEffect(() => {
@@ -111,9 +138,9 @@ export default function Sidebar() {
                     >
                       <Icon className="h-5 w-5 shrink-0" />
                       {item.label}
-                      {item.badge && (
+                      {item.badge && unreadCount > 0 && (
                         <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                          3
+                          {unreadCount > 9 ? '9+' : unreadCount}
                         </span>
                       )}
                     </NavLink>
@@ -165,9 +192,9 @@ export default function Sidebar() {
                 >
                   <Icon className="h-5 w-5 shrink-0" />
                   {item.label}
-                  {item.badge && (
+                  {item.badge && unreadCount > 0 && (
                     <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                      3
+                      {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
                   )}
                 </NavLink>

@@ -127,7 +127,7 @@ export default function DashboardPage() {
   // Auto-save profile details every time form fields change (debounced)
   useEffect(() => {
     const autoSaveTimer = setTimeout(async () => {
-      if (user?.role === 'beneficiary' && beneficiary && category) {
+      if (user?.role === 'beneficiary' && beneficiary && category && (beneficiary.status === 'Pending Submission' || beneficiary.status === 'Rejected')) {
         try {
           await beneficiaryApi.updateMe({
             category,
@@ -390,9 +390,15 @@ export default function DashboardPage() {
 
     return (
       <div className="max-w-4xl mx-auto space-y-8 pb-16">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-4xl font-bold text-slate-900">Beneficiary Portal</h1>
-          <p className="text-slate-600 font-medium">Register as a beneficiary, submit required documents, and track your application in real-time.</p>
+        {/* Header Banner */}
+        <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+          <div className="flex items-center gap-2">
+            <User className="w-8 h-8 text-yellow-300" />
+            <h1 className="text-3xl font-black tracking-tight">Beneficiary Application Portal</h1>
+          </div>
+          <p className="text-blue-100 text-sm mt-1 max-w-2xl">
+            Register as a beneficiary, submit required verification documents, and track your application status in real-time.
+          </p>
         </div>
 
         {error && (

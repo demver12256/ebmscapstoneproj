@@ -1,4 +1,4 @@
-# Modern Dashboard Design Update
+![alt text](image.png)# Modern Dashboard Design Update
 
 ## Overview
 Created a modern, sleek dashboard design with contemporary UI elements and smooth animations.

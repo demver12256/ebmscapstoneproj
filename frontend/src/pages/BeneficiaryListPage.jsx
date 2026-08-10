@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { X, Users, Clock, Eye, CheckCircle2, AlertTriangle, FileCheck, ShieldAlert, Download } from 'lucide-react';
+import { X, Users, Clock, Eye, CheckCircle2, AlertTriangle, FileCheck, ShieldAlert, Download, Archive, Edit3 } from 'lucide-react';
 import Table from '../components/ui/Table';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -238,6 +238,36 @@ export default function BeneficiaryListPage() {
     return list;
   };
 
+  const [showArchivedOnly, setShowArchivedOnly] = useState(false);
+
+  const isArchivedBeneficiary = (b) => {
+    return b.User?.status === 'inactive' || b.status === 'inactive' || b.status === 'archived' || (b.inactivation_reason && b.inactivation_reason.includes('Archived'));
+  };
+
+  const handleToggleArchiveBeneficiary = async (beneficiaryRow) => {
+    const isArchived = isArchivedBeneficiary(beneficiaryRow);
+    const actionText = isArchived ? 'unarchive' : 'archive';
+    if (!window.confirm(`Are you sure you want to ${actionText} beneficiary ${beneficiaryRow.first_name} ${beneficiaryRow.last_name}?`)) return;
+    try {
+      if (isArchived) {
+        await beneficiaryApi.update(beneficiaryRow.id, {
+          status: 'active',
+          inactivation_reason: null,
+        });
+        alert('Beneficiary unarchived successfully.');
+      } else {
+        await beneficiaryApi.update(beneficiaryRow.id, {
+          status: 'inactive',
+          inactivation_reason: 'Archived by Administrator',
+        });
+        alert('Beneficiary archived successfully.');
+      }
+      loadAllData();
+    } catch (err) {
+      alert(err.message || `Failed to ${actionText} beneficiary`);
+    }
+  };
+
   const columns = [
     { header: 'Beneficiary ID', accessor: 'beneficiary_id_code', cell: (row) => (
       <span className="font-mono font-bold text-slate-800">{row.beneficiary_id_code || '—'}</span>
@@ -258,11 +288,12 @@ export default function BeneficiaryListPage() {
     { header: 'Status', accessor: 'status', cell: (row) => (
       <div className="flex flex-col gap-1 items-start">
         <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+          isArchivedBeneficiary(row) ? 'bg-purple-100 text-purple-800' :
           row.User?.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800'
         }`}>
-          {row.User?.status || 'inactive'}
+          {isArchivedBeneficiary(row) ? 'Archived' : (row.User?.status || 'inactive')}
         </span>
-        {row.User?.status === 'inactive' && row.inactivation_reason && (
+        {row.inactivation_reason && (
           <span className="text-[11px] text-slate-500 italic max-w-[200px] truncate" title={row.inactivation_reason}>
             Note: {row.inactivation_reason}
           </span>
@@ -273,35 +304,95 @@ export default function BeneficiaryListPage() {
       header: 'Action', 
       accessor: 'id', 
       cell: (row) => (
-        <button
-          onClick={() => handleEditClick(row)}
-          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
-        >
-          Edit
-        </button>
+        <div className="flex items-center gap-1">
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => handleEditClick(row)}
+              title="Edit Beneficiary"
+              className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition"
+            >
+              <Edit3 className="w-4 h-4 text-blue-600" />
+            </button>
+          )}
+          <button
+            onClick={() => handleToggleArchiveBeneficiary(row)}
+            title={isArchivedBeneficiary(row) ? "Unarchive Beneficiary" : "Archive Beneficiary"}
+            className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition"
+          >
+            <Archive className="w-4 h-4 text-purple-600" />
+          </button>
+        </div>
       )
     }] : []),
   ];
 
+  const archivedCount = beneficiaries.filter(isArchivedBeneficiary).length;
+
+  // Flexible category matching — handles PWD synonyms and case differences
+  const categoryMatches = (beneficiaryCategory, filterCategory) => {
+    if (!filterCategory) return true;
+    if (!beneficiaryCategory) return false;
+    if (beneficiaryCategory === filterCategory) return true;
+    // PWD fuzzy match: both contain 'PWD' or 'Disabilit'
+    const isPwdFilter = filterCategory.toLowerCase().includes('pwd') || filterCategory.toLowerCase().includes('disabilit');
+    const isPwdBen = beneficiaryCategory.toLowerCase().includes('pwd') || beneficiaryCategory.toLowerCase().includes('disabilit');
+    if (isPwdFilter && isPwdBen) return true;
+    // 4Ps fuzzy match
+    const is4PsFilter = filterCategory.toLowerCase().includes('4ps');
+    const is4PsBen = beneficiaryCategory.toLowerCase().includes('4ps');
+    if (is4PsFilter && is4PsBen) return true;
+    // Senior Citizens fuzzy match
+    const isSeniorFilter = filterCategory.toLowerCase().includes('senior');
+    const isSeniorBen = beneficiaryCategory.toLowerCase().includes('senior');
+    if (isSeniorFilter && isSeniorBen) return true;
+    return false;
+  };
+
   const filteredBeneficiaries = beneficiaries.filter((b) => {
+    const isArchived = isArchivedBeneficiary(b);
+    if (showArchivedOnly && !isArchived) return false;
+    if (!showArchivedOnly && isArchived) return false;
+
     const barangayMatch = !selectedBarangayId || b.barangay_id === Number(selectedBarangayId);
-    const categoryMatch = !selectedCategory || b.category === selectedCategory;
+    const catMatch = categoryMatches(b.category, selectedCategory);
     const ipMatch = !selectedIpClassification || b.ip_classification === selectedIpClassification;
-    return barangayMatch && categoryMatch && ipMatch;
+    return barangayMatch && catMatch && ipMatch;
   });
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-blue-100 rounded-lg">
-            <Users className="w-6 h-6 text-blue-600" />
+      {/* Header Banner */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Users className="w-8 h-8 text-yellow-300" />
+            <h1 className="text-3xl font-black tracking-tight">Official Beneficiary Records</h1>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Official Beneficiary List</h1>
-            <p className="text-sm text-slate-600 mt-1">Manage verified beneficiary records and monitor enrollment trends.</p>
-          </div>
+          <p className="text-blue-100 text-sm max-w-2xl">
+            {showArchivedOnly ? 'Viewing archived beneficiary records.' : 'Manage verified municipal beneficiary records, track program enrollment, and audit beneficiary statuses.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* View Pending Beneficiaries Button */}
+          <button
+            onClick={openPendingModal}
+            className="flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold px-4 py-3 rounded-xl shadow transition text-sm border border-amber-500"
+          >
+            <Clock className="w-5 h-5" />
+            <span>Pending ({pendingApplications.length})</span>
+          </button>
+          
+          <button
+            onClick={() => setShowArchivedOnly(!showArchivedOnly)}
+            className={`flex items-center gap-2 font-bold px-4 py-3 rounded-xl shadow transition text-sm ${
+              showArchivedOnly
+                ? 'bg-yellow-400 text-slate-950 border border-yellow-400'
+                : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
+            }`}
+          >
+            <Archive className="w-5 h-5 text-purple-300" />
+            <span>Archived ({archivedCount})</span>
+          </button>
         </div>
       </div>
 
@@ -409,25 +500,7 @@ export default function BeneficiaryListPage() {
             <p className="text-sm text-slate-600">No beneficiaries found</p>
           </div>
         ) : (
-          <>
-            <Table columns={columns} data={filteredBeneficiaries} />
-            
-            {/* View Pending Beneficiaries Strip Box (matching ProgramListPage View Archived layout) */}
-            <div className="px-6 py-4 border-t-2 border-slate-200 bg-slate-50/80 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <button
-                onClick={openPendingModal}
-                className="text-sm font-bold text-slate-700 hover:text-amber-600 transition-colors flex items-center gap-2"
-              >
-                <Clock className="w-4 h-4 text-amber-500" />
-                View Pending Beneficiaries ({pendingApplications.length})
-              </button>
-              <span className="text-xs font-semibold text-slate-500">
-                {pendingApplications.length > 0
-                  ? `${pendingApplications.length} application(s) awaiting verification & review`
-                  : 'No pending applications'}
-              </span>
-            </div>
-          </>
+          <Table columns={columns} data={filteredBeneficiaries} />
         )}
       </div>
 

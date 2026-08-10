@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticate } = require('../middleware/auth.middleware');
-const { Notification } = require('../db');
+const { Notification, Beneficiary, AnnouncementRecipient } = require('../db');
 
 const router = express.Router();
 router.use(authenticate);
@@ -22,9 +22,24 @@ router.get('/', async (req, res, next) => {
 // ── GET /unread-count ── Get unread notification count
 router.get('/unread-count', async (req, res, next) => {
   try {
-    const count = await Notification.count({
+    let count = await Notification.count({
       where: { user_id: req.user.id, is_read: false },
     });
+
+    if (req.user.role === 'beneficiary') {
+      const beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id } });
+      if (beneficiary) {
+        const unreadAnnCount = await AnnouncementRecipient.count({
+          where: { beneficiary_id: beneficiary.id, is_read: false },
+        });
+        const unreadNotifAnnCount = await Notification.count({
+          where: { user_id: req.user.id, is_read: false, reference_type: 'announcement' },
+        });
+        const extraUnreadAnnouncements = Math.max(0, unreadAnnCount - unreadNotifAnnCount);
+        count += extraUnreadAnnouncements;
+      }
+    }
+
     res.json({ success: true, data: { count } });
   } catch (error) {
     next(error);
@@ -41,6 +56,17 @@ router.patch('/:id/read', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Notification not found' });
     }
     await notification.update({ is_read: true });
+
+    if (notification.reference_type === 'announcement' && notification.reference_id) {
+      const beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id } });
+      if (beneficiary) {
+        await AnnouncementRecipient.update(
+          { is_read: true, read_at: new Date() },
+          { where: { beneficiary_id: beneficiary.id, announcement_id: notification.reference_id, is_read: false } }
+        );
+      }
+    }
+
     res.json({ success: true, data: notification });
   } catch (error) {
     next(error);
@@ -54,6 +80,17 @@ router.patch('/mark-all-read', async (req, res, next) => {
       { is_read: true },
       { where: { user_id: req.user.id, is_read: false } }
     );
+
+    if (req.user.role === 'beneficiary') {
+      const beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id } });
+      if (beneficiary) {
+        await AnnouncementRecipient.update(
+          { is_read: true, read_at: new Date() },
+          { where: { beneficiary_id: beneficiary.id, is_read: false } }
+        );
+      }
+    }
+
     res.json({ success: true, message: 'All notifications marked as read' });
   } catch (error) {
     next(error);

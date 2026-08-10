@@ -159,19 +159,15 @@ export default function MessagesPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-blue-100 rounded-lg">
-            <MessageSquare className="w-6 h-6 text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Messages</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              {user.role === 'admin' ? 'Communicate with staff members.' : 'Communicate with admin, staff, and beneficiaries.'}
-            </p>
-          </div>
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="w-8 h-8 text-yellow-300" />
+          <h1 className="text-3xl font-black tracking-tight">Internal Messaging Portal</h1>
         </div>
+        <p className="text-blue-100 text-sm mt-1 max-w-2xl">
+          {user.role === 'admin' ? 'Communicate with staff members in real time.' : 'Communicate with admin, staff members, and beneficiaries in real time.'}
+        </p>
       </div>
 
       {/* Chat Container */}

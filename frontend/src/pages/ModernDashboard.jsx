@@ -253,7 +253,7 @@ export default function ModernDashboard() {
       </div>
 
       {/* UPCOMING ANNOUNCEMENTS & ACTIVITY FACILITATION WIDGET */}
-      {user?.role !== 'admin' && announcements.length > 0 && (
+      {user?.role !== 'admin' && announcements.filter(a => a.status === 'published').length > 0 && (
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-dswd-blue text-white rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -269,12 +269,12 @@ export default function ModernDashboard() {
               to="/dashboard/announcements"
               className="text-xs font-bold text-yellow-300 hover:text-yellow-200 underline flex items-center gap-1"
             >
-              View All ({announcements.length}) <ArrowRight className="w-3.5 h-3.5" />
+              View All ({announcements.filter(a => a.status === 'published').length}) <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {announcements.slice(0, 2).map((ann) => (
+            {announcements.filter(a => a.status === 'published').slice(0, 2).map((ann) => (
               <div
                 key={ann.id}
                 className="bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-4 flex flex-col justify-between gap-3 hover:bg-white/15 transition"

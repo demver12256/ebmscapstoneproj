@@ -129,6 +129,27 @@ router.get('/me', authorize('beneficiary'), async (req, res, next) => {
       console.error('[GET /me] Beneficiary not found for user:', req.user.id);
       return res.status(404).json({ success: false, message: 'Beneficiary profile not found' });
     }
+
+    // Auto-sync category from active enrollment if available
+    if (beneficiary.Enrollments && beneficiary.Enrollments.length > 0) {
+      const activeEn = beneficiary.Enrollments.find(e => e.status === 'active');
+      if (activeEn && activeEn.BenefitProgram) {
+        const prog = activeEn.BenefitProgram;
+        const progCat = prog.eligibility_category || prog.category;
+        if (progCat) {
+          let stdCat = progCat;
+          const lower = progCat.toLowerCase();
+          if (lower.includes('4ps')) stdCat = '4Ps Household Beneficiaries';
+          else if (lower.includes('senior')) stdCat = 'Senior Citizens (Social Pension)';
+          else if (lower.includes('pwd') || lower.includes('disabil')) stdCat = 'Persons with Disabilities (PWD)';
+
+          if (beneficiary.category !== stdCat) {
+            await beneficiary.update({ category: stdCat });
+            beneficiary.category = stdCat;
+          }
+        }
+      }
+    }
     
     console.log('[GET /me] Successfully fetched beneficiary:', beneficiary.id);
     res.json({ success: true, data: beneficiary });

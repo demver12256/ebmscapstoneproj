@@ -56,10 +56,15 @@ export default function MyBenefitsPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900">My Benefits</h1>
-        <p className="text-slate-600 mt-1">View your benefits history and enrolled programs</p>
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center gap-2">
+          <Package className="w-8 h-8 text-yellow-300" />
+          <h1 className="text-3xl font-black tracking-tight">My Benefits Overview</h1>
+        </div>
+        <p className="text-blue-100 text-sm mt-1 max-w-2xl">
+          View your released and pending assistance payouts, claimed benefit history, and active program enrollments.
+        </p>
       </div>
 
       {/* Summary Cards */}
