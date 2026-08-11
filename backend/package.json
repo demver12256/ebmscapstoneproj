@@ -19,6 +19,7 @@
     "jsonwebtoken": "^9.0.0",
     "multer": "^2.2.0",
     "mysql2": "^3.6.0",
+    "node-fetch": "^2.7.0",
     "sequelize": "^6.32.1"
   },
   "devDependencies": {

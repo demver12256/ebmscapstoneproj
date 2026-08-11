@@ -2,8 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { 
   Package, Plus, Calendar, MapPin, Users, DollarSign, 
   Eye, Edit, Trash2, CheckCircle, XCircle, Clock,
-  Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw, Archive
+  Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw, Archive, Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { distributionApi, programApi, barangayApi, userApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -463,6 +464,102 @@ export default function DistributionPage() {
     }
   };
 
+  const handleExportExcel = async (eventData) => {
+    if (!eventData || !eventData.id) return;
+    setLoading(true);
+    try {
+      const res = await distributionApi.getTransactions(eventData.id);
+      const transactions = res.data?.data || [];
+
+      const claimedTxns = transactions.filter(t => t.status === 'released');
+      const unclaimedTxns = transactions.filter(t => t.status === 'pending');
+
+      const programName = eventData.Program?.name || 'N/A';
+      const barangayName = eventData.Barangay?.barangay_name || 'N/A';
+      const amountPerBen = parseFloat(eventData.amount_per_beneficiary || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+      const totalBudget = parseFloat(eventData.budget || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+
+      const worksheetData = [
+        ['EBMS BENEFIT DISTRIBUTION REPORT'],
+        ['Event Title:', eventData.title],
+        ['Program:', programName],
+        ['Barangay:', barangayName],
+        ['Distribution Date:', eventData.distribution_date || 'N/A'],
+        ['Venue:', eventData.venue || 'N/A'],
+        ['Total Budget:', `₱${totalBudget}`],
+        ['Amount per Beneficiary:', `₱${amountPerBen}`],
+        ['Status:', (eventData.status || '').toUpperCase()],
+        ['Total Eligible:', transactions.length],
+        ['Total Claimed (Naka-Claim):', claimedTxns.length],
+        ['Total Unclaimed (Hindi Naka-Claim):', unclaimedTxns.length],
+        [],
+        ['========================================================================================'],
+        ['1. CLAIMED BENEFICIARIES (NAKA-CLAIM)'],
+        ['========================================================================================'],
+        ['#', 'Transaction #', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Claim Date & Time', 'Amount Released (₱)', 'Released By Staff', 'Status']
+      ];
+
+      claimedTxns.forEach((txn, index) => {
+        const ben = txn.Beneficiary || {};
+        const staff = txn.ReleasedByStaff ? `${txn.ReleasedByStaff.first_name || ''} ${txn.ReleasedByStaff.last_name || ''}`.trim() : 'N/A';
+        worksheetData.push([
+          index + 1,
+          txn.transaction_number || 'N/A',
+          ben.RFID_number || 'N/A',
+          `${ben.first_name || ''} ${ben.last_name || ''}`.trim() || 'N/A',
+          ben.beneficiary_id_code || 'N/A',
+          ben.Barangay?.barangay_name || barangayName,
+          ben.category || 'N/A',
+          txn.released_at ? new Date(txn.released_at).toLocaleString() : 'N/A',
+          parseFloat(txn.amount || 0),
+          staff,
+          'Claimed'
+        ]);
+      });
+
+      worksheetData.push([]);
+      worksheetData.push(['========================================================================================']);
+      worksheetData.push(['2. UNCLAIMED BENEFICIARIES (HINDI NAKA-CLAIM)']);
+      worksheetData.push(['========================================================================================']);
+      worksheetData.push(['#', 'Transaction #', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Contact Number', 'Allocated Amount (₱)', 'Status']);
+
+      unclaimedTxns.forEach((txn, index) => {
+        const ben = txn.Beneficiary || {};
+        worksheetData.push([
+          index + 1,
+          txn.transaction_number || 'N/A',
+          ben.RFID_number || 'N/A',
+          `${ben.first_name || ''} ${ben.last_name || ''}`.trim() || 'N/A',
+          ben.beneficiary_id_code || 'N/A',
+          ben.Barangay?.barangay_name || barangayName,
+          ben.category || 'N/A',
+          ben.contact_number || 'N/A',
+          parseFloat(txn.amount || 0),
+          'Unclaimed'
+        ]);
+      });
+
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Distribution Report');
+
+      worksheet['!cols'] = Array(11).fill({ wch: 18 });
+
+      const cleanTitle = (eventData.title || 'Distribution').replace(/\s+/g, '_');
+      const dateStr = new Date().toISOString().split('T')[0];
+      const fileName = `${cleanTitle}_Report_${dateStr}.xlsx`;
+
+      XLSX.writeFile(workbook, fileName);
+      setSuccess('Excel report downloaded successfully with Claimed & Unclaimed lists!');
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err) {
+      console.error('Failed to export Excel report:', err);
+      setError('Failed to export Excel report');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleViewDetails = async (eventId) => {
     setLoading(true);
     try {
@@ -881,6 +978,17 @@ export default function DistributionPage() {
                                 End Session
                               </button>
                             )}
+
+                            {/* Completed Status Actions - EXPORT EXCEL REPORT ONLY WHEN SESSION HAS ENDED */}
+                            {event.status === 'completed' && (
+                               <button
+                                 onClick={() => handleExportExcel(event)}
+                                 className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                 title="Export Excel Report (Claimed & Unclaimed Lists)"
+                               >
+                                 <Download className="w-4 h-4" />
+                               </button>
+                             )}
                           </div>
                         </td>
                       </tr>
@@ -1181,15 +1289,26 @@ export default function DistributionPage() {
                 <h2 className="text-xl font-bold text-slate-900">{selectedEvent.title}</h2>
                 <StatusBadge status={selectedEvent.status} />
               </div>
-              <button
-                onClick={() => {
-                  setShowDetailsModal(false);
-                  setSelectedEvent(null);
-                }}
-                className="text-slate-500 hover:text-slate-700"
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
+              <div className="flex items-center gap-3">
+                {selectedEvent.status === 'completed' && (
+                  <button
+                    onClick={() => handleExportExcel(selectedEvent)}
+                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                    title="Export Excel Report (Claimed & Unclaimed Lists)"
+                  >
+                    <Download className="w-5 h-5" />
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    setSelectedEvent(null);
+                  }}
+                  className="text-slate-500 hover:text-slate-700"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
             </div>
 
             <div className="p-6 space-y-6">

@@ -19,6 +19,21 @@ const {
 const router = express.Router();
 router.use(authenticate);
 
+// Helper function to safely parse target_barangays input into an array of numeric IDs
+function parseTargetBarangayIds(input) {
+  if (!input) return [];
+  let bIds = [];
+  if (typeof input === 'string') {
+    try { bIds = JSON.parse(input); } catch (e) { bIds = [input]; }
+  } else if (Array.isArray(input)) {
+    bIds = input;
+  } else {
+    bIds = [input];
+  }
+  if (!Array.isArray(bIds)) bIds = [bIds];
+  return bIds.map(Number).filter(id => !isNaN(id) && id > 0);
+}
+
 // Helper function to find target matching beneficiaries directly by Barangay & Category (Approved beneficiaries)
 async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsInput) {
   let catList = [];
@@ -51,13 +66,7 @@ async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsI
     });
   }
 
-  let bIds = [];
-  if (typeof barangayIdsInput === 'string') {
-    try { bIds = JSON.parse(barangayIdsInput); } catch (e) { bIds = [barangayIdsInput]; }
-  } else if (Array.isArray(barangayIdsInput)) {
-    bIds = barangayIdsInput;
-  }
-  bIds = bIds.map(Number).filter(Boolean);
+  let bIds = parseTargetBarangayIds(barangayIdsInput);
 
   if (bIds.length === 0) {
     return [];
@@ -199,14 +208,29 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
   }
 
   // NOTIFY ONLY ASSIGNED BARANGAY STAFF (NOT ADMIN)
-  const targetBarangayIds = (Array.isArray(announcement.target_barangays) ? announcement.target_barangays : [announcement.target_barangays]).map(Number).filter(Boolean);
+  const targetBarangayIds = parseTargetBarangayIds(announcement.target_barangays);
   
-  // Only notify barangay staff assigned to the target barangays - EXCLUDE admin role
-  const staffUsers = await User.findAll({
+  // CRITICAL: Only notify barangay staff assigned to EXACTLY the target barangays
+  // Staff from other barangays MUST NOT receive notifications
+  const staffUsers = targetBarangayIds.length > 0 ? await User.findAll({
     where: {
       role: { [Op.in]: ['staff', 'barangay'] }, // Exclude 'admin' role
       status: 'active',
-      barangay_id: { [Op.in]: targetBarangayIds }, // Only staff assigned to target barangays
+      barangay_id: { 
+        [Op.in]: targetBarangayIds, // Only staff whose barangay_id matches target barangays
+        [Op.ne]: null, // Exclude users with null barangay_id
+      },
+    },
+  }) : [];
+
+  const targetStaffUserIds = staffUsers.map((s) => s.id);
+
+  // Clean up any stale notifications for staff members whose barangays are NO LONGER targeted
+  await Notification.destroy({
+    where: {
+      reference_id: announcement.id,
+      reference_type: 'announcement_staff',
+      user_id: { [Op.notIn]: targetStaffUserIds.length > 0 ? targetStaffUserIds : [0] },
     },
   });
 
@@ -222,6 +246,12 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
 
   if (staffNotifications.length > 0) {
     await Notification.bulkCreate(staffNotifications, { ignoreDuplicates: true });
+    
+    // Log staff notification details for verification
+    console.log(`[ANNOUNCEMENT ${announcement.id}] Notified ${staffUsers.length} staff for barangays: ${targetBarangayIds.join(', ')}`);
+    staffUsers.forEach(s => {
+      console.log(`  → Staff ID ${s.id}: ${s.first_name} ${s.last_name} (Barangay ID: ${s.barangay_id})`);
+    });
   }
 
   // Audit log entry
@@ -590,15 +620,30 @@ router.get('/', async (req, res, next) => {
     if (barangay_id) {
       const bIdNum = Number(barangay_id);
       announcements = announcements.filter((a) =>
-        Array.isArray(a.target_barangays) && a.target_barangays.map(Number).includes(bIdNum)
+        parseTargetBarangayIds(a.target_barangays).includes(bIdNum)
       );
     }
 
-    // Filter staff view to events that target their barangay if role === 'barangay'
-    if (req.user.role === 'barangay' && req.user.barangay_id) {
-      announcements = announcements.filter((a) =>
-        Array.isArray(a.target_barangays) && a.target_barangays.map(Number).includes(req.user.barangay_id)
-      );
+    // Filter staff view to events that target their barangay if role === 'barangay' OR 'staff'
+    // CRITICAL: Both 'staff' and 'barangay' roles should only see announcements for their assigned barangay
+    if ((req.user.role === 'barangay' || req.user.role === 'staff') && req.user.barangay_id) {
+      const userBarangayId = Number(req.user.barangay_id);
+      console.log(`[ANNOUNCEMENT FILTER] User: ${req.user.first_name} ${req.user.last_name} (ID: ${req.user.id})`);
+      console.log(`[ANNOUNCEMENT FILTER] Role: ${req.user.role}, Barangay ID: ${userBarangayId}`);
+      console.log(`[ANNOUNCEMENT FILTER] Before filter: ${announcements.length} announcements`);
+      
+      announcements = announcements.filter((a) => {
+        const targetIds = parseTargetBarangayIds(a.target_barangays);
+        const isMatch = targetIds.includes(userBarangayId);
+        if (!isMatch) {
+          console.log(`[ANNOUNCEMENT FILTER]   ❌ Filtered out: "${a.title}" (Target barangays: ${JSON.stringify(targetIds)})`);
+        } else {
+          console.log(`[ANNOUNCEMENT FILTER]   ✅ Included: "${a.title}" (Target barangays: ${JSON.stringify(targetIds)})`);
+        }
+        return isMatch;
+      });
+      
+      console.log(`[ANNOUNCEMENT FILTER] After filter: ${announcements.length} announcements\n`);
     }
 
     // Attach present_count summary
@@ -688,7 +733,8 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       return res.status(400).json({ success: false, message: 'At least one target category must be selected' });
     }
 
-    if (!Array.isArray(target_barangays) || target_barangays.length === 0) {
+    const parsedBarangays = parseTargetBarangayIds(target_barangays);
+    if (parsedBarangays.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one target barangay must be selected' });
     }
 
@@ -704,7 +750,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       publish_date: status === 'published' ? new Date() : null,
       expiration_date: expiration_date || null,
       target_programs: targetCatsOrProgs,
-      target_barangays,
+      target_barangays: parsedBarangays,
       created_by_user_id: req.user.id,
       recipient_count: 0,
       view_count: 0,
@@ -1116,6 +1162,10 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
     const previousStatus = announcement.status;
     const targetCatsOrProgs = target_categories || target_programs || announcement.target_programs;
 
+    const updatedBarangays = target_barangays !== undefined 
+      ? parseTargetBarangayIds(target_barangays) 
+      : parseTargetBarangayIds(announcement.target_barangays);
+
     await announcement.update({
       title: title ?? announcement.title,
       message: message ?? announcement.message,
@@ -1127,7 +1177,7 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       status: status ?? announcement.status,
       expiration_date: expiration_date !== undefined ? expiration_date : announcement.expiration_date,
       target_programs: targetCatsOrProgs,
-      target_barangays: target_barangays ?? announcement.target_barangays,
+      target_barangays: updatedBarangays,
     });
 
     if (announcement.status === 'published') {

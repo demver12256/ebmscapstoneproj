@@ -85,48 +85,96 @@ export default function RfidScannerPage() {
     }
   }, [selectedEvent]);
 
-  const handleExportToExcel = () => {
-    if (scannedRecords.length === 0) {
-      setError('No records to export');
+  const handleExportToExcel = async () => {
+    if (!selectedEvent) {
+      setError('Please select a distribution event first');
       return;
     }
 
-    const selectedEventData = distributionEvents.find(e => e.id === Number(selectedEvent));
-    const worksheetData = [
-      ['RFID Attendance Record'],
-      ['Event:', eventName],
-      ['Program:', selectedEventData?.Program?.name || 'N/A'],
-      ['Date:', new Date().toLocaleDateString()],
-      ['Total Scanned:', scannedRecords.length],
-      [],
-      ['#', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Category', 'Time Scanned', 'Status']
-    ];
+    try {
+      const selectedEventData = distributionEvents.find(e => e.id === Number(selectedEvent));
+      const res = await distributionApi.getTransactions(selectedEvent);
+      const allTxns = res.data?.data || [];
 
-    scannedRecords.forEach((record, index) => {
-      worksheetData.push([
-        index + 1,
-        record.rfid,
-        record.name,
-        record.beneficiary_id_code || 'N/A',
-        record.category || 'N/A',
-        record.time,
-        record.status
-      ]);
-    });
+      if (allTxns.length === 0 && scannedRecords.length === 0) {
+        setError('No records found for this distribution event');
+        return;
+      }
 
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance');
+      const claimedTxns = allTxns.filter(t => t.status === 'released');
+      const unclaimedTxns = allTxns.filter(t => t.status === 'pending');
 
-    // Auto-size columns
-    const maxWidth = worksheetData.reduce((w, r) => Math.max(w, r.length), 10);
-    worksheet['!cols'] = Array(maxWidth).fill({ wch: 15 });
+      const worksheetData = [
+        ['EBMS DISTRIBUTION SESSION REPORT'],
+        ['Event Title:', selectedEventData?.title || eventName],
+        ['Program:', selectedEventData?.Program?.name || 'N/A'],
+        ['Barangay:', selectedEventData?.Barangay?.barangay_name || 'N/A'],
+        ['Date:', new Date().toLocaleDateString()],
+        ['Total Eligible:', allTxns.length],
+        ['Total Claimed (Naka-Claim):', claimedTxns.length],
+        ['Total Unclaimed (Hindi Naka-Claim):', unclaimedTxns.length],
+        [],
+        ['========================================================================================'],
+        ['1. CLAIMED BENEFICIARIES (NAKA-CLAIM)'],
+        ['========================================================================================'],
+        ['#', 'Transaction #', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Claim Date & Time', 'Amount Released (₱)', 'Released By Staff', 'Status']
+      ];
 
-    const fileName = `${eventName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
-    
-    setSuccess('Excel file exported successfully!');
-    setTimeout(() => setSuccess(null), 3000);
+      claimedTxns.forEach((txn, index) => {
+        const ben = txn.Beneficiary || {};
+        const staff = txn.ReleasedByStaff ? `${txn.ReleasedByStaff.first_name || ''} ${txn.ReleasedByStaff.last_name || ''}`.trim() : 'N/A';
+        worksheetData.push([
+          index + 1,
+          txn.transaction_number || 'N/A',
+          ben.RFID_number || 'N/A',
+          `${ben.first_name || ''} ${ben.last_name || ''}`.trim() || 'N/A',
+          ben.beneficiary_id_code || 'N/A',
+          ben.Barangay?.barangay_name || selectedEventData?.Barangay?.barangay_name || 'N/A',
+          ben.category || 'N/A',
+          txn.released_at ? new Date(txn.released_at).toLocaleString() : 'N/A',
+          parseFloat(txn.amount || 0),
+          staff,
+          'Claimed'
+        ]);
+      });
+
+      worksheetData.push([]);
+      worksheetData.push(['========================================================================================']);
+      worksheetData.push(['2. UNCLAIMED BENEFICIARIES (HINDI NAKA-CLAIM)']);
+      worksheetData.push(['========================================================================================']);
+      worksheetData.push(['#', 'Transaction #', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Contact Number', 'Allocated Amount (₱)', 'Status']);
+
+      unclaimedTxns.forEach((txn, index) => {
+        const ben = txn.Beneficiary || {};
+        worksheetData.push([
+          index + 1,
+          txn.transaction_number || 'N/A',
+          ben.RFID_number || 'N/A',
+          `${ben.first_name || ''} ${ben.last_name || ''}`.trim() || 'N/A',
+          ben.beneficiary_id_code || 'N/A',
+          ben.Barangay?.barangay_name || selectedEventData?.Barangay?.barangay_name || 'N/A',
+          ben.category || 'N/A',
+          ben.contact_number || 'N/A',
+          parseFloat(txn.amount || 0),
+          'Unclaimed'
+        ]);
+      });
+
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Distribution Summary');
+
+      worksheet['!cols'] = Array(11).fill({ wch: 18 });
+
+      const fileName = `${eventName.replace(/\s+/g, '_')}_Distribution_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      setSuccess('Excel report exported successfully with Claimed & Unclaimed lists!');
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err) {
+      console.error('Failed to export Excel report:', err);
+      setError('Failed to export distribution Excel report');
+    }
   };
 
   const handleScan = async (e) => {
@@ -389,9 +437,18 @@ export default function RfidScannerPage() {
               return (
                 <div className={`rounded-lg border p-4 flex items-start gap-3 ${statusColors[currentEvent.status] || statusColors.scheduled}`}>
                   <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm">
+                  <div className="text-sm flex-1">
                     <p className="font-medium">Event Status: {currentEvent.status.toUpperCase()}</p>
                     <p>{statusMessages[currentEvent.status] || 'Unknown status'}</p>
+                    {currentEvent.status === 'completed' && (
+                      <button
+                        onClick={handleExportToExcel}
+                        className="mt-3 p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors inline-flex items-center justify-center shadow-sm"
+                        title="Export Excel Report (Claimed & Unclaimed Lists)"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

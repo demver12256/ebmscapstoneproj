@@ -121,7 +121,7 @@ export default function AnnouncementManagementPage() {
         ...prev,
         target_categories: (prev.target_categories && prev.target_categories.length > 0) ? prev.target_categories : [...TARGET_CATEGORIES],
         target_programs: loadedPrograms.map((p) => p.id),
-        target_barangays: (prev.target_barangays && prev.target_barangays.length > 0) ? prev.target_barangays : loadedBarangays.map((b) => b.id),
+        target_barangays: prev.target_barangays || [],
       }));
     } catch (err) {
       console.error('Failed to load programs/barangays metadata:', err);
@@ -186,6 +186,20 @@ export default function AnnouncementManagementPage() {
     }
   }, [formData.target_categories, formData.target_barangays, isModalOpen, updateTargetPreview]);
 
+  const parseBarangayIds = (input) => {
+    if (!input) return [];
+    let bIds = [];
+    if (typeof input === 'string') {
+      try { bIds = JSON.parse(input); } catch (e) { bIds = [input]; }
+    } else if (Array.isArray(input)) {
+      bIds = input;
+    } else {
+      bIds = [input];
+    }
+    if (!Array.isArray(bIds)) bIds = [bIds];
+    return bIds.map(Number).filter((id) => !isNaN(id) && id > 0);
+  };
+
   const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
     if (!selectedCategories || selectedCategories.length === 0) return [];
     if (selectedCategories.length === TARGET_CATEGORIES.length) return allPrograms.map((p) => p.id);
@@ -221,7 +235,7 @@ export default function AnnouncementManagementPage() {
       expiration_date: '',
       target_categories: [...TARGET_CATEGORIES],
       target_programs: programs.map((p) => p.id),
-      target_barangays: barangays.map((b) => b.id),
+      target_barangays: [],
     });
     setIsModalOpen(true);
   };
@@ -248,6 +262,8 @@ export default function AnnouncementManagementPage() {
       return catProgIds.some((id) => annPrograms.includes(id));
     });
 
+    const parsedTargetBarangays = parseBarangayIds(ann.target_barangays);
+
     setFormData({
       title: ann.title || '',
       message: ann.message || '',
@@ -262,7 +278,7 @@ export default function AnnouncementManagementPage() {
       expiration_date: ann.expiration_date || '',
       target_categories: matchedCategories.length > 0 ? matchedCategories : [...TARGET_CATEGORIES],
       target_programs: annPrograms.length > 0 ? annPrograms : programs.map((p) => p.id),
-      target_barangays: Array.isArray(ann.target_barangays) ? ann.target_barangays : barangays.map((b) => b.id),
+      target_barangays: parsedTargetBarangays,
     });
     setIsModalOpen(true);
   };
@@ -303,21 +319,24 @@ export default function AnnouncementManagementPage() {
 
   // Toggle Barangay Selection
   const toggleBarangayTarget = (bId) => {
+    const numId = Number(bId);
     setFormData((prev) => {
-      const exists = prev.target_barangays.includes(bId);
+      const currentBarangays = parseBarangayIds(prev.target_barangays);
+      const exists = currentBarangays.includes(numId);
       const updated = exists
-        ? prev.target_barangays.filter((id) => id !== bId)
-        : [...prev.target_barangays, bId];
+        ? currentBarangays.filter((id) => id !== numId)
+        : [...currentBarangays, numId];
       return { ...prev, target_barangays: updated };
     });
   };
 
   const toggleAllBarangays = () => {
     setFormData((prev) => {
-      const allSelected = prev.target_barangays.length === barangays.length;
+      const currentBarangays = parseBarangayIds(prev.target_barangays);
+      const allSelected = currentBarangays.length === barangays.length;
       return {
         ...prev,
-        target_barangays: allSelected ? [] : barangays.map((b) => b.id),
+        target_barangays: allSelected ? [] : barangays.map((b) => Number(b.id)),
       };
     });
   };
@@ -508,11 +527,12 @@ export default function AnnouncementManagementPage() {
       .join(', ');
   };
 
-  const getBarangayNames = (bIds) => {
-    if (!Array.isArray(bIds) || bIds.length === 0) return 'None';
+  const getBarangayNames = (bIdsInput) => {
+    const bIds = parseBarangayIds(bIdsInput);
+    if (bIds.length === 0) return 'None';
     if (bIds.length === barangays.length) return 'All Barangays';
     return barangays
-      .filter((b) => bIds.includes(b.id))
+      .filter((b) => bIds.includes(Number(b.id)))
       .map((b) => b.barangay_name)
       .join(', ');
   };

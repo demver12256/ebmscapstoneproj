@@ -533,12 +533,17 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
         const isAnnouncement = currentItem?.popupType === 'announcement';
         const isProgram = !isAnnouncement && (currentItem?.type === 'program' || currentItem?.reference_type === 'BenefitProgram');
         const isDistribution = !isAnnouncement && (currentItem?.type === 'distribution' || currentItem?.reference_type === 'DistributionEvent');
+        const isUnclaimed = currentItem?.title?.toLowerCase().includes('unclaimed');
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
             <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-xl w-full overflow-hidden relative space-y-0">
               {/* Header Banner */}
-              <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white p-6 relative">
+              <div className={`p-6 relative text-white ${
+                isUnclaimed 
+                  ? 'bg-gradient-to-r from-amber-700 via-orange-800 to-red-900'
+                  : 'bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900'
+              }`}>
                 <button
                   onClick={() => setShowPopupModal(false)}
                   className="absolute top-4 right-4 p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition"
@@ -548,13 +553,17 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                 </button>
                 <div className="flex items-center gap-3">
                   <div className={`p-3 rounded-2xl shadow-md ${
-                    isProgram
+                    isUnclaimed
+                      ? 'bg-amber-400 text-slate-950'
+                      : isProgram
                       ? 'bg-purple-400 text-slate-950'
                       : isDistribution
                       ? 'bg-emerald-400 text-slate-950'
                       : 'bg-yellow-400 text-slate-950'
                   }`}>
-                    {isProgram ? (
+                    {isUnclaimed ? (
+                      <AlertTriangle className="w-6 h-6 animate-bounce" />
+                    ) : isProgram ? (
                       <Award className="w-6 h-6 animate-bounce" />
                     ) : isDistribution ? (
                       <Gift className="w-6 h-6 animate-bounce" />
@@ -564,7 +573,9 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                   </div>
                   <div>
                     <span className="text-yellow-300 text-xs font-extrabold uppercase tracking-wider block">
-                      {isProgram
+                      {isUnclaimed
+                        ? 'Notice of Unclaimed Benefit'
+                        : isProgram
                         ? 'Program Enrollment Notification'
                         : isDistribution
                         ? 'New Benefit Distribution'
@@ -580,7 +591,11 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
               {/* Content Body */}
               <div className="p-6 space-y-4">
                 <div className="flex items-center gap-2 flex-wrap text-xs">
-                  {isProgram ? (
+                  {isUnclaimed ? (
+                    <span className="bg-amber-100 text-amber-900 font-black px-2.5 py-0.5 rounded-md border border-amber-300">
+                      ⚠️ UNCLAIMED BENEFIT
+                    </span>
+                  ) : isProgram ? (
                     <span className="bg-purple-100 text-purple-800 font-bold px-2.5 py-0.5 rounded-md border border-purple-200">
                       🎓 PROGRAM ENROLLMENT
                     </span>

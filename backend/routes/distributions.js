@@ -746,6 +746,13 @@ router.post('/events/:id/start-session', authorize('admin', 'staff', 'barangay')
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
+    if (event.status === 'completed') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'This distribution session has been ended and cannot be restarted.' 
+      });
+    }
+
     if (event.status !== 'scheduled' && event.status !== 'ongoing') {
       return res.status(400).json({ 
         success: false, 
@@ -796,40 +803,62 @@ router.post('/events/:id/end-session', authorize('admin', 'staff', 'barangay'), 
       });
     }
 
-    // Check if all transactions are released
-    const pendingCount = await DistributionTransaction.count({
+    // Check transactions status
+    const pendingTransactions = await DistributionTransaction.findAll({
       where: { distribution_event_id: event.id, status: 'pending' },
+      include: [{ model: Beneficiary, attributes: ['id', 'user_id', 'first_name', 'last_name', 'contact_number'] }],
     });
+
+    const pendingCount = pendingTransactions.length;
 
     const releasedCount = await DistributionTransaction.count({
       where: { distribution_event_id: event.id, status: 'released' },
     });
 
-    // Auto-complete if all beneficiaries received their benefits
-    const newStatus = pendingCount === 0 ? 'completed' : 'scheduled';
-    
+    // Once a distribution session ends, set status to completed permanently
     await event.update({ 
-      status: newStatus,
-      ...(newStatus === 'completed' && { completed_at: new Date() }),
+      status: 'completed',
+      completed_at: new Date(),
     });
+
+    // Create popup notifications for unclaimed beneficiaries
+    let notifiedCount = 0;
+    const notifPromises = pendingTransactions
+      .filter(txn => txn.Beneficiary && txn.Beneficiary.user_id)
+      .map(txn => {
+        notifiedCount++;
+        const amountStr = parseFloat(txn.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+        return Notification.create({
+          user_id: txn.Beneficiary.user_id,
+          title: `Unclaimed Benefit Notice: ${event.title}`,
+          message: `Dear ${txn.Beneficiary.first_name}, you have an unclaimed benefit of ₱${amountStr} for "${event.title}". The distribution session has ended. Please visit your Barangay office or contact staff for assistance.`,
+          type: 'distribution',
+          reference_id: event.id,
+          reference_type: 'distribution_event',
+          is_read: false,
+        });
+      });
+
+    await Promise.all(notifPromises);
 
     await AuditLog.create({
       user_id: req.user.id,
-      action: `Ended distribution session for "${event.title}" - ${releasedCount} released, ${pendingCount} pending`,
+      action: `Ended distribution session for "${event.title}" - ${releasedCount} released, ${pendingCount} pending (${notifiedCount} notifications sent)`,
       module: 'distributions',
-      details: JSON.stringify({ event_id: event.id, released: releasedCount, pending: pendingCount }),
+      details: JSON.stringify({ event_id: event.id, released: releasedCount, pending: pendingCount, notifications_sent: notifiedCount }),
     });
 
     res.json({ 
       success: true, 
       data: event,
-      message: newStatus === 'completed' 
+      message: pendingCount === 0 
         ? 'Distribution session completed. All benefits have been released!' 
-        : `Distribution session ended. ${pendingCount} beneficiary(ies) still pending.`,
+        : `Distribution session ended and locked. ${pendingCount} beneficiary(ies) did not claim and have been notified.`,
       summary: {
         released: releasedCount,
         pending: pendingCount,
-        status: newStatus,
+        status: 'completed',
+        notifications_sent: notifiedCount,
       }
     });
   } catch (error) {

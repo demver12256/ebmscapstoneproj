@@ -73,7 +73,14 @@ app.use('/api/barangays', barangayRoutes);
 app.use('/api/beneficiaries', beneficiaryRoutes);
 app.use('/api/programs', programRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
-app.use('/api/distributions', distributionRoutes);
+app.use('/api/distributions', (req, res, next) => {
+  try {
+    delete require.cache[require.resolve('./routes/distributions')];
+    return require('./routes/distributions')(req, res, next);
+  } catch (err) {
+    return next(err);
+  }
+});
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/sms', smsRoutes);
 app.use('/api/reports', reportRoutes);
