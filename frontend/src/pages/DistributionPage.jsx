@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { 
   Package, Plus, Calendar, MapPin, Users, DollarSign, 
   Eye, Edit, Trash2, CheckCircle, XCircle, Clock,
-  Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw, Archive, Download
+  Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw, Archive, Download, AlertTriangle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { distributionApi, programApi, barangayApi, userApi } from '../services/api';
@@ -1385,14 +1385,31 @@ export default function DistributionPage() {
               </p>
             </div>
 
-            <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-6 border border-amber-200">
+            <div className={`bg-gradient-to-br ${
+              selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])
+                ? 'from-amber-100 to-orange-100 border-amber-300'
+                : 'from-amber-50 to-amber-100 border-amber-200'
+            } rounded-xl p-6 border shadow-sm`}>
               <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-medium text-amber-600">Pending</p>
-                <Clock className="w-5 h-5 text-amber-600" />
+                <p className={`text-sm font-bold ${
+                  selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])
+                    ? 'text-amber-900'
+                    : 'text-amber-600'
+                }`}>
+                  {selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])
+                    ? 'Unclaimed'
+                    : 'Pending'}
+                </p>
+                {selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])
+                  ? <AlertTriangle className="w-5 h-5 text-amber-600 animate-bounce" />
+                  : <Clock className="w-5 h-5 text-amber-600" />}
               </div>
               <p className="text-3xl font-bold text-amber-900">
                 {(selectedEvent.total_beneficiaries || 0) - (selectedEvent.total_released || 0)}
               </p>
+              {(selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])) && (
+                <p className="text-xs text-amber-800 font-semibold mt-1">Not Claimed</p>
+              )}
             </div>
 
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-6 border border-purple-200">
@@ -1425,10 +1442,15 @@ export default function DistributionPage() {
                   </span>
                 </div>
               </div>
-              <div className="flex justify-between mt-2 text-xs text-slate-600">
+              <div className="flex justify-between mt-2 text-xs text-slate-600 font-medium">
                 <span>{selectedEvent.total_released} released</span>
-                <span>{selectedEvent.total_beneficiaries - selectedEvent.total_released} pending</span>
-                  </div>
+                <span>
+                  {selectedEvent.total_beneficiaries - selectedEvent.total_released}{' '}
+                  {selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])
+                    ? 'unclaimed'
+                    : 'pending'}
+                </span>
+              </div>
                 </div>
               )}
 
@@ -1451,8 +1473,15 @@ export default function DistributionPage() {
                       <span className="text-sm text-green-600 font-semibold">
                         {selectedEvent.Transactions?.filter(t => t.status === 'released').length || 0} Released
                       </span>
-                      <span className="text-sm text-amber-600 font-semibold">
-                        {selectedEvent.Transactions?.filter(t => t.status === 'pending').length || 0} Pending
+                      <span className={`text-sm font-semibold ${
+                        selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])
+                          ? 'text-amber-800 font-extrabold'
+                          : 'text-amber-600'
+                      }`}>
+                        {selectedEvent.Transactions?.filter(t => t.status === 'pending').length || 0}{' '}
+                        {selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])
+                          ? 'Unclaimed'
+                          : 'Pending'}
                       </span>
                       <span className="text-sm text-slate-600">
                         Total: {selectedEvent.Transactions?.length || 0}
@@ -1488,7 +1517,11 @@ export default function DistributionPage() {
                       <tbody className="divide-y divide-slate-100">
                         {selectedEvent.Transactions.map((txn, index) => (
                           <tr key={txn.id} className={`hover:bg-slate-50 ${
-                            txn.status === 'pending' ? 'bg-amber-50' : ''
+                            (selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])) && txn.status !== 'released'
+                              ? 'bg-amber-50/70 border-l-4 border-l-amber-500'
+                              : txn.status === 'pending'
+                              ? 'bg-amber-50/30'
+                              : ''
                           }`}>
                             <td className="px-4 py-3 text-slate-500">{index + 1}</td>
                             <td className="px-4 py-3">
@@ -1517,18 +1550,23 @@ export default function DistributionPage() {
                             </td>
                             <td className="px-4 py-3 text-center">
                               {txn.status === 'released' ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
-                                  <CheckCircle className="w-3 h-3" />
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
+                                  <CheckCircle className="w-3.5 h-3.5" />
                                   Released
                                 </span>
                               ) : txn.status === 'verified' ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
-                                  <CheckCircle className="w-3 h-3" />
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
+                                  <CheckCircle className="w-3.5 h-3.5" />
                                   Verified
                                 </span>
+                              ) : (selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0]) || txn.status === 'unclaimed') ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-extrabold border border-amber-300">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                  Unclaimed
+                                </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">
-                                  <Clock className="w-3 h-3" />
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">
+                                  <Clock className="w-3.5 h-3.5" />
                                   {txn.is_preview ? 'Eligible' : 'Pending'}
                                 </span>
                               )}

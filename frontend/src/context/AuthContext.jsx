@@ -39,6 +39,38 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const googleLogin = async (credential) => {
+    setLoading(true);
+    console.log('[AuthContext] Google login starting...');
+    try {
+      console.log('[AuthContext] Sending credential to API...');
+      const response = await authApi.googleLogin({ credential });
+      console.log('[AuthContext] API response received:', response.data);
+      
+      const { token: jwtToken, user: authUser } = response.data;
+      
+      if (!jwtToken || !authUser) {
+        console.error('[AuthContext] Invalid response structure:', response.data);
+        throw new Error('Invalid response from server');
+      }
+      
+      console.log('[AuthContext] Setting token and user:', authUser.email);
+      setToken(jwtToken);
+      setUser(authUser);
+      localStorage.setItem('ebms_token', jwtToken);
+      localStorage.setItem('ebms_user', JSON.stringify(authUser));
+      setAuthToken(jwtToken);
+      console.log('[AuthContext] Google login completed successfully');
+      return authUser;
+    } catch (error) {
+      console.error('[AuthContext] Google login error:', error);
+      console.error('[AuthContext] Error response:', error.response?.data);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -48,7 +80,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, googleLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );

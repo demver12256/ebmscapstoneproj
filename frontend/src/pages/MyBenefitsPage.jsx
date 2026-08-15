@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DollarSign, Calendar, CheckCircle, Clock, Package, TrendingUp, Download } from 'lucide-react';
+import { DollarSign, Calendar, CheckCircle, Clock, Package, TrendingUp, Download, AlertTriangle } from 'lucide-react';
 import { beneficiaryApi } from '../services/api';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
@@ -202,6 +202,11 @@ export default function MyBenefitsPage() {
                           <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
                             <CheckCircle className="w-3 h-3" />
                             Received
+                          </span>
+                        ) : (txn.Event?.distribution_date && String(txn.Event.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0]) || txn.Event?.status === 'completed' ? (
+                          <span className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-extrabold border border-amber-300" title="The distribution date for this event has passed without being claimed">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            Unclaimed
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-semibold">

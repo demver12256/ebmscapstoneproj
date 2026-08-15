@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Sign-In Test</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <h1>Google Sign-In Test Page</h1>
+    <p>Testing if Google Sign-In library loads correctly...</p>
+    
+    <div id="g_id_onload"
+         data-client_id="651314695916-jq88jrdn7vq6881n0hovugl5q3mf2djh.apps.googleusercontent.com"
+         data-callback="handleCredentialResponse">
+    </div>
+    <div class="g_id_signin" data-type="standard"></div>
+
+    <div id="status" style="margin-top: 20px; padding: 10px; border: 1px solid #ccc;"></div>
+
+    <script>
+        function handleCredentialResponse(response) {
+            console.log("Encoded JWT ID token: " + response.credential);
+            document.getElementById('status').innerHTML = 
+                '<strong style="color: green;">✅ SUCCESS!</strong><br>' +
+                'Google Sign-In is working!<br>' +
+                'Token received: ' + response.credential.substring(0, 50) + '...';
+        }
+
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (window.google && window.google.accounts && window.google.accounts.id) {
+                    document.getElementById('status').innerHTML = 
+                        '<strong style="color: green;">✅ Google Identity Services loaded successfully!</strong>';
+                } else {
+                    document.getElementById('status').innerHTML = 
+                        '<strong style="color: red;">❌ Google Identity Services failed to load</strong><br>' +
+                        'Possible causes:<br>' +
+                        '1. Network/internet connection issue<br>' +
+                        '2. Ad blocker or browser extension blocking Google<br>' +
+                        '3. Firewall restrictions<br>' +
+                        '4. Invalid Google Client ID';
+                }
+            }, 2000);
+        });
+    </script>
+</body>
+</html>

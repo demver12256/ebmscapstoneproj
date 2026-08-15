@@ -93,6 +93,8 @@ router.get('/applications', authorize('admin', 'staff', 'barangay'), async (req,
 router.get('/me', authorize('beneficiary'), async (req, res, next) => {
   try {
     console.log('[GET /me] Request from user:', req.user.id);
+    const { checkAndProcessExpiredDistributions } = require('../utils/distributionScheduler');
+    await checkAndProcessExpiredDistributions();
     
     const { Enrollment, BenefitProgram, DistributionTransaction, DistributionEvent } = require('../db');
     
@@ -101,7 +103,7 @@ router.get('/me', authorize('beneficiary'), async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'User ID is required' });
     }
     
-    const beneficiary = await Beneficiary.findOne({
+    let beneficiary = await Beneficiary.findOne({
       where: { user_id: req.user.id },
       include: [
         { model: Barangay, required: false },
@@ -126,7 +128,51 @@ router.get('/me', authorize('beneficiary'), async (req, res, next) => {
     });
     
     if (!beneficiary) {
-      console.error('[GET /me] Beneficiary not found for user:', req.user.id);
+      console.warn('[GET /me] Beneficiary not found for user ID:', req.user.id, '- Auto-creating beneficiary record');
+      const user = await User.findByPk(req.user.id);
+      if (user) {
+        await Beneficiary.create({
+          user_id: user.id,
+          first_name: user.first_name || 'Beneficiary',
+          last_name: user.last_name || 'User',
+          sex: 'Other',
+          birthdate: '2000-01-01',
+          barangay_id: null,
+          category: 'Persons with Disabilities (PWD)',
+          ip_classification: 'Non-IP',
+          contact_number: user.phone || '',
+          sitio: '',
+          address: '',
+        });
+
+        beneficiary = await Beneficiary.findOne({
+          where: { user_id: req.user.id },
+          include: [
+            { model: Barangay, required: false },
+            { model: User, required: false },
+            { model: BeneficiaryDocument, as: 'Documents', required: false },
+            { 
+              model: Enrollment, 
+              as: 'Enrollments',
+              required: false,
+              where: { status: 'active' },
+              include: [{ model: BenefitProgram, required: false }]
+            },
+            {
+              model: DistributionTransaction,
+              as: 'DistributionTransactions',
+              required: false,
+              include: [{ model: DistributionEvent, as: 'Event', required: false }],
+              order: [['created_at', 'DESC']],
+              limit: 10
+            }
+          ]
+        });
+      }
+    }
+
+    if (!beneficiary) {
+      console.error('[GET /me] Beneficiary still not found for user:', req.user.id);
       return res.status(404).json({ success: false, message: 'Beneficiary profile not found' });
     }
 

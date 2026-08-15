@@ -80,9 +80,11 @@ function BeneficiariesModal({ distribution, onClose }) {
             <div className="text-3xl font-bold text-green-700">{releasedCount}</div>
             <div className="text-xs text-green-600 mt-1">Released (Claimed)</div>
           </div>
-          <div className="bg-amber-50 rounded-lg p-4 text-center shadow-sm">
+          <div className="bg-amber-50 rounded-lg p-4 text-center shadow-sm border border-amber-200">
             <div className="text-3xl font-bold text-amber-700">{pendingCount}</div>
-            <div className="text-xs text-amber-600 mt-1">Pending (Not Claimed)</div>
+            <div className="text-xs text-amber-700 font-extrabold mt-1">
+              {distribution.status === 'completed' || (distribution.date && String(distribution.date).split('T')[0] < new Date().toISOString().split('T')[0]) ? 'Unclaimed (Not Claimed)' : 'Pending (Not Claimed)'}
+            </div>
           </div>
         </div>
 
@@ -116,7 +118,7 @@ function BeneficiariesModal({ distribution, onClose }) {
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
-            Pending ({pendingCount})
+            {distribution.status === 'completed' || (distribution.date && String(distribution.date).split('T')[0] < new Date().toISOString().split('T')[0]) ? 'Unclaimed' : 'Pending'} ({pendingCount})
           </button>
         </div>
 
@@ -168,7 +170,15 @@ function BeneficiariesModal({ distribution, onClose }) {
                       ) : (
                         <>
                           <AlertCircle className="w-4 h-4 text-amber-600" />
-                          <span className="text-xs text-amber-600 font-medium">Pending</span>
+                          <span className={`text-xs font-extrabold ${
+                            distribution.status === 'completed' || (distribution.date && String(distribution.date).split('T')[0] < new Date().toISOString().split('T')[0])
+                              ? 'text-amber-800'
+                              : 'text-amber-600'
+                          }`}>
+                            {distribution.status === 'completed' || (distribution.date && String(distribution.date).split('T')[0] < new Date().toISOString().split('T')[0])
+                              ? 'Not Claimed'
+                              : 'Pending'}
+                          </span>
                         </>
                       )}
                     </div>
@@ -292,11 +302,15 @@ function DistributionDetailModal({ distribution, onClose }) {
                           <td className="px-4 py-2 text-slate-600 text-xs">{txn.Beneficiary?.category || '—'}</td>
                           <td className="px-4 py-2 text-slate-800">{formatCurrency(txn.amount)}</td>
                           <td className="px-4 py-2">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${
                               txn.status === 'released' ? 'bg-green-100 text-green-700' :
-                              txn.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                              (distribution.status === 'completed' || (distribution.date && String(distribution.date).split('T')[0] < new Date().toISOString().split('T')[0]))
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300 font-extrabold'
+                                : txn.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                               'bg-red-100 text-red-700'
-                            }`}>{txn.status}</span>
+                            }`}>
+                              {txn.status === 'released' ? 'Released' : (distribution.status === 'completed' || (distribution.date && String(distribution.date).split('T')[0] < new Date().toISOString().split('T')[0])) ? 'Unclaimed' : txn.status}
+                            </span>
                           </td>
                         </tr>
                       ))}
@@ -604,20 +618,40 @@ export default function ReportsPage() {
                       className="hover:bg-blue-50 rounded-lg p-2 transition-colors cursor-pointer group w-full"
                     >
                       <div className="font-semibold text-blue-600 group-hover:text-blue-700">{row.released_count}/{row.beneficiaries}</div>
-                      <div className="text-xs text-slate-500">{row.pending_count} pending</div>
+                      <div className={`text-xs ${
+                        row.status === 'completed' || (row.date && String(row.date).split('T')[0] < new Date().toISOString().split('T')[0])
+                          ? 'text-amber-700 font-bold'
+                          : 'text-slate-500'
+                      }`}>
+                        {row.pending_count} {row.status === 'completed' || (row.date && String(row.date).split('T')[0] < new Date().toISOString().split('T')[0]) ? 'unclaimed' : 'pending'}
+                      </div>
                     </button>
                     
-                    {/* Pending beneficiaries preview */}
+                    {/* Unclaimed / Pending beneficiaries preview */}
                     {row.pending_beneficiaries && row.pending_beneficiaries.length > 0 && (
-                      <div className="mt-2 p-2 bg-amber-50 rounded-lg border border-amber-200">
-                        <div className="text-xs font-semibold text-amber-700 mb-1">Pending:</div>
+                      <div className={`mt-2 p-2 rounded-lg border ${
+                        row.status === 'completed' || (row.date && String(row.date).split('T')[0] < new Date().toISOString().split('T')[0])
+                          ? 'bg-amber-100/70 border-amber-300'
+                          : 'bg-amber-50 border-amber-200'
+                      }`}>
+                        <div className={`text-xs font-extrabold mb-1 ${
+                          row.status === 'completed' || (row.date && String(row.date).split('T')[0] < new Date().toISOString().split('T')[0])
+                            ? 'text-amber-900'
+                            : 'text-amber-700'
+                        }`}>
+                          {row.status === 'completed' || (row.date && String(row.date).split('T')[0] < new Date().toISOString().split('T')[0]) ? 'Unclaimed:' : 'Pending:'}
+                        </div>
                         <div className="space-y-1">
                           {row.pending_beneficiaries.slice(0, 3).map((ben, idx) => (
-                            <div key={idx} className="text-xs text-slate-700 flex items-center gap-1">
-                              <span className="w-4 h-4 rounded-full bg-amber-200 flex items-center justify-center text-[10px] font-semibold text-amber-700">
+                            <div key={idx} className="text-xs text-slate-800 flex items-center gap-1">
+                              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                row.status === 'completed' || (row.date && String(row.date).split('T')[0] < new Date().toISOString().split('T')[0])
+                                  ? 'bg-amber-300 text-amber-950'
+                                  : 'bg-amber-200 text-amber-700'
+                              }`}>
                                 {idx + 1}
                               </span>
-                              <span className="truncate">{ben.name}</span>
+                              <span className="truncate font-medium">{ben.name}</span>
                             </div>
                           ))}
                           {row.pending_beneficiaries.length > 3 && (

@@ -39,6 +39,7 @@ app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
   })
 );
 app.use(
@@ -115,9 +116,16 @@ const createDefaultAdmin = async () => {
   });
 };
 
+const { checkAndProcessExpiredDistributions } = require('./utils/distributionScheduler');
+
 connectDatabase()
   .then(async () => {
     await createDefaultAdmin();
+    await checkAndProcessExpiredDistributions();
+    setInterval(() => {
+      checkAndProcessExpiredDistributions().catch(err => console.error('[SCHEDULER] Error:', err));
+    }, 60000);
+
     const server = app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
       console.log(`API available at http://localhost:${PORT}/api`);

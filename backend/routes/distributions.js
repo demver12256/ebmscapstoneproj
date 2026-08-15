@@ -73,6 +73,8 @@ const generateTransactionNumber = (eventId, index) => {
 // ── GET /events ── List distribution events
 router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (req, res, next) => {
   try {
+    const { checkAndProcessExpiredDistributions } = require('../utils/distributionScheduler');
+    await checkAndProcessExpiredDistributions();
     const where = {};
 
     if (req.user.role === 'staff' || req.user.role === 'barangay') {
@@ -820,6 +822,18 @@ router.post('/events/:id/end-session', authorize('admin', 'staff', 'barangay'), 
       status: 'completed',
       completed_at: new Date(),
     });
+
+    // Mark previous "Upcoming Benefit Distribution" notifications for this event as read
+    await Notification.update(
+      { is_read: true },
+      {
+        where: {
+          reference_id: event.id,
+          title: { [Op.like]: '%Upcoming%' },
+          is_read: false,
+        },
+      }
+    );
 
     // Create popup notifications for unclaimed beneficiaries
     let notifiedCount = 0;

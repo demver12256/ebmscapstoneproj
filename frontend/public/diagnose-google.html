@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Sign-In Diagnostics</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-box {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+        .log-entry {
+            margin: 3px 0;
+        }
+        .log-success { color: #4ec9b0; }
+        .log-error { color: #f48771; }
+        .log-warning { color: #dcdcaa; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Google Sign-In Diagnostics</h1>
+    <p>This page will help diagnose why Google Sign-In is not working.</p>
+
+    <!-- Test 1: Script Loading -->
+    <div class="test-box">
+        <h2>Test 1: Script Loading</h2>
+        <div id="test1-status" class="status info">Testing...</div>
+        <p>Checking if the Google Identity Services script loads correctly.</p>
+    </div>
+
+    <!-- Test 2: CORS Check -->
+    <div class="test-box">
+        <h2>Test 2: CORS Policy</h2>
+        <div id="test2-status" class="status info">Testing...</div>
+        <p>Checking if CORS is blocking the script.</p>
+    </div>
+
+    <!-- Test 3: Library Availability -->
+    <div class="test-box">
+        <h2>Test 3: Library Availability</h2>
+        <div id="test3-status" class="status info">Testing...</div>
+        <p>Checking if <code>window.google.accounts.id</code> is available.</p>
+    </div>
+
+    <!-- Test 4: Manual Initialization -->
+    <div class="test-box">
+        <h2>Test 4: Manual Initialization</h2>
+        <button onclick="testInitialization()">Test Initialization</button>
+        <div id="test4-status" class="status info">Click the button to test</div>
+    </div>
+
+    <!-- Console Logs -->
+    <div class="test-box">
+        <h2>Console Logs</h2>
+        <div id="console-logs" class="log"></div>
+        <button onclick="clearLogs()">Clear Logs</button>
+        <button onclick="copyLogs()">Copy Logs</button>
+    </div>
+
+    <!-- Solutions -->
+    <div class="test-box">
+        <h2>💡 Common Solutions</h2>
+        <ol>
+            <li><strong>Disable Browser Extensions</strong> - Especially ad blockers, privacy extensions, or security extensions</li>
+            <li><strong>Try Incognito Mode</strong> - Press <code>Ctrl+Shift+N</code> (Chrome/Edge) or <code>Ctrl+Shift+P</code> (Firefox)</li>
+            <li><strong>Check Antivirus</strong> - Some antivirus programs block external scripts</li>
+            <li><strong>Try Different Browser</strong> - Test in Chrome, Edge, or Firefox</li>
+            <li><strong>Clear Browser Cache</strong> - Press <code>Ctrl+Shift+Delete</code></li>
+            <li><strong>Disable VPN/Proxy</strong> - If you're using a VPN or proxy, try disabling it</li>
+        </ol>
+    </div>
+
+    <!-- Load Google Script -->
+    <script src="https://accounts.google.com/gsi/client" async defer 
+            onload="handleScriptLoad()" 
+            onerror="handleScriptError()"></script>
+
+    <script>
+        const logs = [];
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            logs.push({ timestamp, message, type });
+            updateLogDisplay();
+        }
+
+        function updateLogDisplay() {
+            const logDiv = document.getElementById('console-logs');
+            logDiv.innerHTML = logs.map(log => 
+                `<div class="log-entry log-${log.type}">[${log.timestamp}] ${log.message}</div>`
+            ).join('');
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLogs() {
+            logs.length = 0;
+            updateLogDisplay();
+        }
+
+        function copyLogs() {
+            const text = logs.map(log => `[${log.timestamp}] ${log.message}`).join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Logs copied to clipboard!');
+            });
+        }
+
+        function setStatus(elementId, message, type) {
+            const el = document.getElementById(elementId);
+            el.className = `status ${type}`;
+            el.textContent = message;
+        }
+
+        function handleScriptLoad() {
+            addLog('✅ Google script loaded successfully', 'success');
+            setStatus('test1-status', '✅ Script loaded successfully', 'success');
+            setStatus('test2-status', '✅ No CORS issues detected', 'success');
+            checkLibraryAvailability();
+        }
+
+        function handleScriptError() {
+            addLog('❌ Failed to load Google script', 'error');
+            setStatus('test1-status', '❌ Script failed to load', 'error');
+            setStatus('test2-status', '❌ CORS policy is blocking the script', 'error');
+            
+            const errorMsg = `
+                <strong>CORS Error Detected!</strong><br><br>
+                This usually means:<br>
+                1. A browser extension is blocking Google's script<br>
+                2. Your antivirus/firewall is interfering<br>
+                3. Network proxy is blocking the request<br><br>
+                <strong>Quick Fix:</strong> Try opening this page in Incognito mode (Ctrl+Shift+N)
+            `;
+            
+            document.getElementById('test2-status').innerHTML = errorMsg;
+        }
+
+        function checkLibraryAvailability() {
+            setTimeout(() => {
+                if (window.google && window.google.accounts && window.google.accounts.id) {
+                    addLog('✅ Google Identity Services library is available', 'success');
+                    setStatus('test3-status', '✅ Library is available and ready to use', 'success');
+                } else {
+                    addLog('❌ Google Identity Services library is NOT available', 'error');
+                    setStatus('test3-status', '❌ Library not available - script may have loaded but failed to initialize', 'error');
+                }
+            }, 2000);
+        }
+
+        function testInitialization() {
+            addLog('Testing manual initialization...', 'info');
+            
+            if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+                addLog('❌ Cannot initialize - library not loaded', 'error');
+                setStatus('test4-status', '❌ Library not available', 'error');
+                return;
+            }
+
+            try {
+                window.google.accounts.id.initialize({
+                    client_id: '651314695916-jq88jrdn7vq6881n0hovugl5q3mf2djh.apps.googleusercontent.com',
+                    callback: (response) => {
+                        addLog('✅ Callback triggered successfully', 'success');
+                        addLog('Token received: ' + response.credential.substring(0, 50) + '...', 'success');
+                        setStatus('test4-status', '✅ Initialization successful! Token received.', 'success');
+                    }
+                });
+                
+                addLog('✅ Initialization completed', 'success');
+                addLog('Triggering One Tap prompt...', 'info');
+                
+                window.google.accounts.id.prompt((notification) => {
+                    if (notification.isNotDisplayed()) {
+                        addLog('⚠️ One Tap not displayed: ' + notification.getNotDisplayedReason(), 'warning');
+                        setStatus('test4-status', '⚠️ Initialization OK, but One Tap not shown. Try clicking "Sign in with Google" button.', 'warning');
+                    } else if (notification.isSkippedMoment()) {
+                        addLog('⚠️ One Tap skipped: ' + notification.getSkippedReason(), 'warning');
+                        setStatus('test4-status', '⚠️ User closed the prompt', 'warning');
+                    }
+                });
+                
+            } catch (error) {
+                addLog('❌ Initialization error: ' + error.message, 'error');
+                setStatus('test4-status', '❌ Initialization failed: ' + error.message, 'error');
+            }
+        }
+
+        // Initial checks
+        addLog('Starting diagnostics...', 'info');
+        addLog('User Agent: ' + navigator.userAgent, 'info');
+        addLog('Current URL: ' + window.location.href, 'info');
+
+        // Check for common blocking extensions
+        setTimeout(() => {
+            const commonBlockers = [
+                'uBlock Origin', 'AdBlock', 'AdBlock Plus', 'Ghostery', 
+                'Privacy Badger', 'NoScript', 'Disconnect'
+            ];
+            addLog('Checking for common ad blockers...', 'info');
+            addLog('Note: Cannot detect all extensions, but checking for common ones', 'warning');
+        }, 1000);
+
+        // Wait for script to load or fail
+        setTimeout(() => {
+            if (!document.getElementById('test1-status').classList.contains('success') &&
+                !document.getElementById('test1-status').classList.contains('error')) {
+                setStatus('test1-status', '⚠️ Script taking too long to load', 'warning');
+                setStatus('test2-status', '⚠️ Possible network issue or blocking', 'warning');
+                addLog('⚠️ Script loading timeout - check network connection', 'warning');
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

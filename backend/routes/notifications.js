@@ -1,6 +1,7 @@
 const express = require('express');
 const { authenticate } = require('../middleware/auth.middleware');
 const { Notification, Beneficiary, AnnouncementRecipient } = require('../db');
+const { checkAndProcessExpiredDistributions } = require('../utils/distributionScheduler');
 
 const router = express.Router();
 router.use(authenticate);
@@ -8,6 +9,7 @@ router.use(authenticate);
 // ── GET / ── Get user's notifications
 router.get('/', async (req, res, next) => {
   try {
+    await checkAndProcessExpiredDistributions();
     const notifications = await Notification.findAll({
       where: { user_id: req.user.id },
       order: [['created_at', 'DESC']],
@@ -22,6 +24,7 @@ router.get('/', async (req, res, next) => {
 // ── GET /unread-count ── Get unread notification count
 router.get('/unread-count', async (req, res, next) => {
   try {
+    await checkAndProcessExpiredDistributions();
     let count = await Notification.count({
       where: { user_id: req.user.id, is_read: false },
     });

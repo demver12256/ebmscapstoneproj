@@ -1,0 +1,85 @@
+═══════════════════════════════════════════════════════════
+🔍 QUICK FIX: CORS ERROR SA GOOGLE SIGN-IN
+═══════════════════════════════════════════════════════════
+
+Ang error na nakuha mo:
+❌ "Access-Control-Allow-Origin header is present"
+
+ITO AY HINDI NORMAL! Ang Google Sign-In dapat walang CORS issue.
+
+═══════════════════════════════════════════════════════════
+⚡ FASTEST SOLUTION (TRY NOW!)
+═══════════════════════════════════════════════════════════
+
+Step 1: Press Ctrl+Shift+N (Incognito mode)
+Step 2: Type: http://localhost:3000/login
+Step 3: Click "Sign in with Google"
+
+✅ KUNG GUMANA = Browser extension ang may problema
+❌ KUNG HINDI = Network/antivirus ang may problema
+
+═══════════════════════════════════════════════════════════
+🧪 DIAGNOSTIC PAGE
+═══════════════════════════════════════════════════════════
+
+Open this in your browser:
+http://localhost:3000/diagnose-google.html
+
+This will show you exactly what's blocking Google Sign-In.
+
+═══════════════════════════════════════════════════════════
+🔧 COMMON CAUSES
+═══════════════════════════════════════════════════════════
+
+1. BROWSER EXTENSIONS (Most Common!)
+   ❌ uBlock Origin
+   ❌ AdBlock / AdBlock Plus
+   ❌ Ghostery
+   ❌ Privacy Badger
+   ❌ HTTPS Everywhere
+   ❌ Any privacy/security extension
+
+   FIX: Disable ALL extensions temporarily
+
+2. ANTIVIRUS SOFTWARE
+   ❌ Kaspersky
+   ❌ Avast
+   ❌ Norton
+   ❌ Bitdefender
+   ❌ Any antivirus with "Web Protection"
+
+   FIX: Disable web protection temporarily
+
+3. VPN/PROXY
+   ❌ Any VPN connection
+   ❌ Proxy server
+
+   FIX: Disconnect VPN/proxy temporarily
+
+4. NETWORK FIREWALL
+   ❌ Corporate network
+   ❌ School network
+   ❌ Shared network with restrictions
+
+   FIX: Try from different network (mobile hotspot)
+
+═══════════════════════════════════════════════════════════
+📋 QUICK CHECKLIST (Try in order!)
+═══════════════════════════════════════════════════════════
+
+[ ] 1. Try Incognito mode (Ctrl+Shift+N)
+[ ] 2. Open diagnostic page
+[ ] 3. Disable ALL browser extensions
+[ ] 4. Disable antivirus temporarily
+[ ] 5. Disconnect VPN/proxy
+[ ] 6. Try different browser (Chrome/Edge/Firefox)
+[ ] 7. Clear browser cache (Ctrl+Shift+Delete)
+[ ] 8. Restart computer
+
+═══════════════════════════════════════════════════════════
+📖 FULL GUIDE
+═══════════════════════════════════════════════════════════
+
+Read: FIX_CORS_ERROR.md
+
+═══════════════════════════════════════════════════════════

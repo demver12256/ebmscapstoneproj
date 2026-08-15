@@ -49,9 +49,27 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
           .map(a => ({ ...a, popupType: 'announcement' }));
 
         // Exclude announcement-type notifications — they are already shown via unreadAnn above.
-        // Only show program enrollment and distribution system notifications here.
+        // Also exclude old "Upcoming" notifications if an "Unclaimed Benefit Notice" exists for the same event or if event ended.
+        const unclaimedReferenceIds = new Set(
+          notifList
+            .filter(n => n.title?.toLowerCase().includes('unclaimed'))
+            .map(n => n.reference_id)
+            .filter(Boolean)
+        );
+
         const unreadNotif = notifList
-          .filter(n => !n.is_read && n.type !== 'announcement' && n.reference_type !== 'announcement')
+          .filter(n => {
+            if (n.is_read) return false;
+            if (n.type === 'announcement' || n.reference_type === 'announcement') return false;
+
+            const isUpcoming = n.title?.toLowerCase().includes('upcoming') || n.message?.toLowerCase().includes('you are scheduled');
+            if (isUpcoming && n.reference_id && unclaimedReferenceIds.has(n.reference_id)) {
+              // Silently mark old upcoming notification as read on backend
+              notificationApi.markAsRead(n.id).catch(() => {});
+              return false;
+            }
+            return true;
+          })
           .map(n => ({ ...n, popupType: 'notification' }));
 
         const combined = [...unreadAnn, ...unreadNotif];
@@ -114,10 +132,46 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Get next upcoming distribution
+  const getTodayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayStr = getTodayStr();
+
+  // Get next upcoming distribution (only future/today dates that are not completed)
   const upcomingDistribution = beneficiary?.DistributionTransactions
-    ?.filter(txn => txn.status === 'pending')
+    ?.filter(txn => {
+      if (txn.status !== 'pending') return false;
+      const eventDate = txn.Event?.distribution_date ? String(txn.Event.distribution_date).split('T')[0] : '';
+      if (!eventDate) return false;
+      return eventDate >= todayStr && txn.Event?.status !== 'completed' && txn.Event?.status !== 'archived';
+    })
     ?.sort((a, b) => new Date(a.Event?.distribution_date) - new Date(b.Event?.distribution_date))?.[0];
+
+  // Get unclaimed past distributions
+  const unclaimedDistributions = beneficiary?.DistributionTransactions
+    ?.filter(txn => {
+      if (txn.status !== 'pending') return false;
+      const eventDate = txn.Event?.distribution_date ? String(txn.Event.distribution_date).split('T')[0] : '';
+      return (eventDate && eventDate < todayStr) || txn.Event?.status === 'completed';
+    }) || [];
+
+  const getDaysRemainingText = (distDate) => {
+    if (!distDate) return 'No upcoming schedule';
+    const target = new Date(distDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    target.setHours(0, 0, 0, 0);
+    const diffTime = target - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Tomorrow';
+    if (diffDays > 1) return `In ${diffDays} days`;
+    return 'Passed';
+  };
 
   // Calculate total benefits
   const totalBenefits = beneficiary?.DistributionTransactions
@@ -399,6 +453,44 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
             )}
           </div>
 
+          {/* Unclaimed Distribution Notice Banner if beneficiary has missed payouts */}
+          {unclaimedDistributions.length > 0 && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-5 shadow-sm space-y-3">
+              <div className="flex items-center gap-3 text-amber-900">
+                <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 animate-bounce" />
+                <div>
+                  <h4 className="font-extrabold text-base text-amber-950">Notice of Unclaimed Benefit ({unclaimedDistributions.length})</h4>
+                  <p className="text-xs text-amber-800">
+                    The distribution date for the following payout(s) has ended without being claimed:
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {unclaimedDistributions.map((txn) => (
+                  <div key={txn.id} className="bg-white border border-amber-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <div>
+                      <span className="font-bold text-slate-900 block text-sm">{txn.Event?.title}</span>
+                      <span className="text-slate-600">
+                        Date: {txn.Event?.distribution_date ? new Date(txn.Event.distribution_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'} • Venue: {txn.Event?.venue || 'Barangay Hall'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-md">
+                        ₱{parseFloat(txn.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                      </span>
+                      <span className="bg-red-100 text-red-700 font-black px-2.5 py-1 rounded-md border border-red-200">
+                        NOT CLAIMED
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-amber-700 italic">
+                Please visit your Barangay hall or contact MSWD staff if you need assistance regarding unclaimed distributions.
+              </p>
+            </div>
+          )}
+
           {/* Application Timeline */}
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
@@ -470,10 +562,12 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                 <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <Calendar className="w-5 h-5 text-blue-600 mx-auto mb-1" />
                   <p className="text-sm font-black text-blue-900">
-                    {upcomingDistribution ? new Date(upcomingDistribution.Event?.distribution_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBA'}
+                    {upcomingDistribution ? new Date(upcomingDistribution.Event?.distribution_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'None'}
                   </p>
                   <p className="text-xs text-blue-700 font-semibold">Next Distribution</p>
-                  <p className="text-[10px] text-blue-600">In 25 days</p>
+                  <p className="text-[10px] text-blue-600 font-bold">
+                    {upcomingDistribution ? getDaysRemainingText(upcomingDistribution.Event?.distribution_date) : 'No upcoming schedule'}
+                  </p>
                 </div>
               </div>
             </div>

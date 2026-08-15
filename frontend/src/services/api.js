@@ -40,6 +40,9 @@ apiClient.interceptors.response.use(
 export const authApi = {
   login: (credentials) => apiClient.post('/auth/login', credentials),
   registerBeneficiary: (data) => apiClient.post('/auth/register-beneficiary', data),
+  googleLogin: (data) => apiClient.post('/auth/google', data),
+  sendOtp: (data) => apiClient.post('/auth/send-otp', data),
+  verifyOtp: (data) => apiClient.post('/auth/verify-otp', data),
 };
 
 export const dashboardApi = {

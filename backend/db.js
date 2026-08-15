@@ -43,6 +43,7 @@ const Message = require('./models/message')(sequelize, DataTypes);
 const Notification = require('./models/notification')(sequelize, DataTypes);
 const Announcement = require('./models/announcement')(sequelize, DataTypes);
 const AnnouncementRecipient = require('./models/announcementRecipient')(sequelize, DataTypes);
+const Otp = require('./models/otp')(sequelize, DataTypes);
 
 // ── User ↔ Barangay ──
 User.belongsTo(Barangay, { foreignKey: 'barangay_id' });
@@ -148,4 +149,5 @@ module.exports = {
   Notification,
   Announcement,
   AnnouncementRecipient,
+  Otp,
 };
