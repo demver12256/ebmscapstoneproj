@@ -814,30 +814,6 @@ const LandingPage = () => {
 
              {showRegisterModal && (
               <form onSubmit={handleRegisterStep1} className="space-y-3 text-left">
-                {/* Google Sign-Up Option */}
-                <div className="mb-2">
-                  <GoogleSignInButton
-                    onSuccess={handleGoogleSuccess}
-                    onError={handleGoogleError}
-                    text="signup_with"
-                  />
-                  {googleError && (
-                    <div className="rounded-lg bg-amber-50 p-3 border border-amber-200 mt-2">
-                      <p className="text-sm text-amber-700">{googleError}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Divider */}
-                <div className="relative my-3">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-200"></div>
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-4 bg-white text-gray-400 font-medium">or register with email</span>
-                  </div>
-                </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">First Name</label>
