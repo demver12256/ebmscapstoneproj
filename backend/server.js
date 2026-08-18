@@ -86,10 +86,24 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/sms', smsRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/audit', auditRoutes);
-app.use('/api/seed', seedRoutes);
-app.use('/api/messages', messageRoutes);
+app.use('/api/messages', (req, res, next) => {
+  try {
+    delete require.cache[require.resolve('./routes/messages')];
+    return require('./routes/messages')(req, res, next);
+  } catch (err) {
+    return next(err);
+  }
+});
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/announcements', announcementRoutes);
+app.use('/api/assistance-requests', (req, res, next) => {
+  try {
+    delete require.cache[require.resolve('./routes/assistanceRequests')];
+    return require('./routes/assistanceRequests')(req, res, next);
+  } catch (err) {
+    return next(err);
+  }
+});
 
 app.get('/api', (req, res) => {
   res.json({ message: 'Welcome to EBMS API' });

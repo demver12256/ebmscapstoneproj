@@ -44,18 +44,19 @@ const Notification = require('./models/notification')(sequelize, DataTypes);
 const Announcement = require('./models/announcement')(sequelize, DataTypes);
 const AnnouncementRecipient = require('./models/announcementRecipient')(sequelize, DataTypes);
 const Otp = require('./models/otp')(sequelize, DataTypes);
+const AssistanceRequest = require('./models/assistanceRequest')(sequelize, DataTypes);
 
 // ── User ↔ Barangay ──
 User.belongsTo(Barangay, { foreignKey: 'barangay_id' });
 Barangay.hasMany(User, { foreignKey: 'barangay_id' });
 
 // ── Beneficiary ↔ User / Barangay ──
-Beneficiary.belongsTo(User, { foreignKey: 'user_id' });
-User.hasMany(Beneficiary, { foreignKey: 'user_id' });
+Beneficiary.belongsTo(User, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+User.hasMany(Beneficiary, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 Beneficiary.belongsTo(Barangay, { foreignKey: 'barangay_id' });
 Barangay.hasMany(Beneficiary, { foreignKey: 'barangay_id' });
-Beneficiary.hasMany(BeneficiaryDocument, { foreignKey: 'beneficiary_id', as: 'Documents' });
-BeneficiaryDocument.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id' });
+Beneficiary.hasMany(BeneficiaryDocument, { foreignKey: 'beneficiary_id', as: 'Documents', onDelete: 'CASCADE' });
+BeneficiaryDocument.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
 Beneficiary.belongsTo(User, { as: 'ApprovingStaff', foreignKey: 'approving_staff_id' });
 
 // ── BenefitProgram ↔ Barangay ──
@@ -64,9 +65,9 @@ Barangay.hasMany(BenefitProgram, { foreignKey: 'barangay_id' });
 
 // ── Enrollment ↔ Beneficiary / Program ──
 Enrollment.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
-Beneficiary.hasMany(Enrollment, { foreignKey: 'beneficiary_id' });
+Beneficiary.hasMany(Enrollment, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
 Enrollment.belongsTo(BenefitProgram, { foreignKey: 'program_id', onDelete: 'CASCADE' });
-BenefitProgram.hasMany(Enrollment, { foreignKey: 'program_id' });
+BenefitProgram.hasMany(Enrollment, { foreignKey: 'program_id', onDelete: 'CASCADE' });
 
 // ── DistributionEvent ↔ Program / Barangay / User (Staff) ──
 DistributionEvent.belongsTo(BenefitProgram, { foreignKey: 'program_id', as: 'Program' });
@@ -76,52 +77,61 @@ Barangay.hasMany(DistributionEvent, { foreignKey: 'barangay_id' });
 DistributionEvent.belongsTo(User, { foreignKey: 'assigned_staff_id', as: 'AssignedStaff' });
 
 // ── DistributionTransaction ↔ DistributionEvent / Beneficiary / User (Staff) ──
-DistributionTransaction.belongsTo(DistributionEvent, { foreignKey: 'distribution_event_id', as: 'Event' });
-DistributionEvent.hasMany(DistributionTransaction, { foreignKey: 'distribution_event_id', as: 'Transactions' });
-DistributionTransaction.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id' });
-Beneficiary.hasMany(DistributionTransaction, { foreignKey: 'beneficiary_id' });
+DistributionTransaction.belongsTo(DistributionEvent, { foreignKey: 'distribution_event_id', as: 'Event', onDelete: 'CASCADE' });
+DistributionEvent.hasMany(DistributionTransaction, { foreignKey: 'distribution_event_id', as: 'Transactions', onDelete: 'CASCADE' });
+DistributionTransaction.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
+Beneficiary.hasMany(DistributionTransaction, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
 DistributionTransaction.belongsTo(User, { foreignKey: 'released_by_staff_id', as: 'ReleasedByStaff' });
 
 // ── Notification ↔ User ──
-Notification.belongsTo(User, { foreignKey: 'user_id' });
-User.hasMany(Notification, { foreignKey: 'user_id' });
+Notification.belongsTo(User, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+User.hasMany(Notification, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 
 // ── Attendance ↔ Beneficiary ──
-Attendance.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id' });
-Beneficiary.hasMany(Attendance, { foreignKey: 'beneficiary_id' });
+Attendance.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
+Beneficiary.hasMany(Attendance, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
 
 // ── SMS ↔ Beneficiary ──
-SMSNotification.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id' });
-Beneficiary.hasMany(SMSNotification, { foreignKey: 'beneficiary_id' });
+SMSNotification.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
+Beneficiary.hasMany(SMSNotification, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
 
 // ── AuditLog ↔ User ──
-AuditLog.belongsTo(User, { foreignKey: 'user_id' });
-User.hasMany(AuditLog, { foreignKey: 'user_id' });
+AuditLog.belongsTo(User, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+User.hasMany(AuditLog, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 
 // ── Message ↔ User ──
-Message.belongsTo(User, { as: 'Sender', foreignKey: 'sender_id' });
-Message.belongsTo(User, { as: 'Receiver', foreignKey: 'receiver_id' });
-User.hasMany(Message, { as: 'SentMessages', foreignKey: 'sender_id' });
-User.hasMany(Message, { as: 'ReceivedMessages', foreignKey: 'receiver_id' });
+Message.belongsTo(User, { as: 'Sender', foreignKey: 'sender_id', onDelete: 'CASCADE' });
+Message.belongsTo(User, { as: 'Receiver', foreignKey: 'receiver_id', onDelete: 'CASCADE' });
+User.hasMany(Message, { as: 'SentMessages', foreignKey: 'sender_id', onDelete: 'CASCADE' });
+User.hasMany(Message, { as: 'ReceivedMessages', foreignKey: 'receiver_id', onDelete: 'CASCADE' });
 
 // ── Announcement Associations ──
 Announcement.belongsTo(User, { as: 'CreatedBy', foreignKey: 'created_by_user_id' });
 User.hasMany(Announcement, { foreignKey: 'created_by_user_id' });
 
 Announcement.hasMany(AnnouncementRecipient, { foreignKey: 'announcement_id', as: 'Recipients', onDelete: 'CASCADE' });
-AnnouncementRecipient.belongsTo(Announcement, { foreignKey: 'announcement_id' });
+AnnouncementRecipient.belongsTo(Announcement, { foreignKey: 'announcement_id', onDelete: 'CASCADE' });
 
-AnnouncementRecipient.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', as: 'Beneficiary' });
-Beneficiary.hasMany(AnnouncementRecipient, { foreignKey: 'beneficiary_id' });
+AnnouncementRecipient.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', as: 'Beneficiary', onDelete: 'CASCADE' });
+Beneficiary.hasMany(AnnouncementRecipient, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
 
-AnnouncementRecipient.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
-User.hasMany(AnnouncementRecipient, { foreignKey: 'user_id' });
+AnnouncementRecipient.belongsTo(User, { foreignKey: 'user_id', as: 'User', onDelete: 'CASCADE' });
+User.hasMany(AnnouncementRecipient, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 
 AnnouncementRecipient.belongsTo(User, { as: 'ScannedByStaff', foreignKey: 'scanned_by_staff_id' });
 
-Attendance.belongsTo(Announcement, { foreignKey: 'announcement_id', as: 'Announcement' });
-Announcement.hasMany(Attendance, { foreignKey: 'announcement_id', as: 'Attendances' });
+Attendance.belongsTo(Announcement, { foreignKey: 'announcement_id', as: 'Announcement', onDelete: 'CASCADE' });
+Announcement.hasMany(Attendance, { foreignKey: 'announcement_id', as: 'Attendances', onDelete: 'CASCADE' });
 Attendance.belongsTo(User, { as: 'ScannedByStaff', foreignKey: 'scanned_by_staff_id' });
+
+// ── AssistanceRequest ↔ Beneficiary / User / Barangay ──
+AssistanceRequest.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
+Beneficiary.hasMany(AssistanceRequest, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
+AssistanceRequest.belongsTo(User, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+User.hasMany(AssistanceRequest, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+AssistanceRequest.belongsTo(Barangay, { foreignKey: 'barangay_id' });
+Barangay.hasMany(AssistanceRequest, { foreignKey: 'barangay_id' });
+AssistanceRequest.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewed_by' });
 
 const connectDatabase = async () => {
   await sequelize.authenticate();
@@ -150,4 +160,5 @@ module.exports = {
   Announcement,
   AnnouncementRecipient,
   Otp,
+  AssistanceRequest,
 };

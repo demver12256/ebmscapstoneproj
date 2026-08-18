@@ -15,17 +15,19 @@ const staffNavItems = [
   { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/rfid-scanner', label: 'Distribution Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
   { path: '/dashboard/rfid-attendance', label: 'Attendance Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
-  { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, roles: ['admin', 'staff'] },
+  { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, badge: 'messages', roles: ['admin', 'staff', 'barangay'] },
+  { path: '/dashboard/assistance-requests', label: 'Assistance Requests', icon: HandHeart, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/users', label: 'Users', icon: UserCog, roles: ['admin', 'staff'] },
 ];
 
 const beneficiaryNavItems = [
   { path: '/dashboard', label: 'Dashboard', icon: Home, requiresApproval: false, section: 'main' },
-  { path: '/dashboard/my-applications', label: 'My Applications', icon: FileText, requiresApproval: false, hideWhenApproved: true, section: 'main' },
   { path: '/dashboard/documents', label: 'My Documents', icon: FileCheck, requiresApproval: true, section: 'main' },
   { path: '/dashboard/my-benefits', label: 'My Assistance', icon: HandHeart, requiresApproval: true, section: 'main' },
-  { path: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: true, requiresApproval: true, section: 'main' },
+  { path: '/dashboard/request-assistance', label: 'Request Assistance', icon: FileText, requiresApproval: true, section: 'main' },
+  { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, badge: 'messages', requiresApproval: true, section: 'main' },
+  { path: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: 'notifications', requiresApproval: true, section: 'main' },
   { path: '/dashboard/my-profile', label: 'Profile', icon: User, requiresApproval: true, section: 'account' },
   { path: '/dashboard/settings', label: 'Change Password', icon: Lock, requiresApproval: true, section: 'account' },
 ];
@@ -35,28 +37,40 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const [beneficiaryStatus, setBeneficiaryStatus] = React.useState(null);
   const [unreadCount, setUnreadCount] = React.useState(0);
+  const [unreadMessageCount, setUnreadMessageCount] = React.useState(0);
 
-  // Fetch unread notification count
+  // Fetch unread notification and message counts
   React.useEffect(() => {
-    const fetchUnreadCount = async () => {
+    const fetchCounts = async () => {
       if (user) {
         try {
-          const { notificationApi } = await import('../../services/api');
-          const res = await notificationApi.unreadCount();
-          setUnreadCount(res.data?.data?.count || 0);
+          const { notificationApi, messageApi } = await import('../../services/api');
+          const [notifRes, msgRes] = await Promise.allSettled([
+            notificationApi.unreadCount(),
+            messageApi.unreadCount(),
+          ]);
+          if (notifRes.status === 'fulfilled') {
+            setUnreadCount(notifRes.value.data?.data?.count || 0);
+          }
+          if (msgRes.status === 'fulfilled') {
+            setUnreadMessageCount(msgRes.value.data?.data?.count || 0);
+          }
         } catch (err) {
-          console.error('Failed to fetch unread count in sidebar:', err);
+          console.error('Failed to fetch unread counts in sidebar:', err);
         }
       }
     };
 
     if (user) {
-      fetchUnreadCount();
-      const handleUpdate = () => fetchUnreadCount();
-      window.addEventListener('notificationsUpdated', handleUpdate);
-      const interval = setInterval(fetchUnreadCount, 30000);
+      fetchCounts();
+      const handleNotifUpdate = () => fetchCounts();
+      const handleMsgUpdate = () => fetchCounts();
+      window.addEventListener('notificationsUpdated', handleNotifUpdate);
+      window.addEventListener('messagesUpdated', handleMsgUpdate);
+      const interval = setInterval(fetchCounts, 15000);
       return () => {
-        window.removeEventListener('notificationsUpdated', handleUpdate);
+        window.removeEventListener('notificationsUpdated', handleNotifUpdate);
+        window.removeEventListener('messagesUpdated', handleMsgUpdate);
         clearInterval(interval);
       };
     }
@@ -94,6 +108,27 @@ export default function Sidebar() {
   const navItems = isBeneficiary 
     ? beneficiaryNav
     : staffNavItems.filter(item => item.roles.includes(user?.role));
+
+  const renderBadge = (item) => {
+    if (item.badge === 'messages' || item.path === '/dashboard/messages') {
+      if (unreadMessageCount > 0) {
+        return (
+          <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+            {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
+          </span>
+        );
+      }
+    } else if (item.badge === 'notifications' || item.badge === true || item.path === '/dashboard/notifications') {
+      if (unreadCount > 0) {
+        return (
+          <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        );
+      }
+    }
+    return null;
+  };
 
   return (
     <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-white px-5 py-6 lg:flex lg:flex-col lg:justify-between h-screen sticky top-0">
@@ -138,11 +173,7 @@ export default function Sidebar() {
                     >
                       <Icon className="h-5 w-5 shrink-0" />
                       {item.label}
-                      {item.badge && unreadCount > 0 && (
-                        <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                          {unreadCount > 9 ? '9+' : unreadCount}
-                        </span>
-                      )}
+                      {renderBadge(item)}
                     </NavLink>
                   );
                 })}
@@ -150,29 +181,32 @@ export default function Sidebar() {
             </div>
 
             {/* ACCOUNT Section */}
-            <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">ACCOUNT</h3>
-              <nav className="space-y-1">
-                {navItems.filter(item => item.section === 'account').map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavLink
-                      key={item.path}
-                      to={item.path}
-                      className={({ isActive }) =>
-                        `flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition ${isActive
-                          ? 'bg-dswd-lightBlue text-white shadow-lg shadow-blue-100'
-                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-                        }`
-                      }
-                    >
-                      <Icon className="h-5 w-5 shrink-0" />
-                      {item.label}
-                    </NavLink>
-                  );
-                })}
-              </nav>
-            </div>
+            {navItems.filter(item => item.section === 'account').length > 0 && (
+              <div>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">ACCOUNT</h3>
+                <nav className="space-y-1">
+                  {navItems.filter(item => item.section === 'account').map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        className={({ isActive }) =>
+                          `flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition ${isActive
+                            ? 'bg-dswd-lightBlue text-white shadow-lg shadow-blue-100'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                          }`
+                        }
+                      >
+                        <Icon className="h-5 w-5 shrink-0" />
+                        {item.label}
+                        {renderBadge(item)}
+                      </NavLink>
+                    );
+                  })}
+                </nav>
+              </div>
+            )}
           </>
         ) : (
           <nav className="space-y-1">
@@ -192,11 +226,7 @@ export default function Sidebar() {
                 >
                   <Icon className="h-5 w-5 shrink-0" />
                   {item.label}
-                  {item.badge && unreadCount > 0 && (
-                    <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
+                  {renderBadge(item)}
                 </NavLink>
               );
             })}

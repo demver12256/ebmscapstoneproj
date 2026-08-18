@@ -188,4 +188,11 @@ export const notificationApi = {
   markAllAsRead: () => apiClient.patch('/notifications/mark-all-read'),
 };
 
+export const assistanceRequestApi = {
+  list: (params) => apiClient.get('/assistance-requests', { params }),
+  create: (data) => apiClient.post('/assistance-requests', data),
+  updateStatus: (id, data) => apiClient.patch(`/assistance-requests/${id}/status`, data),
+  stats: () => apiClient.get('/assistance-requests/stats'),
+};
+
 export default apiClient;

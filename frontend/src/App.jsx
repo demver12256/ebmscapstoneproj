@@ -26,6 +26,8 @@ import AnnouncementManagementPage from './pages/AnnouncementManagementPage';
 import NotificationsPage from './pages/NotificationsPage';
 import RfidAnnouncementScannerPage from './pages/RfidAnnouncementScannerPage';
 import ComingSoonPage from './pages/ComingSoonPage';
+import RequestAssistancePage from './pages/RequestAssistancePage';
+import AssistanceRequestsManagementPage from './pages/AssistanceRequestsManagementPage';
 import MainLayout from './components/layout/MainLayout';
 
 const ProtectedRoute = ({ children }) => {
@@ -89,6 +91,8 @@ const AppRoutes = () => (
       <Route path="my-benefits" element={<MyBenefitsPage />} />
       <Route path="documents" element={<MyDocumentsPage />} />
       <Route path="notifications" element={<NotificationsPage />} />
+      <Route path="request-assistance" element={<RequestAssistancePage />} />
+      <Route path="assistance-requests" element={<AssistanceRequestsManagementPage />} />
       <Route path="help-center" element={<ComingSoonPage />} />
       <Route path="settings" element={<ComingSoonPage />} />
       <Route path="*" element={<NotFoundPage />} />

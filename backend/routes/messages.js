@@ -1,51 +1,105 @@
 const express = require('express');
 const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
-const { Message, User } = require('../db');
+const { Message, User, Beneficiary, Barangay } = require('../db');
 
 const router = express.Router();
 router.use(authenticate);
 
+// Helper to get effective barangay_id for a user (checks User and Beneficiary tables)
+const getUserBarangayId = async (user) => {
+  if (user.barangay_id) return user.barangay_id;
+  if (user.role === 'beneficiary') {
+    const ben = await Beneficiary.findOne({ where: { user_id: user.id } });
+    if (ben && ben.barangay_id) return ben.barangay_id;
+  }
+  return null;
+};
+
 // Get list of users the current user can message
-// Admin -> all staff and barangay users
+// Admin -> all staff, barangay, and beneficiary users
 // Staff -> admin, staff from same barangay, beneficiaries from same barangay
+// Beneficiary -> system administrator, staff from their registered barangay
 router.get('/contacts', async (req, res, next) => {
   try {
     const currentUser = req.user;
     let whereClause = { status: 'active' };
 
     if (currentUser.role === 'admin') {
-      // Admin can message all staff and barangay users
-      whereClause.role = { [Op.in]: ['staff', 'barangay'] };
+      // Admin can message all staff/barangay users and only APPROVED beneficiaries
+      const approvedBeneficiaryUserIds = (await Beneficiary.findAll({
+        where: { status: 'Approved' },
+        attributes: ['user_id'],
+        raw: true,
+      })).map((b) => b.user_id).filter(Boolean);
+
+      whereClause[Op.or] = [
+        { role: { [Op.in]: ['staff', 'barangay'] } },
+        { 
+          role: 'beneficiary',
+          id: { [Op.in]: approvedBeneficiaryUserIds }
+        }
+      ];
     } else if (currentUser.role === 'staff' || currentUser.role === 'barangay') {
       // Staff can only message:
       // 1. Admin users
-      // 2. Staff from their SAME barangay only
-      // 3. Beneficiaries from their SAME barangay only
-      
-      if (!currentUser.barangay_id) {
+      // 2. Staff / Barangay users from their SAME barangay only
+      // 3. Only APPROVED beneficiaries from their SAME barangay
+      const userBarangayId = await getUserBarangayId(currentUser);
+      if (!userBarangayId) {
         return res.status(403).json({ 
           success: false, 
           message: 'Your account is not assigned to any barangay. Please contact the administrator.' 
         });
       }
 
+      const approvedBeneficiaryUserIds = (await Beneficiary.findAll({
+        where: {
+          barangay_id: userBarangayId,
+          status: 'Approved',
+        },
+        attributes: ['user_id'],
+        raw: true,
+      })).map((b) => b.user_id).filter(Boolean);
+
       whereClause[Op.or] = [
         // Admin (any barangay)
         { role: 'admin' },
         // Staff from the SAME barangay only
         { 
-          role: 'staff',
-          barangay_id: currentUser.barangay_id
+          role: { [Op.in]: ['staff', 'barangay'] },
+          barangay_id: userBarangayId
         },
-        // Beneficiaries from the SAME barangay only
+        // Only APPROVED beneficiaries from the SAME barangay
         { 
           role: 'beneficiary',
-          barangay_id: currentUser.barangay_id
+          id: { [Op.in]: approvedBeneficiaryUserIds }
         }
       ];
+    } else if (currentUser.role === 'beneficiary') {
+      // Beneficiaries can only message if their registration is Approved
+      const ben = await Beneficiary.findOne({ where: { user_id: currentUser.id } });
+      if (!ben || ben.status !== 'Approved') {
+        return res.json({ success: true, data: [] });
+      }
+
+      const beneficiaryBarangayId = ben.barangay_id || currentUser.barangay_id;
+
+      if (beneficiaryBarangayId) {
+        whereClause[Op.or] = [
+          // System Administrator
+          { role: 'admin' },
+          // Staff from their registered barangay
+          { 
+            role: { [Op.in]: ['staff', 'barangay'] },
+            barangay_id: beneficiaryBarangayId
+          }
+        ];
+      } else {
+        // If no barangay assigned yet, they can still contact System Admin
+        whereClause.role = 'admin';
+      }
     } else {
-      // Beneficiaries cannot see contacts list
       return res.json({ success: true, data: [] });
     }
 
@@ -55,6 +109,13 @@ router.get('/contacts', async (req, res, next) => {
         id: { [Op.ne]: currentUser.id },
       },
       attributes: ['id', 'first_name', 'last_name', 'email', 'role', 'status', 'barangay_id'],
+      include: [
+        {
+          model: Barangay,
+          attributes: ['id', 'barangay_name'],
+          required: false,
+        }
+      ],
       order: [['role', 'ASC'], ['first_name', 'ASC']],
     });
 
@@ -106,13 +167,19 @@ router.get('/conversations', async (req, res, next) => {
 
     const partners = await User.findAll({
       where: { id: { [Op.in]: partnerIds } },
-      attributes: ['id', 'first_name', 'last_name', 'email', 'role'],
-      raw: true,
+      attributes: ['id', 'first_name', 'last_name', 'email', 'role', 'barangay_id'],
+      include: [
+        {
+          model: Barangay,
+          attributes: ['id', 'barangay_name'],
+          required: false,
+        }
+      ],
     });
 
     const partnerMap = {};
     for (const p of partners) {
-      partnerMap[p.id] = p;
+      partnerMap[p.id] = p.toJSON ? p.toJSON() : p;
     }
 
     const conversations = partnerIds
@@ -197,39 +264,39 @@ router.post('/', async (req, res, next) => {
 
     const receiverRole = receiver.role;
 
-    // Admin can only message staff and barangay users
-    if (currentRole === 'admin' && !['staff', 'barangay'].includes(receiverRole)) {
-      return res.status(403).json({ success: false, message: 'Admin can only message staff and barangay users' });
+    // 1. Admin can message staff, barangay, and beneficiaries
+    if (currentRole === 'admin') {
+      if (!['staff', 'barangay', 'beneficiary'].includes(receiverRole)) {
+        return res.status(403).json({ success: false, message: 'Admin can only message staff, barangay, and beneficiary users' });
+      }
     }
     
-    // Staff can message:
-    // 1. Admin (any barangay)
-    // 2. Other staff from SAME barangay only
-    // 3. Beneficiaries from SAME barangay only
-    if (currentRole === 'staff' || currentRole === 'barangay') {
-      if (!req.user.barangay_id) {
+    // 2. Staff can message:
+    // - Admin (any barangay)
+    // - Other staff / barangay from SAME barangay only
+    // - Beneficiaries from SAME barangay only
+    else if (currentRole === 'staff' || currentRole === 'barangay') {
+      const senderBarangayId = await getUserBarangayId(req.user);
+      if (!senderBarangayId) {
         return res.status(403).json({ 
           success: false, 
           message: 'Your account is not assigned to any barangay. Please contact the administrator.' 
         });
       }
 
-      // Can message admin
       if (receiverRole === 'admin') {
         // Allowed
-      } 
-      // Can only message staff from SAME barangay
-      else if (receiverRole === 'staff') {
-        if (receiver.barangay_id !== req.user.barangay_id) {
+      } else if (receiverRole === 'staff' || receiverRole === 'barangay') {
+        const receiverBarangayId = await getUserBarangayId(receiver);
+        if (receiverBarangayId !== senderBarangayId) {
           return res.status(403).json({ 
             success: false, 
             message: 'You can only message staff from your assigned barangay.' 
           });
         }
-      }
-      // Can only message beneficiaries from SAME barangay
-      else if (receiverRole === 'beneficiary') {
-        if (receiver.barangay_id !== req.user.barangay_id) {
+      } else if (receiverRole === 'beneficiary') {
+        const receiverBarangayId = await getUserBarangayId(receiver);
+        if (receiverBarangayId !== senderBarangayId) {
           return res.status(403).json({ 
             success: false, 
             message: 'You can only message beneficiaries from your assigned barangay.' 
@@ -240,8 +307,45 @@ router.post('/', async (req, res, next) => {
       }
     }
     
-    // Beneficiaries and other roles cannot send messages
-    if (currentRole !== 'admin' && currentRole !== 'staff' && currentRole !== 'barangay') {
+    // 3. Beneficiary can message:
+    // - System Administrator (role: 'admin')
+    // - Staff from their registered barangay only (Approved beneficiaries only)
+    else if (currentRole === 'beneficiary') {
+      const ben = await Beneficiary.findOne({ where: { user_id: req.user.id } });
+      if (!ben || ben.status !== 'Approved') {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Messaging is only available once your beneficiary registration is approved.' 
+        });
+      }
+
+      const beneficiaryBarangayId = ben.barangay_id || req.user.barangay_id;
+
+      if (receiverRole === 'admin') {
+        // Allowed to message System Administrator
+      } else if (receiverRole === 'staff' || receiverRole === 'barangay') {
+        if (!beneficiaryBarangayId) {
+          return res.status(403).json({ 
+            success: false, 
+            message: 'Your beneficiary account is not registered to a barangay. You can contact the System Administrator.' 
+          });
+        }
+        const receiverBarangayId = await getUserBarangayId(receiver);
+        if (receiverBarangayId !== beneficiaryBarangayId) {
+          return res.status(403).json({ 
+            success: false, 
+            message: 'You can only message staff from your registered barangay.' 
+          });
+        }
+      } else if (receiverRole === 'beneficiary') {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Beneficiaries cannot send messages to other beneficiaries.' 
+        });
+      } else {
+        return res.status(403).json({ success: false, message: 'Invalid message recipient' });
+      }
+    } else {
       return res.status(403).json({ success: false, message: 'You do not have permission to send messages' });
     }
 
