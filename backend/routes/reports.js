@@ -95,11 +95,11 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
 
     // ── Application counts ──
     const pendingApplications = await Beneficiary.count({
-      where: { ...beneficiaryWhere, status: 'Pending Review' },
+      where: { ...beneficiaryWhere, status: { [Op.in]: ['Pending Review', 'Under Review', 'pending', 'Pending'] } },
     });
 
     const underReviewCount = await Beneficiary.count({
-      where: { ...beneficiaryWhere, status: 'Under Review' },
+      where: { ...beneficiaryWhere, status: { [Op.in]: ['Under Review', 'under_review'] } },
     });
 
     const approvedCount = await Beneficiary.count({

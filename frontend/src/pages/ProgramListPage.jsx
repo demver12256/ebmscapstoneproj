@@ -112,6 +112,7 @@ export default function ProgramListPage() {
   const { user, token } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [programs, setPrograms] = useState([]);
+  const [allPrograms, setAllPrograms] = useState([]);
   const [barangays, setBarangays] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -175,14 +176,13 @@ export default function ProgramListPage() {
       if (filterStatus) params.status = filterStatus;
 
       const programsResponse = await programApi.list(params);
-      // Filter out archived programs from main list
-      let activePrograms = (programsResponse.data.data || []).filter(p => p.status !== 'archived');
+      const allFetched = programsResponse.data.data || [];
 
       // AUTO-ARCHIVE: automatically archive programs whose end_date has passed
       if (isAdmin) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const toArchive = activePrograms.filter(p => {
+        const toArchive = allFetched.filter(p => {
           if (!p.end_date) return false;
           const endDate = new Date(p.end_date);
           endDate.setHours(0, 0, 0, 0);
@@ -190,7 +190,7 @@ export default function ProgramListPage() {
         });
         for (const p of toArchive) {
           try {
-            await programApi.update(p.id, { ...p, status: 'archived', eligibility_category: p.eligibility_category || p.category });
+            await programApi.update(p.id, { status: 'archived', eligibility_category: p.eligibility_category || p.category });
           } catch (e) {
             console.error('Auto-archive failed for program', p.id, e);
           }
@@ -198,11 +198,16 @@ export default function ProgramListPage() {
         if (toArchive.length > 0) {
           // Re-fetch after auto-archiving
           const refreshed = await programApi.list(params);
-          activePrograms = (refreshed.data.data || []).filter(p => p.status !== 'archived');
+          const refreshedAll = refreshed.data.data || [];
+          setAllPrograms(refreshedAll);
+          setPrograms(refreshedAll.filter(p => p.status !== 'archived'));
+          return;
         }
       }
 
-      setPrograms(activePrograms);
+      setAllPrograms(allFetched);
+      // Filter out archived programs from main table list
+      setPrograms(allFetched.filter(p => p.status !== 'archived'));
     } catch (err) {
       setError(getErrorMessage(err, 'Unable to load programs'));
     } finally {
@@ -447,7 +452,7 @@ export default function ProgramListPage() {
     }
     
     try {
-      await programApi.update(program.id, { ...program, status: 'archived' });
+      await programApi.update(program.id, { status: 'archived', eligibility_category: program.eligibility_category || program.category });
       setError(null);
       await loadPrograms();
       await loadArchivedPrograms();
@@ -457,12 +462,20 @@ export default function ProgramListPage() {
   };
 
   const handleUnarchive = async (program) => {
-    if (!window.confirm(`Unarchive "${program.name}"? This will change its status to inactive.`)) {
+    // Determine the correct status: if end_date has passed, set to 'completed' to prevent auto-archive
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDate = program.end_date ? new Date(program.end_date) : null;
+    if (endDate) endDate.setHours(0, 0, 0, 0);
+    const isExpired = endDate && endDate < today;
+    const newStatus = isExpired ? 'completed' : 'active';
+
+    if (!window.confirm(`Unarchive "${program.name}"? This will change its status to ${newStatus}.`)) {
       return;
     }
     
     try {
-      await programApi.update(program.id, { ...program, status: 'inactive' });
+      await programApi.update(program.id, { status: newStatus, eligibility_category: program.eligibility_category || program.category });
       setError(null);
       await loadArchivedPrograms(); // Reload archived list
       await loadPrograms(); // Reload main list
@@ -692,15 +705,39 @@ export default function ProgramListPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-6 border border-purple-200">
-          <p className="text-sm font-medium text-slate-600 mb-2">Total Programs</p>
-          <p className="text-3xl font-bold text-purple-600">{loading ? '...' : programs.length}</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-5 border border-purple-200 hover:shadow-md transition-shadow cursor-default">
+          <p className="text-xs font-medium text-slate-500 mb-1.5">Total Programs</p>
+          <p className="text-2xl font-bold text-purple-600">{loading ? '...' : allPrograms.length}</p>
         </div>
-        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-6 border border-emerald-200">
-          <p className="text-sm font-medium text-slate-600 mb-2">Active Programs</p>
-          <p className="text-3xl font-bold text-emerald-600">
-            {loading ? '...' : programs.filter(p => p.status === 'active').length}
+        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-5 border border-emerald-200 hover:shadow-md transition-shadow cursor-default">
+          <p className="text-xs font-medium text-slate-500 mb-1.5">Active</p>
+          <p className="text-2xl font-bold text-emerald-600">
+            {loading ? '...' : allPrograms.filter(p => p.status === 'active').length}
+          </p>
+        </div>
+        <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-5 border border-amber-200 hover:shadow-md transition-shadow cursor-default">
+          <p className="text-xs font-medium text-slate-500 mb-1.5">Inactive</p>
+          <p className="text-2xl font-bold text-amber-600">
+            {loading ? '...' : allPrograms.filter(p => p.status === 'inactive').length}
+          </p>
+        </div>
+        <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-5 border border-slate-200 hover:shadow-md transition-shadow cursor-default">
+          <p className="text-xs font-medium text-slate-500 mb-1.5">Draft</p>
+          <p className="text-2xl font-bold text-slate-600">
+            {loading ? '...' : allPrograms.filter(p => p.status === 'draft').length}
+          </p>
+        </div>
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-5 border border-blue-200 hover:shadow-md transition-shadow cursor-default">
+          <p className="text-xs font-medium text-slate-500 mb-1.5">Completed</p>
+          <p className="text-2xl font-bold text-blue-600">
+            {loading ? '...' : allPrograms.filter(p => p.status === 'completed').length}
+          </p>
+        </div>
+        <div className="bg-gradient-to-br from-rose-50 to-rose-100 rounded-xl p-5 border border-rose-200 hover:shadow-md transition-shadow cursor-default">
+          <p className="text-xs font-medium text-slate-500 mb-1.5">Archived</p>
+          <p className="text-2xl font-bold text-rose-600">
+            {loading ? '...' : allPrograms.filter(p => p.status === 'archived').length}
           </p>
         </div>
       </div>

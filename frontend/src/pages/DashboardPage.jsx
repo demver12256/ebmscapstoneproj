@@ -389,16 +389,20 @@ export default function DashboardPage() {
     }
 
     return (
-      <div className="max-w-4xl mx-auto space-y-8 pb-16">
+      <div className="max-w-6xl mx-auto space-y-8 pb-16 px-4">
         {/* Header Banner */}
-        <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center gap-2">
-            <User className="w-8 h-8 text-yellow-300" />
-            <h1 className="text-3xl font-black tracking-tight">Beneficiary Application Portal</h1>
+        <div className="bg-gradient-to-r from-[#00338D] via-[#002D87] to-[#0A192F] text-white rounded-2xl p-6 sm:p-7 shadow-sm border border-blue-900/30">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-[#FFD100]">
+              <User className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Beneficiary Application Portal</h1>
+              <p className="text-blue-100 text-xs sm:text-sm mt-0.5 max-w-2xl">
+                Submit verification documents, review program eligibility, and track review status in real-time.
+              </p>
+            </div>
           </div>
-          <p className="text-blue-100 text-sm mt-1 max-w-2xl">
-            Register as a beneficiary, submit required verification documents, and track your application status in real-time.
-          </p>
         </div>
 
         {error && (

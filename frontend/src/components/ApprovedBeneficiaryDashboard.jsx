@@ -186,21 +186,23 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const unreadAnnouncements = announcements.filter(a => !a.is_read);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6 px-2 sm:px-4 pb-12">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-[#00338D] via-[#002D87] to-[#0A192F] text-white rounded-2xl p-6 sm:p-7 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 border border-blue-900/30">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Users className="w-8 h-8 text-yellow-300" />
-            <h1 className="text-3xl font-black tracking-tight">Beneficiary Dashboard</h1>
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-[#FFD100]">
+              <Users className="w-5 h-5" />
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Beneficiary Portal</h1>
           </div>
-          <p className="text-blue-100 text-sm max-w-2xl">
-            Welcome back, {beneficiary?.first_name}! Here is your application, program enrollment, and assistance payout overview.
+          <p className="text-blue-100 text-sm max-w-2xl mt-1">
+            Welcome back, <span className="font-bold text-white">{beneficiary?.first_name} {beneficiary?.last_name}</span>! Here is your official application, RFID card, and assistance payout overview.
           </p>
         </div>
-        <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-xl border border-white/15 text-xs text-blue-100 font-semibold self-start md:self-auto">
+        <div className="bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-xl border border-white/15 text-xs text-blue-100 font-semibold self-start md:self-auto shadow-2xs">
           <div>📅 {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
-          <div className="text-yellow-300 font-mono font-bold mt-0.5">⏱️ {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</div>
+          <div className="text-[#FFD100] font-mono font-bold mt-0.5">⏱️ {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</div>
         </div>
       </div>
 

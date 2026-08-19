@@ -84,7 +84,14 @@ app.use('/api/distributions', (req, res, next) => {
 });
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/sms', smsRoutes);
-app.use('/api/reports', reportRoutes);
+app.use('/api/reports', (req, res, next) => {
+  try {
+    delete require.cache[require.resolve('./routes/reports')];
+    return require('./routes/reports')(req, res, next);
+  } catch (err) {
+    return next(err);
+  }
+});
 app.use('/api/audit', auditRoutes);
 app.use('/api/messages', (req, res, next) => {
   try {

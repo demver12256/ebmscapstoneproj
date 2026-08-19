@@ -4,6 +4,13 @@ import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { authApi, barangayApi } from '../services/api';
+import {
+  ShieldCheck, Sparkles, CreditCard, QrCode, Search, Users, CheckCircle2,
+  ArrowRight, Calendar, MapPin, Clock,
+  HandHeart, Award, Zap, Lock, FileText, Check,
+  Smartphone, Radio, Eye, EyeOff,
+  UserCheck, AlertCircle, ChevronDown, RefreshCw, X
+} from 'lucide-react';
 
 // Google Sign-In Button component
 const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
@@ -63,12 +70,10 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
       }
     };
 
-    // Check if already loaded
     if (window.google?.accounts?.id) {
       initGoogleButton();
     } else {
       loadGoogleScript();
-      // Poll for script loading
       interval = setInterval(() => {
         if (window.google?.accounts?.id) {
           clearInterval(interval);
@@ -77,7 +82,6 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
         }
       }, 200);
 
-      // Timeout after 8 seconds — show fallback
       timeout = setTimeout(() => {
         if (!window.google?.accounts?.id) {
           clearInterval(interval);
@@ -92,9 +96,7 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
     };
   }, [onSuccess, onError, text]);
 
-  // Handle fallback click — trigger Google popup manually or show error
   const handleFallbackClick = async () => {
-    // Try one more time to check if script loaded
     if (window.google?.accounts?.id) {
       setGoogleLoading(true);
       try {
@@ -120,43 +122,38 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
         onError?.('Google Sign-In is not available. Please try again later.');
       }
     } else {
-      onError?.('Google Sign-In is not available. Please check your internet connection and refresh the page.');
+      onError?.('Google Sign-In is not available. Please check your internet connection.');
     }
   };
 
   return (
     <div>
-      {/* Google's rendered button (hidden when script hasn't loaded) */}
       <div ref={buttonRef} className={`w-full flex justify-center ${scriptLoaded ? '' : 'hidden'}`} />
-
-      {/* Loading state while waiting for Google script */}
       {!scriptLoaded && !scriptFailed && (
         <button
           type="button"
           disabled
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-400 font-medium cursor-wait"
+          className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 text-slate-400 font-medium cursor-wait text-sm"
         >
-          <svg className="animate-spin h-5 w-5 text-gray-400" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          <svg className="animate-spin h-4 w-4 text-slate-400" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          Loading Google Sign-In...
+          Connecting Google Sign-In...
         </button>
       )}
-
-      {/* Fallback button when Google script fails to load */}
       {!scriptLoaded && scriptFailed && (
         <button
           type="button"
           onClick={handleFallbackClick}
           disabled={googleLoading}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 border-2 border-gray-200 rounded-xl hover:bg-gray-50 transition-all duration-200 text-gray-700 font-medium"
+          className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all duration-200 text-slate-700 font-medium text-sm shadow-sm"
         >
-          <svg className="w-5 h-5" viewBox="0 0 24 24">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          <svg className="w-4 h-4" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
           </svg>
           {googleLoading ? 'Connecting...' : (text === 'signup_with' ? 'Sign up with Google' : 'Sign in with Google')}
         </button>
@@ -164,7 +161,6 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
     </div>
   );
 };
-
 
 // OTP Verification Modal
 const OtpVerificationModal = ({ email, onVerified, onCancel, onResend }) => {
@@ -242,39 +238,34 @@ const OtpVerificationModal = ({ email, onVerified, onCancel, onResend }) => {
     setResendTimer(60);
     setError(null);
     try {
-      const response = await onResend();
-      if (response?.data?.dev_otp) {
-        setError(null);
-      }
+      await onResend();
     } catch (err) {
       setError('Failed to resend OTP. Please try again.');
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative animate-[fadeInUp_0.3s_ease-out]">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 relative animate-in fade-in zoom-in-95 duration-200 border border-slate-100">
         <button
           onClick={onCancel}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-xl transition-colors"
+          className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition"
         >
-          ✕
+          <X className="w-5 h-5" />
         </button>
 
         <div className="text-center mb-6">
-          <div className="w-16 h-16 bg-[#0038A8]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-[#0038A8]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
+          <div className="w-16 h-16 bg-blue-50 text-[#00338D] rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-100 shadow-sm">
+            <Lock className="w-8 h-8" />
           </div>
-          <h3 className="text-xl font-bold text-gray-900">Verify Your Email</h3>
-          <p className="text-sm text-gray-500 mt-2">
-            We've sent a 6-digit verification code to
+          <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Verify Your Email</h3>
+          <p className="text-sm text-slate-500 mt-2">
+            We sent a 6-digit verification code to
           </p>
-          <p className="text-sm font-semibold text-[#0038A8] mt-1">{email}</p>
+          <p className="text-sm font-bold text-[#00338D] mt-0.5">{email}</p>
         </div>
 
-        <div className="flex justify-center gap-2 mb-6" onPaste={handlePaste}>
+        <div className="flex justify-center gap-2.5 mb-6" onPaste={handlePaste}>
           {otp.map((digit, index) => (
             <input
               key={index}
@@ -285,44 +276,42 @@ const OtpVerificationModal = ({ email, onVerified, onCancel, onResend }) => {
               value={digit}
               onChange={(e) => handleChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
-              className="w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-[#0038A8] focus:ring-2 focus:ring-[#0038A8]/20 outline-none transition-all duration-200"
+              className="w-12 h-14 text-center text-2xl font-bold border border-slate-200 rounded-xl focus:border-[#00338D] focus:ring-2 focus:ring-blue-100 outline-none transition text-slate-900 bg-slate-50 focus:bg-white"
             />
           ))}
         </div>
 
         {error && (
-          <div className="rounded-lg bg-red-50 p-3 border border-red-200 mb-4">
-            <p className="text-sm text-red-700 text-center">{error}</p>
+          <div className="rounded-xl bg-red-50 p-3 border border-red-200 mb-4 flex items-center gap-2 text-xs font-semibold text-[#E30613]">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
         <Button
           onClick={handleVerify}
           disabled={verifying || otp.join('').length !== 6}
-          className="w-full bg-[#0038A8] hover:bg-[#002D87] text-white py-3 font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-[#00338D] hover:bg-[#002566] text-white py-3.5 font-bold rounded-xl disabled:opacity-50 shadow-md text-sm"
         >
           {verifying ? (
             <span className="flex items-center justify-center gap-2">
-              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-              </svg>
-              Verifying...
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Verifying Code...
             </span>
-          ) : 'Verify Email'}
+          ) : 'Confirm & Create Account'}
         </Button>
 
-        <div className="text-center mt-4">
+        <div className="text-center mt-5">
           {canResend ? (
             <button
               onClick={handleResend}
-              className="text-sm text-[#0038A8] hover:underline font-semibold"
+              className="text-sm text-[#00338D] hover:underline font-bold"
             >
               Resend Code
             </button>
           ) : (
-            <p className="text-sm text-gray-400">
-              Resend code in <span className="font-semibold text-gray-600">{resendTimer}s</span>
+            <p className="text-xs text-slate-400">
+              Resend code in <span className="font-bold text-slate-600">{resendTimer}s</span>
             </p>
           )}
         </div>
@@ -331,28 +320,32 @@ const OtpVerificationModal = ({ email, onVerified, onCancel, onResend }) => {
   );
 };
 
-const LandingPage = () => {
+export default function LandingPage() {
   const navigate = useNavigate();
   const { login, googleLogin, loading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Modals & Navigation
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
-  // Check for login query parameter on component mount
-  useEffect(() => {
-    if (searchParams.get('login') === 'true') {
-      setShowLoginModal(true);
-      // Remove the query parameter from URL
-      setSearchParams({}, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
-  
+  // Dynamic Content States
+  const [barangays, setBarangays] = useState([]);
+  const [activeFaq, setActiveFaq] = useState(null);
+
+  // Interactive Eligibility Checker State
+  const [eligCategory, setEligCategory] = useState('Senior Citizens (Social Pension)');
+  const [eligBarangay, setEligBarangay] = useState('');
+  const [eligResult, setEligResult] = useState(null);
+
+  // Login Form
   const [email, setEmail] = useState('admin@ebms.local');
   const [password, setPassword] = useState('Admin@123');
   const [error, setError] = useState(null);
   const [googleError, setGoogleError] = useState(null);
 
-  const [barangays, setBarangays] = useState([]);
+  // Registration Form
   const [regFirstName, setRegFirstName] = useState('');
   const [regLastName, setRegLastName] = useState('');
   const [regEmail, setRegEmail] = useState('');
@@ -375,16 +368,24 @@ const LandingPage = () => {
   const [otpSending, setOtpSending] = useState(false);
   const [devOtp, setDevOtp] = useState(null);
 
+  // Check URL query param
   useEffect(() => {
-    const fetchBarangays = async () => {
+    if (searchParams.get('login') === 'true') {
+      setShowLoginModal(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const fetchData = async () => {
       try {
-        const response = await barangayApi.publicList();
-        setBarangays(response.data.data || []);
+        const brgyRes = await barangayApi.publicList().catch(() => ({ data: { data: [] } }));
+        setBarangays(brgyRes.data?.data || []);
       } catch (err) {
-        console.error('Failed to fetch barangays:', err);
+        console.error('Failed to load barangays:', err);
       }
     };
-    fetchBarangays();
+    fetchData();
   }, []);
 
   const handleLogin = async (e) => {
@@ -418,7 +419,6 @@ const LandingPage = () => {
     setGoogleError(msg || 'Google sign-in failed');
   }, []);
 
-  // Step 1: Validate registration form & send OTP
   const handleRegisterStep1 = async (e) => {
     e.preventDefault();
     setRegError(null);
@@ -439,7 +439,6 @@ const LandingPage = () => {
       return;
     }
 
-    // Send OTP to email
     setOtpSending(true);
     try {
       const response = await authApi.sendOtp({ email: regEmail });
@@ -447,7 +446,6 @@ const LandingPage = () => {
         setDevOtp(response.data.dev_otp);
       }
 
-      // Store pending registration data
       setPendingRegData({
         first_name: regFirstName,
         last_name: regLastName,
@@ -472,7 +470,6 @@ const LandingPage = () => {
     }
   };
 
-  // Step 2: OTP verified → complete registration
   const handleOtpVerified = async (otpToken) => {
     try {
       await authApi.registerBeneficiary({
@@ -485,7 +482,6 @@ const LandingPage = () => {
       setDevOtp(null);
       const savedEmail = pendingRegData.email;
 
-      // Reset form
       setRegFirstName('');
       setRegLastName('');
       setRegEmail('');
@@ -524,256 +520,841 @@ const LandingPage = () => {
     }
   };
 
+  // Eligibility Checker Evaluation
+  const runEligibilityCheck = (e) => {
+    e.preventDefault();
+    if (!eligCategory) return;
+
+    let programs = [];
+    let benefits = '';
+    let requirements = [];
+
+    if (eligCategory.includes('4Ps')) {
+      programs = ['Regular Cash Grant', 'Education Assistance', 'Health Subsidy', 'Rice Grant'];
+      benefits = 'Monthly cash assistance, educational support up to Senior High, and healthcare subsidies.';
+      requirements = ['Valid Government ID', '4Ps Household ID', 'Barangay Certificate of Indigency', 'PSA Birth Certificates of Children'];
+    } else if (eligCategory.includes('Senior')) {
+      programs = ['Social Pension for Indigent Seniors (SocPen)', 'Centenarian Benefits', 'Medical Assistance', 'Assistive Devices'];
+      benefits = '₱1,000 monthly social pension, free medical checkups, and assistive devices.';
+      requirements = ['OSCA ID / Senior Citizen Card', 'Barangay Certificate of Indigency', 'PSA Birth Certificate (proving 60+ years old)', 'Valid Government ID'];
+    } else if (eligCategory.includes('PWD')) {
+      programs = ['PWD ID Registration & Renewal', 'Livelihood Assistance', 'Assistive Devices (Wheelchair/Cane)', 'Medical & Educational Support'];
+      benefits = 'Direct financial aid, priority healthcare support, 20% statutory discounts, and assistive mobility equipment.';
+      requirements = ['Medical Certificate from Municipal Health Officer', 'Barangay Certificate of Residency', '1x1 ID Photos', 'Valid Government ID'];
+    } else {
+      programs = ['Crisis Assistance (AICS)', 'Emergency Financial Aid', 'Food & Non-Food Relief'];
+      benefits = 'One-time emergency financial aid, hospital bill subsidies, and calamity assistance.';
+      requirements = ['Barangay Certificate of Indigency', 'Medical Abstract / Hospital Bill (if medical)', 'Valid Government ID'];
+    }
+
+    setEligResult({
+      category: eligCategory,
+      barangay: barangays.find(b => String(b.id) === String(eligBarangay))?.barangay_name || 'Bongabong',
+      programs,
+      benefits,
+      requirements,
+    });
+  };
+
+  const programsData = [
+    {
+      id: '4ps',
+      category: '4Ps Household Beneficiaries',
+      title: 'Pantawid Pamilyang Pilipino Program (4Ps)',
+      tag: 'Conditional Cash Transfer',
+      badge: 'bg-blue-50 text-[#00338D] border border-blue-100',
+      icon: Users,
+      grants: 'Cash & Education Grants',
+      desc: 'National poverty reduction strategy providing conditional cash grants to extremely poor households to improve health, nutrition, and education of children aged 0-18.',
+      perks: ['Monthly Health Subsidy', 'Education Grants per Child', 'Rice Assistance Subsidy', 'Family Development Sessions (FDS)']
+    },
+    {
+      id: 'socpen',
+      category: 'Senior Citizens (Social Pension)',
+      title: 'Social Pension for Indigent Senior Citizens',
+      tag: 'Elderly Welfare',
+      badge: 'bg-amber-50 text-amber-800 border border-amber-100',
+      icon: Award,
+      grants: '₱1,000 / month',
+      desc: 'Periodic monetary grant provided to indigent seniors aged 60 and above to augment daily subsistence and medical needs.',
+      perks: ['Regular Payouts', 'RFID Priority Lane Verification', 'Assistive Devices Allocation', 'Centenarian Cash Gift (₱100,000)']
+    },
+    {
+      id: 'pwd',
+      category: 'Persons with Disabilities (PWD)',
+      title: 'PWD Comprehensive Welfare & Support',
+      tag: 'Disability Assistance',
+      badge: 'bg-emerald-50 text-emerald-800 border border-emerald-100',
+      icon: HandHeart,
+      grants: 'Livelihood & Medical Grants',
+      desc: 'Empowers persons with disabilities through digitized ID issuance, assistive device distribution, skills training, and livelihood subsidies.',
+      perks: ['Free Wheelchairs & Assistive Tech', 'Medical & Therapy Subsidies', 'Livelihood Capital Assistance', 'Emergency Relief Priority']
+    },
+    {
+      id: 'aics',
+      category: 'Crisis & Emergency',
+      title: 'Assistance to Individuals in Crisis Situations (AICS)',
+      tag: 'Emergency Relief',
+      badge: 'bg-red-50 text-[#E30613] border border-red-100',
+      icon: Zap,
+      grants: 'Immediate Cash Aid',
+      desc: 'Social safety net providing immediate financial, medical, funeral, and food assistance to individuals and families facing sudden crises or natural disasters.',
+      perks: ['Hospitalization Bill Subsidies', 'Burial & Funeral Assistance', 'Disaster Calamity Relief', 'Direct Barangay Coordination']
+    }
+  ];
+
+  const faqs = [
+    {
+      q: 'How does the RFID Beneficiary Card work during payouts?',
+      a: 'Each verified beneficiary receives a smart RFID card. During distribution events at your Barangay hall or Municipal gymnasium, simply tap your card on the scanner. The system instantly verifies your identity and releases your grant in under 2 seconds.'
+    },
+    {
+      q: 'How long does it take for an online application to be reviewed?',
+      a: 'Online applications are reviewed by your assigned Barangay Staff and Municipal Social Welfare Officers within 2 to 5 working days. You can monitor your application status in real-time through the portal.'
+    },
+    {
+      q: 'What should I do if I lose my RFID Card?',
+      a: 'Report your lost card immediately to your Barangay Hall or via the in-app Assistance Request module. Your old card will be deactivated instantly to prevent fraud, and a replacement card will be issued.'
+    },
+    {
+      q: 'Can family members claim benefits on behalf of bedridden beneficiaries?',
+      a: 'Yes. Qualified authorized representatives listed during enrollment can claim assistance by presenting the beneficiary RFID card, authorization letter, and valid IDs.'
+    }
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Top Bar with Navigation */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-[#0038A8]">EBMS</h1>
-              <p className="text-sm text-gray-600">DSWD Aid & Grants Portal</p>
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans selection:bg-[#00338D] selection:text-white relative">
+      
+      {/* ━━━ TOP ACCENT STRIP ━━━ */}
+      <div className="h-1 w-full bg-gradient-to-r from-[#00338D] via-[#E30613] to-[#FFD100]" />
+
+      {/* ━━━ CLEAN MINIMALIST NAVBAR ━━━ */}
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs transition-all">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+          
+          {/* Brand Logo */}
+          <div className="flex items-center gap-3.5 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+            <div className="h-11 w-11 rounded-2xl bg-[#00338D] text-white flex items-center justify-center font-bold text-xl shadow-sm">
+              <ShieldCheck className="w-6 h-6 text-[#FFD100]" />
             </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl font-bold tracking-tight text-slate-900">DSWD EBMS</span>
+                <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-blue-50 text-[#00338D] border border-blue-100">Bongabong</span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">Beneficiary Management Portal</p>
+            </div>
+          </div>
 
-            {/* Navigation Menu */}
-            <nav className="flex gap-8 items-center">
-              <a href="#home" className="text-[#C8102E] font-semibold hover:text-[#002D87] transition-colors">
-                Home
-              </a>
-              <a href="#about" className="text-gray-700 font-medium hover:text-[#0038A8] transition-colors">
-                About
-              </a>
-              <a href="#programs" className="text-gray-700 font-medium hover:text-[#0038A8] transition-colors">
-                Programs
-              </a>
-              <a href="#services" className="text-gray-700 font-medium hover:text-[#0038A8] transition-colors">
-                Services
-              </a>
-              <a href="#contact" className="text-gray-700 font-medium hover:text-[#0038A8] transition-colors">
-                Contact
-              </a>
-            </nav>
+          {/* Navigation Links */}
+          <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-700">
+            <a href="#features" className="hover:text-[#00338D] transition-colors">Features</a>
+            <a href="#programs" className="hover:text-[#00338D] transition-colors">Programs</a>
+            <a href="#eligibility" className="hover:text-[#00338D] transition-colors flex items-center gap-1.5 text-[#00338D]">
+              <Sparkles className="w-4 h-4 text-amber-500" /> Eligibility Checker
+            </a>
+            <a href="#rfid-tech" className="hover:text-[#00338D] transition-colors">Smart RFID</a>
+            <a href="#faq" className="hover:text-[#00338D] transition-colors">FAQ</a>
+          </nav>
 
+          {/* Action Login Button */}
+          <div className="flex items-center">
             <Button
-              onClick={() => setShowLoginModal(true)}
-              className="bg-[#0038A8] hover:bg-[#002D87] text-white px-8 py-2 font-semibold"
+              onClick={() => {
+                setShowRegisterModal(false);
+                setShowLoginModal(true);
+                setError(null);
+              }}
+              className="bg-[#0038A8] hover:bg-[#002D87] text-white px-8 py-2.5 text-sm font-semibold rounded-xl shadow-xs transition"
             >
               🔒 Login
             </Button>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Hero Section */}
-        <div className="bg-white rounded-lg shadow-sm p-12 mb-8">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <div className="inline-block bg-[#0038A8]/10 text-[#0038A8] px-4 py-2 rounded-full font-semibold text-sm mb-6">
-                ✓ DSWD Electronic Beneficiary Management System
+      {/* ━━━ HERO SECTION (MINIMALIST & SPACIOUS) ━━━ */}
+      <section className="relative pt-16 pb-20 lg:pt-24 lg:pb-28 overflow-hidden border-b border-slate-200/80 bg-gradient-to-b from-white via-slate-50/60 to-[#F8FAFC]">
+        
+        {/* Soft Background Radial Glow */}
+        <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-blue-100/40 rounded-full blur-3xl -z-10 pointer-events-none" />
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid lg:grid-cols-12 gap-12 lg:gap-10 items-center">
+            
+            {/* Left Column — Content */}
+            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+              
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-[#00338D] text-xs font-bold">
+                <span className="w-2 h-2 rounded-full bg-[#00338D]" />
+                <span>DSWD Aid & Grants Management System</span>
               </div>
-              
-              <h1 className="text-5xl font-bold text-gray-900 leading-tight mb-6">
-                Empowering Lives. Building Stronger <span className="text-[#C8102E]">Communities.</span>
+
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight leading-[1.15]">
+                Empowering Lives. Building{' '}
+                <span className="text-[#00338D]">Stronger </span>
+                <span className="text-[#E30613]">Communities.</span>
               </h1>
-              
-              <p className="text-lg text-gray-700 mb-8 leading-relaxed">
-                A modern and secure system for managing beneficiaries, delivering services, and ensuring transparency in social welfare programs.
+
+              <p className="text-base sm:text-lg text-slate-600 font-normal leading-relaxed max-w-2xl mx-auto lg:mx-0">
+                A digitized, contactless social welfare system for transparent grant disbursements, RFID attendance, and direct citizen support across all 37 Barangays of Bongabong.
               </p>
-              
-              <Button
-                onClick={() => setShowLoginModal(true)}
-                className="bg-[#0038A8] hover:bg-[#002D87] text-white px-8 py-4 font-semibold text-lg"
-              >
-                Get Started
-              </Button>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4 pt-2">
+                <button
+                  onClick={() => {
+                    setShowLoginModal(false);
+                    setShowRegisterModal(true);
+                  }}
+                  className="px-8 py-4 rounded-xl bg-[#00338D] hover:bg-[#002566] text-white font-bold text-sm shadow-md transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-2"
+                >
+                  <Users className="w-5 h-5" />
+                  Apply as Beneficiary
+                  <ArrowRight className="w-5 h-5" />
+                </button>
+
+                <a
+                  href="#eligibility"
+                  className="px-7 py-4 rounded-xl bg-white hover:bg-slate-50 text-slate-800 font-bold text-sm border border-slate-300 shadow-xs transition-all flex items-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  Check Eligibility
+                </a>
+              </div>
+
+              {/* Metrics Row */}
+              <div className="pt-6 grid grid-cols-3 gap-6 border-t border-slate-200 text-left max-w-lg mx-auto lg:mx-0">
+                <div>
+                  <p className="text-2xl lg:text-3xl font-extrabold text-slate-900">5,000+</p>
+                  <p className="text-xs text-slate-500 font-semibold mt-0.5">Beneficiaries</p>
+                </div>
+                <div>
+                  <p className="text-2xl lg:text-3xl font-extrabold text-[#00338D]">&lt;2 sec</p>
+                  <p className="text-xs text-slate-500 font-semibold mt-0.5">RFID Scan Speed</p>
+                </div>
+                <div>
+                  <p className="text-2xl lg:text-3xl font-extrabold text-emerald-600">37/37</p>
+                  <p className="text-xs text-slate-500 font-semibold mt-0.5">Barangays Active</p>
+                </div>
+              </div>
             </div>
 
-            <div className="relative">
-              <div className="bg-gradient-to-br from-[#0038A8] to-[#C8102E] rounded-lg shadow-lg p-8 text-white">
-                <div className="text-center mb-6">
-                  <div className="text-5xl mb-4">📱</div>
-                  <h3 className="text-2xl font-bold mb-2">RFID Enabled</h3>
-                  <p className="text-blue-100">Smart Beneficiary Identification</p>
-                </div>
+            {/* Right Column — DSWD RFID Card Specimen */}
+            <div className="lg:col-span-5 flex justify-center">
+              <div className="relative w-full max-w-md">
+                
+                {/* Sample Card */}
+                <div className="relative rounded-3xl p-7 bg-gradient-to-br from-[#00338D] via-[#002566] to-[#0A192F] text-white border-2 border-white shadow-2xl space-y-6">
+                  
+                  {/* Card Header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-[#E30613] text-white flex items-center justify-center font-bold text-xs shadow">
+                        DSWD
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold tracking-wider text-[#FFD100] uppercase">REPUBLIC OF THE PHILIPPINES</p>
+                        <p className="text-xs font-bold text-white">MUNICIPALITY OF BONGABONG</p>
+                      </div>
+                    </div>
+                    <Radio className="w-6 h-6 text-[#FFD100] opacity-90" />
+                  </div>
 
-                <div className="bg-white/10 rounded-lg p-6 backdrop-blur-sm">
-                  <div className="grid grid-cols-3 gap-4 text-center mb-4">
-                    <div>
-                      <div className="text-3xl font-bold text-[#FCD116]">50K+</div>
-                      <div className="text-sm text-blue-100 mt-1">Users</div>
+                  {/* Gold Chip */}
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="w-11 h-8 rounded bg-gradient-to-br from-[#FFD100] to-amber-400 p-1 flex flex-col justify-between shadow border border-amber-300">
+                      <div className="w-full h-1 bg-amber-800/30 rounded" />
+                      <div className="w-full h-1 bg-amber-800/30 rounded" />
                     </div>
+                    <span className="text-[10px] font-mono font-semibold tracking-wider text-emerald-300 bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-400/30 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" /> CONTACTLESS VERIFIED
+                    </span>
+                  </div>
+
+                  {/* Beneficiary Details */}
+                  <div className="space-y-2 pt-1">
                     <div>
-                      <div className="text-3xl font-bold text-[#FCD116]">99.9%</div>
-                      <div className="text-sm text-blue-100 mt-1">Accuracy</div>
+                      <p className="text-[10px] font-mono text-blue-200/90 uppercase">SMART RFID NUMBER</p>
+                      <p className="text-xl font-mono font-bold tracking-widest text-white">
+                        8820 •••• •••• 1001
+                      </p>
                     </div>
-                    <div>
-                      <div className="text-3xl font-bold text-[#FCD116]">&lt;2s</div>
-                      <div className="text-sm text-blue-100 mt-1">Scan Time</div>
+
+                    <div className="flex items-end justify-between pt-1">
+                      <div>
+                        <p className="text-[10px] text-blue-200/90 uppercase font-medium">Beneficiary Name</p>
+                        <p className="text-sm font-bold text-white tracking-wide">JUAN D. DELA CRUZ</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] text-blue-200/90 uppercase font-medium">Category</p>
+                        <p className="text-xs font-bold text-[#FFD100]">4Ps Household Beneficiary</p>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Card Footer Strip */}
+                  <div className="pt-4 border-t border-white/20 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <QrCode className="w-6 h-6 text-blue-200" />
+                      <span className="text-[10px] text-blue-200 font-mono">SPECIMEN-BEN-0001</span>
+                    </div>
+                    <span className="text-xs font-bold text-slate-900 bg-[#FFD100] px-3 py-1 rounded-lg shadow-sm">
+                      ⚡ Instant Aid Release
+                    </span>
+                  </div>
                 </div>
+
+                {/* Feature Badge */}
+                <div className="absolute -bottom-5 -left-3 bg-white border border-slate-200 rounded-2xl p-3.5 shadow-lg flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900">Automated SMS Notification</p>
+                    <p className="text-[11px] text-slate-500">Real-time disbursement receipt</p>
+                  </div>
+                </div>
+
               </div>
             </div>
+
           </div>
         </div>
+      </section>
 
-        {/* Features Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow">
-            <div className="text-4xl mb-4">🔒</div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Secure & Reliable</h3>
-            <p className="text-gray-600 text-sm">RFID-powered system ensures accurate beneficiary identification and data security.</p>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow">
-            <div className="text-4xl mb-4">📊</div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Efficient Management</h3>
-            <p className="text-gray-600 text-sm">Streamlined processes for faster beneficiary registration, monitoring, and reporting.</p>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow">
-            <div className="text-4xl mb-4">✅</div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Transparent Services</h3>
-            <p className="text-gray-600 text-sm">Promoting accountability and transparency in the delivery of social welfare programs.</p>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow">
-            <div className="text-4xl mb-4">❤️</div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Empowering Communities</h3>
-            <p className="text-gray-600 text-sm">Connecting beneficiaries to essential services and opportunities for a better tomorrow.</p>
-          </div>
-        </div>
-
-        {/* Stats Section */}
-        <div className="bg-white rounded-lg shadow-sm p-8 mt-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-8">Key Metrics</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div className="text-center">
-              <div className="text-5xl font-bold text-[#0038A8] mb-2">10M+</div>
-              <div className="text-gray-600">Beneficiaries Served</div>
-            </div>
-            <div className="text-center">
-              <div className="text-5xl font-bold text-[#C8102E] mb-2">500+</div>
-              <div className="text-gray-600">Programs & Services</div>
-            </div>
-            <div className="text-center">
-              <div className="text-5xl font-bold text-[#FCD116] mb-2">1,000+</div>
-              <div className="text-gray-600">Partner Organizations</div>
-            </div>
-            <div className="text-center">
-              <div className="text-5xl font-bold text-[#0038A8] mb-2">🌍</div>
-              <div className="text-gray-600">Nationwide Coverage</div>
-            </div>
-          </div>
-        </div>
-
-        {/* About Section */}
-        <div className="grid md:grid-cols-3 gap-6 mt-8">
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h3 className="text-lg font-bold text-[#0038A8] mb-3">🎯 Mission</h3>
-            <p className="text-gray-600">
-              To provide efficient, transparent, and accountable social welfare services that empower beneficiaries and build stronger communities.
+      {/* ━━━ BENEFIT ELIGIBILITY CHECKER ━━━ */}
+      <section id="eligibility" className="py-20 bg-white border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          
+          <div className="text-center max-w-2xl mx-auto mb-12 space-y-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-[#00338D] text-xs font-bold border border-blue-100">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Citizen Evaluation Tool
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+              Benefit & Grant Eligibility Checker
+            </h2>
+            <p className="text-sm text-slate-600">
+              Select your sector and barangay to instantly view all matching government programs and required documents.
             </p>
           </div>
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h3 className="text-lg font-bold text-[#C8102E] mb-3">🚀 Vision</h3>
-            <p className="text-gray-600">
-              A digitally-enabled social welfare system that leverages technology to ensure no Filipino is left behind.
+
+          <div className="grid lg:grid-cols-12 gap-8 items-start">
+            
+            {/* Input Form Card */}
+            <div className="lg:col-span-5 bg-slate-50/80 border border-slate-200 rounded-3xl p-6 sm:p-7 space-y-5 shadow-xs">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Search className="w-5 h-5 text-[#00338D]" /> Check Your Qualification
+              </h3>
+
+              <form onSubmit={runEligibilityCheck} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    1. Select Sector Classification
+                  </label>
+                  <select
+                    value={eligCategory}
+                    onChange={(e) => setEligCategory(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border border-slate-300 rounded-2xl text-slate-900 text-sm font-semibold focus:ring-2 focus:ring-[#00338D] focus:border-transparent outline-none shadow-xs"
+                  >
+                    <option value="4Ps Household Beneficiaries">4Ps Household Beneficiary</option>
+                    <option value="Senior Citizens (Social Pension)">Senior Citizen (Aged 60+)</option>
+                    <option value="Persons with Disabilities (PWD)">Person with Disability (PWD)</option>
+                    <option value="Crisis & Emergency">Crisis / Indigent / Solo Parent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    2. Select Your Barangay
+                  </label>
+                  <select
+                    value={eligBarangay}
+                    onChange={(e) => setEligBarangay(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border border-slate-300 rounded-2xl text-slate-900 text-sm font-semibold focus:ring-2 focus:ring-[#00338D] focus:border-transparent outline-none shadow-xs"
+                  >
+                    <option value="">Choose Barangay (Optional)</option>
+                    {barangays.map((b) => (
+                      <option key={b.id} value={b.id}>{b.barangay_name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3.5 bg-[#00338D] hover:bg-[#002566] text-white font-bold text-sm rounded-2xl shadow-xs transition flex items-center justify-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4 text-[#FFD100]" />
+                  Evaluate Programs
+                </button>
+              </form>
+            </div>
+
+            {/* Results Display */}
+            <div className="lg:col-span-7">
+              {eligResult ? (
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-7 space-y-5 shadow-sm animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                    <div>
+                      <span className="text-xs font-bold uppercase px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        ✓ Qualified for Subsidies
+                      </span>
+                      <h4 className="text-xl font-bold text-slate-900 mt-2">{eligResult.category}</h4>
+                      <p className="text-xs text-slate-500">Municipality of Bongabong • {eligResult.barangay}</p>
+                    </div>
+                  </div>
+
+                  {/* Qualified Programs */}
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-[#00338D] mb-2">Available Programs</p>
+                    <div className="grid sm:grid-cols-2 gap-2.5">
+                      {eligResult.programs.map((prog, idx) => (
+                        <div key={idx} className="flex items-center gap-2.5 bg-blue-50/60 border border-blue-100 rounded-xl p-3 text-xs font-bold text-[#00338D]">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                          <span className="truncate">{prog}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Grant Coverage */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs sm:text-sm text-slate-700 leading-relaxed">
+                    <strong className="text-slate-900 block mb-1">Grant Coverage:</strong>
+                    {eligResult.benefits}
+                  </div>
+
+                  {/* Requirements */}
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Documentary Checklist</p>
+                    <ul className="space-y-1.5 text-xs sm:text-sm text-slate-600">
+                      {eligResult.requirements.map((req, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#E30613]" />
+                          {req}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Apply Button */}
+                  <button
+                    onClick={() => {
+                      setRegCategory(eligResult.category);
+                      if (eligBarangay) setRegBarangayId(eligBarangay);
+                      setShowRegisterModal(true);
+                    }}
+                    className="w-full py-3.5 bg-[#00338D] hover:bg-[#002566] text-white font-bold text-sm rounded-2xl shadow-xs transition flex items-center justify-center gap-2"
+                  >
+                    Proceed with Registration as {eligResult.category.split(' ')[0]} <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-slate-50/60 border border-dashed border-slate-300 rounded-3xl p-10 text-center space-y-2.5 flex flex-col items-center justify-center min-h-[320px]">
+                  <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 mb-1 shadow-xs">
+                    <Search className="w-6 h-6 text-[#00338D]" />
+                  </div>
+                  <h4 className="text-base font-bold text-slate-800">Instant Eligibility Evaluation</h4>
+                  <p className="text-xs sm:text-sm text-slate-500 max-w-md leading-relaxed">
+                    Select your sector classification on the left form and click "Evaluate Programs" to preview all financial aid, requirements, and grant amounts.
+                  </p>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* ━━━ CORE FEATURES ━━━ */}
+      <section id="features" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center max-w-2xl mx-auto mb-14 space-y-1.5">
+          <span className="text-xs font-bold uppercase tracking-widest text-[#00338D] bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+            System Features
+          </span>
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            Designed for Speed, Security & Dignity
+          </h2>
+          <p className="text-sm text-slate-600">
+            Automated digital infrastructure eliminating queues, preventing duplicates, and ensuring prompt aid delivery.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-blue-300 hover:shadow-sm transition">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#00338D] border border-blue-100 flex items-center justify-center mb-4">
+              <Radio className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1.5">Contactless RFID</h3>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Fast tap-to-scan beneficiary card processing. Payout verification in under 2 seconds.
             </p>
           </div>
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h3 className="text-lg font-bold text-[#FCD116] mb-3">💡 Innovation</h3>
-            <p className="text-gray-600">
-              Continuous improvement through RFID technology, data analytics, and mobile accessibility for seamless service delivery.
+
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-emerald-300 hover:shadow-sm transition">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center justify-center mb-4">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1.5">Identity Verification</h3>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Photo match and National ID cross-verification to prevent fraud and duplicate disbursements.
+            </p>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-purple-300 hover:shadow-sm transition">
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-700 border border-purple-100 flex items-center justify-center mb-4">
+              <Smartphone className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1.5">SMS Notifications</h3>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Immediate SMS broadcast of distribution schedules and payout receipts.
+            </p>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-amber-300 hover:shadow-sm transition">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 border border-amber-100 flex items-center justify-center mb-4">
+              <FileText className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1.5">Transparent Reports</h3>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Full transaction ledger, timestamped event tracking, and exportable audit reports.
             </p>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center text-gray-600 text-sm">
-            <p>&copy; 2026 Department of Social Welfare and Development. All rights reserved.</p>
+      {/* ━━━ BENEFIT PROGRAMS CATALOG ━━━ */}
+      <section id="programs" className="py-20 bg-white border-t border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-12">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-[#00338D] bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                Welfare Catalog
+              </span>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mt-2">
+                Municipal Aid & Assistance Programs
+              </h2>
+            </div>
+            <button
+              onClick={() => setShowRegisterModal(true)}
+              className="px-6 py-3 bg-[#00338D] hover:bg-[#002566] text-white font-bold text-xs rounded-xl shadow-xs transition self-start sm:self-auto flex items-center gap-1.5"
+            >
+              Enroll into a Program <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {programsData.map((prog) => {
+              const Icon = prog.icon;
+              return (
+                <div
+                  key={prog.id}
+                  className="bg-slate-50/70 border border-slate-200 rounded-3xl p-6 sm:p-7 flex flex-col justify-between gap-5 hover:bg-white hover:shadow-xs transition"
+                >
+                  <div className="space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-blue-50 text-[#00338D] border border-blue-100 flex items-center justify-center">
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-semibold text-slate-500">{prog.tag}</span>
+                          <h3 className="text-base font-bold text-slate-900">{prog.title}</h3>
+                        </div>
+                      </div>
+                      <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full ${prog.badge}`}>
+                        Active
+                      </span>
+                    </div>
+
+                    <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                      {prog.desc}
+                    </p>
+
+                    <div className="space-y-2 pt-2 border-t border-slate-200">
+                      <p className="text-xs font-bold text-slate-800">Key Benefits:</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {prog.perks.map((perk, i) => (
+                          <div key={i} className="flex items-center gap-1.5 text-xs text-slate-600">
+                            <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                            <span className="truncate">{perk}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3.5 border-t border-slate-200 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">Allocation</p>
+                      <p className="text-sm font-bold text-[#00338D]">{prog.grants}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setRegCategory(prog.category);
+                        setShowRegisterModal(true);
+                      }}
+                      className="text-xs font-bold text-[#00338D] hover:underline flex items-center gap-1"
+                    >
+                      Apply <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ━━━ HOW RFID WORKS (4-STEP PIPELINE) ━━━ */}
+      <section id="rfid-tech" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center max-w-2xl mx-auto mb-14 space-y-1.5">
+          <span className="text-xs font-bold uppercase tracking-widest text-[#00338D] bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+            Process Workflow
+          </span>
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            How Contactless RFID Aid Release Works
+          </h2>
+          <p className="text-sm text-slate-600">
+            From online registration to instant payout verification at your local Barangay hall.
+          </p>
+        </div>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {[
+            {
+              step: '01',
+              title: 'Online Application',
+              desc: 'Submit beneficiary details and upload valid IDs through this web portal.',
+              icon: FileText
+            },
+            {
+              step: '02',
+              title: 'Verification & RFID Card',
+              desc: 'Barangay Staff approves application and links an encrypted RFID smart card.',
+              icon: CreditCard
+            },
+            {
+              step: '03',
+              title: 'Tap at Payout Venue',
+              desc: 'Tap your RFID card on the scanner during payout events. No paperwork needed.',
+              icon: Radio
+            },
+            {
+              step: '04',
+              title: 'Disburse & SMS Receipt',
+              desc: 'Grant is released instantly and an automated SMS confirmation is dispatched.',
+              icon: CheckCircle2
+            }
+          ].map((item, idx) => {
+            const Icon = item.icon;
+            return (
+              <div key={idx} className="bg-white border border-slate-200 rounded-3xl p-6 relative space-y-3.5 hover:shadow-xs transition">
+                <span className="text-3xl font-extrabold text-slate-200 font-mono absolute top-4 right-5">
+                  {item.step}
+                </span>
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#00338D] border border-blue-100 flex items-center justify-center">
+                  <Icon className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">{item.title}</h3>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">{item.desc}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ━━━ FAQ ACCORDION ━━━ */}
+      <section id="faq" className="py-20 bg-slate-50 border-t border-slate-200">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 space-y-1.5">
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900">Frequently Asked Questions</h2>
+            <p className="text-sm text-slate-600">Everything you need to know about beneficiary registration and claiming aid.</p>
+          </div>
+
+          <div className="space-y-3">
+            {faqs.map((faq, idx) => (
+              <div
+                key={idx}
+                className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs transition"
+              >
+                <button
+                  onClick={() => setActiveFaq(activeFaq === idx ? null : idx)}
+                  className="w-full px-6 py-4.5 flex items-center justify-between text-left text-sm sm:text-base font-bold text-slate-800 hover:text-[#00338D] transition"
+                >
+                  <span>{faq.q}</span>
+                  <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${activeFaq === idx ? 'rotate-180 text-[#00338D]' : ''}`} />
+                </button>
+                {activeFaq === idx && (
+                  <div className="px-6 pb-5 text-xs sm:text-sm text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
+                    {faq.a}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ━━━ FOOTER ━━━ */}
+      <footer className="bg-white border-t border-slate-200 py-12 text-slate-600 text-xs sm:text-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+            <div className="space-y-2.5 md:col-span-2">
+              <div className="flex items-center gap-2.5 text-[#00338D] font-bold text-lg">
+                <div className="w-7 h-7 rounded-lg bg-[#00338D] text-white flex items-center justify-center">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                DSWD EBMS
+              </div>
+              <p className="text-xs sm:text-sm text-slate-500 max-w-md leading-relaxed">
+                Department of Social Welfare and Development — Municipal Beneficiary Management System for Bongabong, Oriental Mindoro.
+              </p>
+              <p className="text-xs text-slate-400">
+                Municipal Social Welfare and Development Office (MSWDO), Municipal Hall, Bongabong.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-slate-900 font-bold mb-3 uppercase tracking-wider text-xs">Navigation</p>
+              <ul className="space-y-2 text-xs sm:text-sm text-slate-500">
+                <li><a href="#eligibility" className="hover:text-[#00338D] transition">Eligibility Checker</a></li>
+                <li><a href="#programs" className="hover:text-[#00338D] transition">Municipal Programs</a></li>
+                <li><a href="#rfid-tech" className="hover:text-[#00338D] transition">RFID Technology</a></li>
+                <li><a href="#faq" className="hover:text-[#00338D] transition">Help & FAQs</a></li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="text-slate-900 font-bold mb-3 uppercase tracking-wider text-xs">Hotlines</p>
+              <ul className="space-y-2 text-xs sm:text-sm text-slate-600">
+                <li className="flex items-center gap-1.5">
+                  <span className="text-[#E30613]">📞</span> MSWDO: (043) 283-5000
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-[#00338D]">🚨</span> MDRRMO: 0917-123-4567
+                </li>
+                <li className="text-xs text-slate-400 mt-1">
+                  Monday - Friday (8:00 AM - 5:00 PM)
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+            <p>© 2026 Republic of the Philippines — DSWD EBMS. All rights reserved.</p>
+            <div className="flex items-center gap-4">
+              <span>Bongabong, Oriental Mindoro</span>
+              <span>•</span>
+              <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" /> System Online
+              </span>
+            </div>
           </div>
         </div>
       </footer>
 
-      {/* LOGIN/REGISTER MODAL */}
+      {/* ━━━ LOGIN / REGISTER MODAL ━━━ */}
       {(showLoginModal || showRegisterModal) && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 overflow-y-auto">
-          <div className={`bg-white rounded-2xl shadow-2xl w-full p-6 relative my-4 max-h-[90vh] overflow-y-auto ${showRegisterModal ? 'max-w-lg' : 'max-w-md'}`}>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-3 overflow-y-auto">
+          <div className={`bg-white rounded-3xl shadow-2xl w-full p-7 relative my-4 max-h-[92vh] overflow-y-auto ${showRegisterModal ? 'max-w-xl' : 'max-w-md'} animate-in fade-in zoom-in-95 duration-200 text-slate-900 border border-slate-100`}>
+            
+            {/* Close Button */}
             <button
               onClick={() => {
                 setShowLoginModal(false);
                 setShowRegisterModal(false);
                 setGoogleError(null);
               }}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl transition-colors"
+              className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition"
             >
-              ✕
+              <X className="w-5 h-5" />
             </button>
 
-            <div className="text-center mb-5">
-              <h1 className="text-xl font-bold text-[#0038A8] mb-1">EBMS</h1>
-              <p className="text-xs text-gray-600 mb-2">DSWD Aid & Grants Portal</p>
-              <h2 className="text-lg font-bold text-gray-900">
-                {showLoginModal ? 'Welcome Back' : 'Create Account'}
+            {/* Modal Header */}
+            <div className="text-center mb-6">
+              <div className="inline-flex p-3 rounded-2xl bg-blue-50 text-[#00338D] mb-3 border border-blue-100 shadow-2xs">
+                <ShieldCheck className="w-7 h-7" />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
+                {showLoginModal ? 'Sign in to DSWD EBMS' : 'Create Beneficiary Account'}
               </h2>
-              <p className="text-gray-600 text-sm mt-1">
-                {showLoginModal ? 'Sign in to your account' : 'Join the system to manage benefits'}
+              <p className="text-xs text-slate-500 mt-1">
+                {showLoginModal
+                  ? 'Access your municipal benefits, RFID records & assistance'
+                  : 'Join the Bongabong Social Welfare digital registry'}
               </p>
             </div>
 
+            {/* LOGIN FORM */}
             {showLoginModal && (
-              <form onSubmit={handleLogin} className="space-y-3">
+              <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Email Address
+                  </label>
                   <Input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="your@email.com"
+                    placeholder="name@ebms.local"
                     className="w-full"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full"
-                    required
-                  />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Password
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full pr-10"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 {error && (
-                  <div className="rounded-lg bg-red-50 p-3 border border-red-200">
-                    <p className="text-sm text-red-700">{error}</p>
+                  <div className="rounded-xl bg-red-50 p-3 border border-red-200 flex items-center gap-2 text-xs font-semibold text-[#E30613]">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{error}</span>
                   </div>
                 )}
 
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-[#0038A8] hover:bg-[#002D87] text-white py-3 font-semibold rounded-lg"
+                  className="w-full bg-[#00338D] hover:bg-[#002566] text-white py-3.5 font-bold rounded-xl shadow-xs text-sm"
                 >
-                  {loading ? 'Signing in...' : 'Sign In'}
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Signing In...
+                    </span>
+                  ) : 'Sign In'}
                 </Button>
 
                 {/* Divider */}
                 <div className="relative my-4">
                   <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-200"></div>
+                    <div className="w-full border-t border-slate-200"></div>
                   </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-4 bg-white text-gray-400 font-medium">or continue with</span>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="px-3 bg-white text-slate-400 font-semibold">or continue with</span>
                   </div>
                 </div>
 
@@ -785,13 +1366,13 @@ const LandingPage = () => {
                 />
 
                 {googleError && (
-                  <div className="rounded-lg bg-amber-50 p-3 border border-amber-200">
-                    <p className="text-sm text-amber-700">{googleError}</p>
+                  <div className="rounded-xl bg-amber-50 p-3 border border-amber-200 text-xs font-semibold text-amber-800">
+                    {googleError}
                   </div>
                 )}
 
-                <p className="text-center text-sm text-gray-600">
-                  Don't have an account?{' '}
+                <p className="text-center text-xs text-slate-600 pt-2">
+                  Don't have an account yet?{' '}
                   <button
                     type="button"
                     onClick={() => {
@@ -800,39 +1381,40 @@ const LandingPage = () => {
                       setError(null);
                       setGoogleError(null);
                     }}
-                    className="text-[#0038A8] hover:underline font-semibold"
+                    className="text-[#00338D] font-bold hover:underline"
                   >
                     Create Account
                   </button>
                 </p>
 
-                <p className="text-center text-xs text-gray-500 mt-4 pt-4 border-t border-gray-200">
-                  Demo: admin@ebms.local / Admin@123
+                <p className="text-center text-xs text-slate-400 mt-2 pt-3 border-t border-slate-100">
+                  Demo: <span className="font-mono text-slate-600 font-semibold">admin@ebms.local / Admin@123</span>
                 </p>
               </form>
             )}
 
-             {showRegisterModal && (
-              <form onSubmit={handleRegisterStep1} className="space-y-3 text-left">
+            {/* REGISTRATION FORM */}
+            {showRegisterModal && (
+              <form onSubmit={handleRegisterStep1} className="space-y-3.5 text-left">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">First Name</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">First Name</label>
                     <Input
                       type="text"
                       value={regFirstName}
                       onChange={(e) => setRegFirstName(e.target.value)}
-                      placeholder="John"
+                      placeholder="e.g. Maria"
                       className="w-full"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Last Name</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Last Name</label>
                     <Input
                       type="text"
                       value={regLastName}
                       onChange={(e) => setRegLastName(e.target.value)}
-                      placeholder="Doe"
+                      placeholder="e.g. Santos"
                       className="w-full"
                       required
                     />
@@ -840,12 +1422,12 @@ const LandingPage = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Email Address</label>
                   <Input
                     type="email"
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="your@email.com"
+                    placeholder="maria.santos@gmail.com"
                     className="w-full"
                     required
                   />
@@ -853,23 +1435,57 @@ const LandingPage = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Barangay</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Barangay</label>
                     <select
                       value={regBarangayId}
                       onChange={(e) => setRegBarangayId(e.target.value)}
-                      className="w-full mt-2 px-4 py-3 border border-slate-200 bg-slate-50 rounded-2xl focus:ring-2 focus:ring-[#0038A8] focus:border-transparent text-sm"
+                      className="w-full px-3.5 py-2.5 border border-slate-200 bg-slate-50 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-[#00338D] focus:bg-white outline-none"
                       required
                     >
                       <option value="">Select Barangay</option>
                       {barangays.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.barangay_name}
-                        </option>
+                        <option key={b.id} value={b.id}>{b.barangay_name}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Sitio / Street</label>
+                    <Input
+                      type="text"
+                      value={regSitio}
+                      onChange={(e) => setRegSitio(e.target.value)}
+                      placeholder="e.g. Sitio Centro"
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Sex</label>
+                    <select
+                      value={regSex}
+                      onChange={(e) => setRegSex(e.target.value)}
+                      className="w-full px-3.5 py-2.5 border border-slate-200 bg-slate-50 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-[#00338D] focus:bg-white outline-none"
+                      required
+                    >
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Birthdate</label>
+                    <Input
+                      type="date"
+                      value={regBirthdate}
+                      onChange={(e) => setRegBirthdate(e.target.value)}
+                      className="w-full"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Contact Number</label>
                     <Input
                       type="text"
                       value={regContactNumber}
@@ -880,61 +1496,37 @@ const LandingPage = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Sex</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Primary Sector Category</label>
                     <select
-                      value={regSex}
-                      onChange={(e) => setRegSex(e.target.value)}
-                      className="w-full mt-2 px-4 py-3 border border-slate-200 bg-slate-50 rounded-2xl focus:ring-2 focus:ring-[#0038A8] focus:border-transparent text-sm"
+                      value={regCategory}
+                      onChange={(e) => setRegCategory(e.target.value)}
+                      className="w-full px-3.5 py-2.5 border border-slate-200 bg-slate-50 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-[#00338D] focus:bg-white outline-none"
                       required
                     >
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
+                      <option value="4Ps Household Beneficiaries">4Ps Household Beneficiaries</option>
+                      <option value="Senior Citizens (Social Pension)">Senior Citizens (Social Pension)</option>
+                      <option value="Persons with Disabilities (PWD)">Persons with Disabilities (PWD)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Birthdate</label>
-                    <Input
-                      type="date"
-                      value={regBirthdate}
-                      onChange={(e) => setRegBirthdate(e.target.value)}
-                      className="w-full animate-none"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">IP Classification</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">IP Classification</label>
                     <select
                       value={regIpClassification}
                       onChange={(e) => setRegIpClassification(e.target.value)}
-                      className="w-full mt-2 px-4 py-3 border border-slate-200 bg-slate-50 rounded-2xl focus:ring-2 focus:ring-[#0038A8] focus:border-transparent text-sm"
+                      className="w-full px-3.5 py-2.5 border border-slate-200 bg-slate-50 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-[#00338D] focus:bg-white outline-none"
                       required
                     >
+                      <option value="Non-IP">Non-IP (General)</option>
                       <option value="IP">IP (Indigenous People)</option>
-                      <option value="Non-IP">Non-IP</option>
                     </select>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Category</label>
-                  <select
-                    value={regCategory}
-                    onChange={(e) => setRegCategory(e.target.value)}
-                    className="w-full mt-2 px-4 py-3 border border-slate-200 bg-slate-50 rounded-2xl focus:ring-2 focus:ring-[#0038A8] focus:border-transparent text-sm"
-                    required
-                  >
-                    <option value="4Ps Household Beneficiaries">4Ps Household Beneficiaries</option>
-                    <option value="Senior Citizens (Social Pension)">Senior Citizens (Social Pension)</option>
-                    <option value="Persons with Disabilities (PWD)">Persons with Disabilities (PWD)</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-gray-200 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Password</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Password</label>
                     <Input
                       type="password"
                       value={regPassword}
@@ -947,7 +1539,7 @@ const LandingPage = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Confirm Password</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Confirm Password</label>
                     <Input
                       type="password"
                       value={regConfirmPassword}
@@ -961,41 +1553,40 @@ const LandingPage = () => {
                 </div>
 
                 {regError && (
-                  <div className="rounded-lg bg-red-50 p-3 border border-red-200">
-                    <p className="text-sm text-red-700">{regError}</p>
+                  <div className="rounded-xl bg-red-50 p-3 border border-red-200 flex items-center gap-2 text-xs font-semibold text-[#E30613]">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{regError}</span>
                   </div>
                 )}
 
                 {regSuccess && (
-                  <div className="rounded-lg bg-green-50 p-3 border border-green-200">
-                    <p className="text-sm text-green-700">✓ Account created successfully!</p>
+                  <div className="rounded-xl bg-emerald-50 p-3 border border-emerald-200 flex items-center gap-2 text-xs font-semibold text-emerald-700">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>✓ Account created successfully! Redirecting to login...</span>
                   </div>
                 )}
 
                 {devOtp && !showOtpModal && (
-                  <div className="rounded-lg bg-blue-50 p-3 border border-blue-200">
-                    <p className="text-xs text-blue-700">🔧 Dev mode OTP: <span className="font-mono font-bold text-lg">{devOtp}</span></p>
+                  <div className="rounded-xl bg-blue-50 p-3 border border-blue-200 text-xs font-bold text-[#00338D]">
+                    🔧 Dev OTP Code: <span className="font-mono text-base font-black">{devOtp}</span>
                   </div>
                 )}
 
                 <Button
                   type="submit"
                   disabled={regSuccess || otpSending}
-                  className="w-full bg-[#0038A8] hover:bg-[#002D87] text-white py-3 font-semibold rounded-lg disabled:opacity-50"
+                  className="w-full bg-[#00338D] hover:bg-[#002566] text-white py-3.5 font-bold rounded-xl shadow-sm text-sm"
                 >
                   {otpSending ? (
                     <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                      </svg>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
                       Sending Verification Code...
                     </span>
-                  ) : regSuccess ? 'Account Created!' : 'Verify Email & Create Account'}
+                  ) : regSuccess ? 'Account Created!' : 'Send OTP & Verify Email'}
                 </Button>
 
-                <p className="text-center text-sm text-gray-600">
-                  Already have an account?{' '}
+                <p className="text-center text-xs text-slate-600 pt-1">
+                  Already registered?{' '}
                   <button
                     type="button"
                     onClick={() => {
@@ -1004,18 +1595,19 @@ const LandingPage = () => {
                       setRegError(null);
                       setGoogleError(null);
                     }}
-                    className="text-[#0038A8] hover:underline font-semibold"
+                    className="text-[#00338D] font-bold hover:underline"
                   >
                     Sign In
                   </button>
                 </p>
               </form>
             )}
+
           </div>
         </div>
       )}
 
-      {/* OTP Verification Modal */}
+      {/* ━━━ OTP MODAL ━━━ */}
       {showOtpModal && (
         <OtpVerificationModal
           email={otpEmail}
@@ -1027,8 +1619,7 @@ const LandingPage = () => {
           onResend={handleResendOtp}
         />
       )}
+
     </div>
   );
-};
-
-export default LandingPage;
+}

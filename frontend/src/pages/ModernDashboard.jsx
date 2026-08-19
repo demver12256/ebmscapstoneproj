@@ -96,6 +96,17 @@ export default function ModernDashboard() {
   const totalBeneficiaries = summary ? ((summary.fourPsCount || 0) + (summary.seniorCitizensCount || 0) + (summary.pwdCount || 0) || summary.totalBeneficiaries || 0) : 0;
   const totalDistributedFunds = summary?.totalDistributedFunds || 0;
 
+  const pendingApplicationsList = applications.filter(a =>
+    a.status === 'Pending Review' ||
+    a.status === 'Under Review' ||
+    a.status === 'pending' ||
+    a.status === 'Pending' ||
+    (a.status !== 'Approved' && a.status !== 'Rejected' && a.status !== 'Pending Submission')
+  );
+  const pendingCount = (summary?.pendingApplications !== undefined && summary?.pendingApplications > 0)
+    ? summary.pendingApplications
+    : pendingApplicationsList.length;
+
   const stats = [
     {
       title: 'Total Beneficiaries',
@@ -131,9 +142,9 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/distributions')
     },
     {
-      title: 'Pending Applications',
-      value: summary?.pendingApplications || 0,
-      change: applications.length > 0 ? `${applications.length} queued` : 'None',
+      title: 'Pending Beneficiaries',
+      value: pendingCount,
+      change: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
       trend: 'neutral',
       icon: Clock,
       gradient: 'from-amber-500 to-amber-600',
@@ -225,26 +236,32 @@ export default function ModernDashboard() {
   };
 
   return (
-    <div className="space-y-6 p-6 bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 min-h-screen">
+    <div className="space-y-8 p-6 sm:p-8 bg-[#F8FAFC] min-h-screen">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">
-            Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">{user?.first_name || 'User'}</span>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-50 text-[#00338D] border border-blue-100">
+              {user?.role === 'admin' ? '👑 Admin Console' : '🏢 Staff Portal'}
+            </span>
+            <span className="text-xs text-slate-400 font-medium">• Bongabong, Or. Mindoro</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Welcome back, <span className="text-[#00338D]">{user?.first_name || 'User'}</span>
           </h1>
-          <p className="text-slate-600 mt-1">Here's what's happening with your programs today.</p>
+          <p className="text-sm text-slate-500 mt-0.5">Here is the real-time summary of beneficiaries, programs, and payouts.</p>
         </div>
         <div className="flex items-center gap-3">
           <button 
             onClick={loadDashboard}
-            className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors flex items-center gap-2"
+            className="px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors shadow-2xs flex items-center gap-2"
           >
-            <Activity className="w-4 h-4" />
-            Refresh
+            <Activity className="w-4 h-4 text-slate-500" />
+            Refresh Data
           </button>
           <button 
             onClick={() => navigate('/dashboard/reports')}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/30 flex items-center gap-2"
+            className="px-5 py-2.5 rounded-xl bg-[#00338D] hover:bg-[#002566] text-white text-xs font-bold transition shadow-xs flex items-center gap-2"
           >
             <FileText className="w-4 h-4" />
             View Reports
@@ -503,43 +520,43 @@ export default function ModernDashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl p-6 shadow-xl text-white">
+        <div className="bg-gradient-to-br from-[#00338D] to-[#0A192F] rounded-2xl p-6 shadow-md text-white border border-blue-900/30">
           <div className="flex items-center gap-2 mb-6">
-            <Zap className="w-6 h-6" />
-            <h3 className="text-lg font-bold">Quick Actions</h3>
+            <Zap className="w-5 h-5 text-[#FFD100]" />
+            <h3 className="text-base font-bold text-white tracking-wide">Quick Operations</h3>
           </div>
           
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {[
-              { label: 'New Distribution', icon: PesoIcon, path: '/dashboard/distributions' },
+              { label: 'New Distribution Event', icon: PesoIcon, path: '/dashboard/distributions' },
               { label: 'Review Applications', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' },
               { label: 'Manage Programs', icon: Target, path: '/dashboard/programs' },
-              { label: 'View Reports', icon: FileText, path: '/dashboard/reports' }
+              { label: 'View Reports & Audit', icon: FileText, path: '/dashboard/reports' }
             ].map((action, index) => {
               const Icon = action.icon;
               return (
                 <button
                   key={index}
                   onClick={() => navigate(action.path)}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-sm transition-all text-left group"
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-sm transition text-left group"
                 >
-                  <Icon className="w-5 h-5" />
-                  <span className="font-semibold flex-1">{action.label}</span>
-                  <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <Icon className="w-4 h-4 text-blue-200" />
+                  <span className="text-xs sm:text-sm font-semibold flex-1 text-white">{action.label}</span>
+                  <ArrowRight className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                 </button>
               );
             })}
           </div>
 
-          <div className="mt-6 p-4 rounded-xl bg-white/10 backdrop-blur-sm">
+          <div className="mt-6 p-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10">
             <div className="flex items-center gap-2 mb-2">
-              <Award className="w-5 h-5" />
-              <span className="text-sm font-bold">Today's Progress</span>
+              <Award className="w-4 h-4 text-[#FFD100]" />
+              <span className="text-xs font-bold text-white">Application Verification Progress</span>
             </div>
             <div className="flex items-center gap-3 mb-2">
               <div className="flex-1 bg-white/20 rounded-full h-2 overflow-hidden">
                 <div 
-                  className="bg-white h-full rounded-full transition-all duration-500"
+                  className="bg-[#FFD100] h-full rounded-full transition-all duration-500"
                   style={{ 
                     width: `${applications.length > 0 ? 
                       Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) 
@@ -547,13 +564,13 @@ export default function ModernDashboard() {
                   }}
                 ></div>
               </div>
-              <span className="text-sm font-bold">
+              <span className="text-xs font-bold text-[#FFD100]">
                 {applications.length > 0 ? 
                   Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) 
                   : 100}%
               </span>
             </div>
-            <p className="text-xs opacity-90">
+            <p className="text-[11px] text-blue-200">
               {applications.length > 0 ? 
                 `${Math.max(0, applications.length - (summary?.pendingApplications || 0))} of ${applications.length} applications processed` 
                 : 'All applications processed!'}
