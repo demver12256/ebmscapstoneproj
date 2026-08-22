@@ -87,6 +87,7 @@ export default function UserListPage() {
       setForm({
         first_name: '',
         last_name: '',
+        username: '',
         email: '',
         password: '',
         contact_number: '',
@@ -113,7 +114,8 @@ export default function UserListPage() {
 
   const columns = [
     { header: 'Name', accessor: 'first_name', cell: (row) => `${row.first_name} ${row.last_name}` },
-    { header: 'Email', accessor: 'email' },
+    { header: 'Username', accessor: 'username', cell: (row) => row.username || '—' },
+    { header: 'Email', accessor: 'email', cell: (row) => row.email || '—' },
     { header: 'Role', accessor: 'role', cell: (row) => (
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
         row.role === 'admin' ? 'bg-purple-100 text-purple-800' :
@@ -245,7 +247,10 @@ export default function UserListPage() {
                 <Input label="First Name" name="first_name" value={form.first_name} onChange={handleChange} required autoComplete="off" />
                 <Input label="Last Name" name="last_name" value={form.last_name} onChange={handleChange} required autoComplete="off" />
               </div>
-              <Input label="Email" name="email" type="email" value={form.email} onChange={handleChange} required autoComplete="new-password" />
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Username" name="username" value={form.username} onChange={handleChange} placeholder="e.g. jdelacruz" required autoComplete="off" />
+                <Input label="Email Address (Optional)" name="email" type="email" value={form.email} onChange={handleChange} placeholder="Optional" autoComplete="new-password" />
+              </div>
               <Input label="Password" name="password" type="password" value={form.password} onChange={handleChange} required autoComplete="new-password" />
               <Input label="Contact Number" name="contact_number" value={form.contact_number} onChange={handleChange} autoComplete="off" />
               

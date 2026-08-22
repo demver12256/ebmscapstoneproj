@@ -1,0 +1,305 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1100" width="100%" height="100%" style="background:#f8fafc; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <style>
+      .title-text { font-size: 24px; font-weight: 800; fill: #0f172a; }
+      .subtitle-text { font-size: 13px; fill: #64748b; font-weight: 500; }
+      .boundary-title { font-size: 18px; font-weight: 700; fill: #1e3a8a; }
+      .module-title { font-size: 13px; font-weight: 700; fill: #475569; text-transform: uppercase; letter-spacing: 1px; }
+      .actor-label { font-size: 14px; font-weight: 700; fill: #1e293b; text-anchor: middle; }
+      .actor-sub { font-size: 11px; fill: #64748b; text-anchor: middle; }
+      .uc-box { fill: #ffffff; stroke: #2563eb; stroke-width: 1.8; rx: 22; ry: 22; filter: drop-shadow(0 2px 4px rgba(37,99,235,0.08)); }
+      .uc-box-sub { fill: #f0fdf4; stroke: #16a34a; stroke-width: 1.5; stroke-dasharray: 4,3; rx: 18; ry: 18; }
+      .uc-text { font-size: 12px; font-weight: 600; fill: #1e293b; text-anchor: middle; dominant-baseline: middle; }
+      .uc-text-sub { font-size: 11px; font-weight: 500; fill: #166534; text-anchor: middle; dominant-baseline: middle; }
+      .link { stroke: #94a3b8; stroke-width: 1.6; fill: none; }
+      .link-admin { stroke: #dc2626; stroke-width: 1.6; stroke-opacity: 0.85; fill: none; }
+      .link-staff { stroke: #2563eb; stroke-width: 1.6; stroke-opacity: 0.85; fill: none; }
+      .link-ben { stroke: #059669; stroke-width: 1.6; stroke-opacity: 0.85; fill: none; }
+      .rel-inc { stroke: #3b82f6; stroke-width: 1.4; stroke-dasharray: 4,4; fill: none; marker-end: url(#arrow-blue); }
+      .rel-ext { stroke: #d97706; stroke-width: 1.4; stroke-dasharray: 4,4; fill: none; marker-end: url(#arrow-orange); }
+      .rel-text-inc { font-size: 10px; font-weight: 700; fill: #2563eb; text-anchor: middle; background: #fff; }
+      .rel-text-ext { font-size: 10px; font-weight: 700; fill: #d97706; text-anchor: middle; background: #fff; }
+    </style>
+
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#d97706" />
+    </marker>
+  </defs>
+
+  <!-- HEADER -->
+  <rect x="30" y="20" width="1540" height="60" rx="10" fill="#ffffff" stroke="#e2e8f0" />
+  <text x="50" y="55" class="title-text">🏛️ Electronic Beneficiary Management System (EBMS) — UML Use Case Diagram</text>
+  <text x="1180" y="55" class="subtitle-text">Scope: Admin, Barangay Staff, Beneficiary, Hardware Actors</text>
+
+  <!-- SYSTEM BOUNDARY -->
+  <rect x="340" y="95" width="920" height="975" rx="16" fill="#ffffff" stroke="#00338D" stroke-width="2.5" />
+  <rect x="340" y="95" width="920" height="42" rx="16" fill="#f1f5f9" />
+  <rect x="340" y="125" width="920" height="12" fill="#f1f5f9" />
+  <text x="365" y="123" class="boundary-title">📦 System Boundary: EBMS Web Application</text>
+
+  <!-- MODULE SECTION BACKGROUNDS -->
+  <!-- 1. Auth & Admin -->
+  <rect x="360" y="150" width="880" height="125" rx="10" fill="#f8fafc" stroke="#e2e8f0" />
+  <text x="375" y="170" class="module-title">1. Authentication &amp; System Administration</text>
+
+  <!-- 2. Beneficiary Onboarding & Profile -->
+  <rect x="360" y="285" width="880" height="210" rx="10" fill="#f8fafc" stroke="#e2e8f0" />
+  <text x="375" y="305" class="module-title">2. Beneficiary Registration &amp; Verification</text>
+
+  <!-- 3. Assistance Requests -->
+  <rect x="360" y="505" width="880" height="125" rx="10" fill="#f8fafc" stroke="#e2e8f0" />
+  <text x="375" y="525" class="module-title">3. Assistance Requests Management</text>
+
+  <!-- 4. Aid Distribution & RFID -->
+  <rect x="360" y="640" width="880" height="225" rx="10" fill="#f8fafc" stroke="#e2e8f0" />
+  <text x="375" y="660" class="module-title">4. Aid Distribution &amp; RFID Verification</text>
+
+  <!-- 5. Events, Messaging & Reports -->
+  <rect x="360" y="875" width="880" height="180" rx="10" fill="#f8fafc" stroke="#e2e8f0" />
+  <text x="375" y="895" class="module-title">5. Event Attendance, Announcements &amp; Reporting</text>
+
+  <!-- USE CASES (OVALS) -->
+
+  <!-- Module 1 Use Cases -->
+  <g id="uc-login">
+    <rect x="710" y="185" width="180" height="42" class="uc-box" />
+    <text x="800" y="206" class="uc-text">UC01: Login / Authenticate</text>
+  </g>
+  <g id="uc-users">
+    <rect x="390" y="195" width="180" height="44" class="uc-box" />
+    <text x="480" y="217" class="uc-text">UC02: Manage Users &amp; Roles</text>
+  </g>
+  <g id="uc-programs">
+    <rect x="580" y="228" width="180" height="42" class="uc-box" />
+    <text x="670" y="249" class="uc-text">UC03: Manage Benefit Programs</text>
+  </g>
+  <g id="uc-barangays">
+    <rect x="390" y="245" width="170" height="38" class="uc-box" />
+    <text x="475" y="264" class="uc-text">UC04: Manage Barangays</text>
+  </g>
+
+  <!-- Module 2 Use Cases -->
+  <g id="uc-register">
+    <rect x="990" y="320" width="200" height="42" class="uc-box" />
+    <text x="1090" y="341" class="uc-text">UC05: Register &amp; Setup Profile</text>
+  </g>
+  <g id="uc-upload">
+    <rect x="770" y="320" width="180" height="42" class="uc-box" />
+    <text x="860" y="341" class="uc-text">UC06: Upload Required Docs</text>
+  </g>
+  <g id="uc-submit">
+    <rect x="990" y="375" width="190" height="42" class="uc-box" />
+    <text x="1085" y="396" class="uc-text">UC07: Submit Application</text>
+  </g>
+  <g id="uc-review">
+    <rect x="420" y="360" width="190" height="44" class="uc-box" />
+    <text x="515" y="382" class="uc-text">UC08: Review Application</text>
+  </g>
+  <g id="uc-verify-doc">
+    <rect x="670" y="375" width="160" height="38" class="uc-box-sub" />
+    <text x="750" y="394" class="uc-text-sub">UC09: Verify Docs</text>
+  </g>
+  <g id="uc-decision">
+    <rect x="420" y="425" width="200" height="42" class="uc-box" />
+    <text x="520" y="446" class="uc-text">UC10: Approve / Reject App</text>
+  </g>
+  <g id="uc-assign-rfid">
+    <rect x="670" y="435" width="180" height="42" class="uc-box" />
+    <text x="760" y="456" class="uc-text">UC11: Assign &amp; Encode RFID</text>
+  </g>
+  <g id="uc-view-status">
+    <rect x="990" y="435" width="180" height="42" class="uc-box" />
+    <text x="1080" y="456" class="uc-text">UC12: View Application Status</text>
+  </g>
+
+  <!-- Module 3 Use Cases -->
+  <g id="uc-submit-req">
+    <rect x="980" y="550" width="210" height="44" class="uc-box" />
+    <text x="1085" y="572" class="uc-text">UC13: Submit Assistance Request</text>
+  </g>
+  <g id="uc-review-req">
+    <rect x="430" y="550" width="220" height="44" class="uc-box" />
+    <text x="540" y="572" class="uc-text">UC14: Review Assistance Request</text>
+  </g>
+  <g id="uc-status-req">
+    <rect x="710" y="550" width="190" height="40" class="uc-box-sub" />
+    <text x="805" y="570" class="uc-text-sub">UC15: Update Status &amp; Notes</text>
+  </g>
+
+  <!-- Module 4 Use Cases -->
+  <g id="uc-create-event">
+    <rect x="400" y="685" width="200" height="44" class="uc-box" />
+    <text x="500" y="707" class="uc-text">UC16: Create Distribution Event</text>
+  </g>
+  <g id="uc-manage-session">
+    <rect x="400" y="745" width="200" height="44" class="uc-box" />
+    <text x="500" y="767" class="uc-text">UC17: Start / End Dist Session</text>
+  </g>
+  <g id="uc-scan-aid">
+    <rect x="670" y="725" width="190" height="48" class="uc-box" style="stroke-width:2.2; fill:#eff6ff;" />
+    <text x="765" y="749" class="uc-text" style="font-weight:700;">UC18: Scan RFID for Aid</text>
+  </g>
+  <g id="uc-verify-release">
+    <rect x="910" y="700" width="190" height="42" class="uc-box-sub" />
+    <text x="1005" y="721" class="uc-text-sub">UC19: Verify &amp; Release Aid</text>
+  </g>
+  <g id="uc-issue-receipt">
+    <rect x="910" y="760" width="180" height="40" class="uc-box-sub" />
+    <text x="1000" y="780" class="uc-text-sub">UC20: Issue Digital Receipt</text>
+  </g>
+  <g id="uc-claim-aid">
+    <rect x="990" y="815" width="190" height="40" class="uc-box" />
+    <text x="1085" y="835" class="uc-text">UC21: Present RFID &amp; Claim Aid</text>
+  </g>
+
+  <!-- Module 5 Use Cases -->
+  <g id="uc-announcements">
+    <rect x="400" y="920" width="200" height="42" class="uc-box" />
+    <text x="500" y="941" class="uc-text">UC22: Broadcast Announcement</text>
+  </g>
+  <g id="uc-scan-att">
+    <rect x="680" y="920" width="190" height="44" class="uc-box" />
+    <text x="775" y="942" class="uc-text">UC23: Scan RFID Attendance</text>
+  </g>
+  <g id="uc-messaging">
+    <rect x="680" y="985" width="190" height="42" class="uc-box" />
+    <text x="775" y="1006" class="uc-text">UC24: 1-on-1 Direct Messaging</text>
+  </g>
+  <g id="uc-reports">
+    <rect x="400" y="985" width="200" height="44" class="uc-box" />
+    <text x="500" y="1007" class="uc-text">UC25: Generate Reports &amp; Stats</text>
+  </g>
+
+  <!-- RELATIONSHIPS (<<include>> / <<extend>>) -->
+  <!-- UC07 includes UC06 -->
+  <path d="M 990 395 L 860 362" class="rel-inc" />
+  <text x="925" y="375" class="rel-text-inc">&lt;&lt;include&gt;&gt;</text>
+
+  <!-- UC08 includes UC09 -->
+  <path d="M 610 382 L 670 390" class="rel-inc" />
+  <text x="635" y="377" class="rel-text-inc">&lt;&lt;include&gt;&gt;</text>
+
+  <!-- UC10 extends UC08 -->
+  <path d="M 520 425 L 515 404" class="rel-ext" />
+  <text x="560" y="418" class="rel-text-ext">&lt;&lt;extend&gt;&gt;</text>
+
+  <!-- UC14 extends UC15 -->
+  <path d="M 710 570 L 650 570" class="rel-ext" />
+  <text x="680" y="563" class="rel-text-ext">&lt;&lt;extend&gt;&gt;</text>
+
+  <!-- UC18 includes UC19 -->
+  <path d="M 860 740 L 910 730" class="rel-inc" />
+  <text x="890" y="725" class="rel-text-inc">&lt;&lt;include&gt;&gt;</text>
+
+  <!-- UC20 extends UC18 -->
+  <path d="M 910 780 L 860 760" class="rel-ext" />
+  <text x="895" y="777" class="rel-text-ext">&lt;&lt;extend&gt;&gt;</text>
+
+
+  <!-- ================= ACTORS ================= -->
+
+  <!-- 1. SYSTEM ADMIN (LEFT TOP) -->
+  <g id="actor-admin" transform="translate(140, 260)">
+    <circle cx="40" cy="20" r="16" fill="#fee2e2" stroke="#dc2626" stroke-width="2.5" />
+    <line x1="40" y1="36" x2="40" y2="80" stroke="#dc2626" stroke-width="2.5" />
+    <line x1="10" y1="52" x2="70" y2="52" stroke="#dc2626" stroke-width="2.5" />
+    <line x1="40" y1="80" x2="15" y2="120" stroke="#dc2626" stroke-width="2.5" />
+    <line x1="40" y1="80" x2="65" y2="120" stroke="#dc2626" stroke-width="2.5" />
+    <text x="40" y="145" class="actor-label" fill="#b91c1c">System Admin</text>
+    <text x="40" y="160" class="actor-sub">(DSWD / City LGU)</text>
+  </g>
+
+  <!-- 2. BARANGAY STAFF (LEFT BOTTOM) -->
+  <g id="actor-staff" transform="translate(140, 640)">
+    <circle cx="40" cy="20" r="16" fill="#dbeafe" stroke="#2563eb" stroke-width="2.5" />
+    <line x1="40" y1="36" x2="40" y2="80" stroke="#2563eb" stroke-width="2.5" />
+    <line x1="10" y1="52" x2="70" y2="52" stroke="#2563eb" stroke-width="2.5" />
+    <line x1="40" y1="80" x2="15" y2="120" stroke="#2563eb" stroke-width="2.5" />
+    <line x1="40" y1="80" x2="65" y2="120" stroke="#2563eb" stroke-width="2.5" />
+    <text x="40" y="145" class="actor-label" fill="#1d4ed8">Barangay Staff</text>
+    <text x="40" y="160" class="actor-sub">(Barangay Level)</text>
+  </g>
+
+  <!-- 3. BENEFICIARY (RIGHT TOP/MID) -->
+  <g id="actor-beneficiary" transform="translate(1380, 430)">
+    <circle cx="40" cy="20" r="16" fill="#d1fae5" stroke="#059669" stroke-width="2.5" />
+    <line x1="40" y1="36" x2="40" y2="80" stroke="#059669" stroke-width="2.5" />
+    <line x1="10" y1="52" x2="70" y2="52" stroke="#059669" stroke-width="2.5" />
+    <line x1="40" y1="80" x2="15" y2="120" stroke="#059669" stroke-width="2.5" />
+    <line x1="40" y1="80" x2="65" y2="120" stroke="#059669" stroke-width="2.5" />
+    <text x="40" y="145" class="actor-label" fill="#047857">Beneficiary</text>
+    <text x="40" y="160" class="actor-sub">(Citizen / Resident)</text>
+  </g>
+
+  <!-- 4. RFID SCANNER (RIGHT BOTTOM) -->
+  <g id="actor-rfid" transform="translate(1360, 750)">
+    <rect x="0" y="0" width="80" height="65" rx="8" fill="#f8fafc" stroke="#475569" stroke-width="2" />
+    <text x="40" y="28" style="font-size:22px; text-anchor:middle;">📟</text>
+    <text x="40" y="48" style="font-size:11px; font-weight:700; fill:#334155; text-anchor:middle;">&lt;&lt;hardware&gt;&gt;</text>
+    <text x="40" y="85" class="actor-label">RFID Reader</text>
+  </g>
+
+  <!-- 5. SMS GATEWAY (RIGHT BOTTOM LOWER) -->
+  <g id="actor-sms" transform="translate(1360, 890)">
+    <rect x="0" y="0" width="80" height="65" rx="8" fill="#f8fafc" stroke="#475569" stroke-width="2" />
+    <text x="40" y="28" style="font-size:22px; text-anchor:middle;">✉️</text>
+    <text x="40" y="48" style="font-size:11px; font-weight:700; fill:#334155; text-anchor:middle;">&lt;&lt;service&gt;&gt;</text>
+    <text x="40" y="85" class="actor-label">SMS Gateway</text>
+  </g>
+
+
+  <!-- ================= ACTOR CONNECTIONS (ASSOCIATIONS) ================= -->
+
+  <!-- ADMIN CONNECTIONS (Red) -->
+  <path d="M 220 320 L 710 205" class="link-admin" />
+  <path d="M 220 320 L 390 217" class="link-admin" />
+  <path d="M 220 320 L 580 249" class="link-admin" />
+  <path d="M 220 320 L 390 264" class="link-admin" />
+  <path d="M 220 320 L 400 707" class="link-admin" />
+  <path d="M 220 320 L 400 941" class="link-admin" />
+  <path d="M 220 320 L 400 1007" class="link-admin" />
+
+  <!-- BARANGAY STAFF CONNECTIONS (Blue) -->
+  <path d="M 220 700 L 710 205" class="link-staff" />
+  <path d="M 220 700 L 420 382" class="link-staff" />
+  <path d="M 220 700 L 420 446" class="link-staff" />
+  <path d="M 220 700 L 670 456" class="link-staff" />
+  <path d="M 220 700 L 430 572" class="link-staff" />
+  <path d="M 220 700 L 400 767" class="link-staff" />
+  <path d="M 220 700 L 670 749" class="link-staff" />
+  <path d="M 220 700 L 680 942" class="link-staff" />
+  <path d="M 220 700 L 680 1006" class="link-staff" />
+  <path d="M 220 700 L 400 1007" class="link-staff" />
+
+  <!-- BENEFICIARY CONNECTIONS (Green) -->
+  <path d="M 1380 500 L 890 205" class="link-ben" />
+  <path d="M 1380 500 L 1190 341" class="link-ben" />
+  <path d="M 1380 500 L 1180 396" class="link-ben" />
+  <path d="M 1380 500 L 1170 456" class="link-ben" />
+  <path d="M 1380 500 L 1190 572" class="link-ben" />
+  <path d="M 1380 500 L 1180 835" class="link-ben" />
+  <path d="M 1380 500 L 870 1006" class="link-ben" />
+
+  <!-- HARDWARE & SERVICE CONNECTIONS -->
+  <path d="M 860 749 L 1360 780" class="link" stroke-dasharray="2,2" />
+  <path d="M 870 942 L 1360 780" class="link" stroke-dasharray="2,2" />
+  <path d="M 620 446 L 1360 920" class="link" stroke-dasharray="2,2" />
+  <path d="M 600 941 L 1360 920" class="link" stroke-dasharray="2,2" />
+
+  <!-- LEGEND -->
+  <g transform="translate(40, 960)">
+    <rect x="0" y="0" width="260" height="110" rx="8" fill="#ffffff" stroke="#cbd5e1" />
+    <text x="15" y="22" style="font-size:12px; font-weight:700; fill:#1e293b;">📌 Diagram Legend</text>
+    <line x1="15" y1="40" x2="45" y2="40" stroke="#dc2626" stroke-width="2" />
+    <text x="55" y="44" style="font-size:11px; fill:#475569;">Admin Association</text>
+    <line x1="15" y1="60" x2="45" y2="60" stroke="#2563eb" stroke-width="2" />
+    <text x="55" y="64" style="font-size:11px; fill:#475569;">Staff Association</text>
+    <line x1="15" y1="80" x2="45" y2="80" stroke="#059669" stroke-width="2" />
+    <text x="55" y="84" style="font-size:11px; fill:#475569;">Beneficiary Association</text>
+    <line x1="15" y1="100" x2="45" y2="100" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="3,3" />
+    <text x="55" y="103" style="font-size:11px; fill:#475569;">&lt;&lt;include&gt;&gt; / &lt;&lt;extend&gt;&gt;</text>
+  </g>
+</svg>

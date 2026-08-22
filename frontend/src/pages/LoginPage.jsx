@@ -227,10 +227,11 @@ export default function LoginPage() {
         <p className="mt-2 text-sm text-slate-400">Sign in to access the beneficiary management system.</p>
         <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
           <Input
-            label="Email"
-            type="email"
+            label="Username or Email"
+            type="text"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            placeholder="Username or Email (e.g. maria_santos)"
             required
           />
           <Input

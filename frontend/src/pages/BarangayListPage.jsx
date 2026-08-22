@@ -82,7 +82,7 @@ export default function BarangayListPage() {
 
   const statCards = [
     { label: 'Total Barangays', value: barangays.length, icon: MapPin, from: 'from-green-50', to: 'to-green-100', border: 'border-green-200', color: 'text-green-600', iconColor: 'text-green-500' },
-    { label: 'Total Beneficiaries', value: totals.beneficiaries, icon: Users, from: 'from-blue-50', to: 'to-blue-100', border: 'border-blue-200', color: 'text-blue-600', iconColor: 'text-blue-500' },
+    { label: 'Approved Beneficiaries', value: totals.beneficiaries, icon: Users, from: 'from-blue-50', to: 'to-blue-100', border: 'border-blue-200', color: 'text-blue-600', iconColor: 'text-blue-500' },
     { label: '4Ps Beneficiaries', value: totals.fourPs, icon: Heart, from: 'from-orange-50', to: 'to-orange-100', border: 'border-orange-200', color: 'text-orange-600', iconColor: 'text-orange-500' },
     { label: 'Senior Citizens', value: totals.senior, icon: UserCheck, from: 'from-indigo-50', to: 'to-indigo-100', border: 'border-indigo-200', color: 'text-indigo-600', iconColor: 'text-indigo-500' },
     { label: 'PWD', value: totals.pwd, icon: Accessibility, from: 'from-purple-50', to: 'to-purple-100', border: 'border-purple-200', color: 'text-purple-600', iconColor: 'text-purple-500' },
@@ -98,7 +98,7 @@ export default function BarangayListPage() {
           <h1 className="text-3xl font-black tracking-tight">Barangay Directory & Demographics</h1>
         </div>
         <p className="text-blue-100 text-sm mt-1 max-w-2xl">
-          Overview of municipal beneficiary distribution, 4Ps households, senior citizens, PWDs, and IP classifications across barangays.
+          Overview of officially approved municipal beneficiaries, 4Ps households, senior citizens, PWDs, and IP classifications across barangays.
         </p>
       </div>
 

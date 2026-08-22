@@ -62,8 +62,8 @@ export default function Header() {
   useEffect(() => {
     if (user) {
       fetchUnreadCount();
-      // Also pre-fetch counts for badge
-      if (isAdmin || isStaff) {
+      // Pre-fetch pending beneficiary applications for admin only
+      if (isAdmin) {
         beneficiaryApi.listApplications().then(res => {
           const apps = res.data?.data || [];
           setPendingApplications(apps.filter(a =>
@@ -71,7 +71,11 @@ export default function Header() {
             a.status === 'Under Review' || a.status === 'under_review'
           ));
         }).catch(() => {});
+      } else {
+        setPendingApplications([]);
+      }
 
+      if (isAdmin || isStaff) {
         assistanceRequestApi.list().then(res => {
           const requests = res.data?.data || [];
           setPendingAssistance(requests.filter(r =>
@@ -90,7 +94,7 @@ export default function Header() {
       const interval = setInterval(() => {
         fetchUnreadCount();
         // Refresh counts periodically
-        if (isAdmin || isStaff) {
+        if (isAdmin) {
           beneficiaryApi.listApplications().then(res => {
             const apps = res.data?.data || [];
             setPendingApplications(apps.filter(a =>
@@ -98,6 +102,8 @@ export default function Header() {
               a.status === 'Under Review' || a.status === 'under_review'
             ));
           }).catch(() => {});
+        }
+        if (isAdmin || isStaff) {
           assistanceRequestApi.list().then(res => {
             const requests = res.data?.data || [];
             setPendingAssistance(requests.filter(r =>
@@ -139,8 +145,8 @@ export default function Header() {
       const notifRes = await notificationApi.list();
       setNotifications(notifRes.data?.data || []);
 
-      // Pending beneficiary applications for admin/staff
-      if (isAdmin || isStaff) {
+      // Pending beneficiary applications for admin only
+      if (isAdmin) {
         try {
           const appRes = await beneficiaryApi.listApplications();
           const apps = appRes.data?.data || [];
@@ -151,8 +157,12 @@ export default function Header() {
         } catch (e) {
           console.error('Failed to load applications:', e);
         }
+      } else {
+        setPendingApplications([]);
+      }
 
-        // Pending assistance requests
+      // Pending assistance requests
+      if (isAdmin || isStaff) {
         try {
           const assistRes = await assistanceRequestApi.list();
           const requests = assistRes.data?.data || [];
@@ -378,8 +388,8 @@ export default function Header() {
                   </div>
                 ) : (
                   <>
-                    {/* ━━━ Pending Beneficiary Applications (Admin/Staff only) ━━━ */}
-                    {(isAdmin || isStaff) && pendingApplications.length > 0 && (
+                    {/* ━━━ Pending Beneficiary Applications (Admin only) ━━━ */}
+                    {isAdmin && pendingApplications.length > 0 && (
                       <div className="py-1">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 py-2">
                           🔔 Pending Beneficiary Approvals ({pendingApplications.length})

@@ -12,12 +12,24 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
       },
+      username: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        unique: true,
+      },
       email: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
         unique: true,
         validate: {
-          isEmail: true,
+          isEmailOrEmpty(value) {
+            if (value && value.trim() !== '') {
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              if (!emailRegex.test(value)) {
+                throw new Error('Must be a valid email address');
+              }
+            }
+          },
         },
       },
       password: {
@@ -55,6 +67,16 @@ module.exports = (sequelize, DataTypes) => {
       tableName: 'users',
       underscored: true,
       hooks: {
+        beforeValidate: (user) => {
+          if (user.email === '' || (typeof user.email === 'string' && user.email.trim() === '')) {
+            user.email = null;
+          } else if (typeof user.email === 'string') {
+            user.email = user.email.trim().toLowerCase();
+          }
+          if (user.username && typeof user.username === 'string') {
+            user.username = user.username.trim();
+          }
+        },
         beforeCreate: async (user) => {
           if (user.password) {
             user.password = await bcrypt.hash(user.password, 10);

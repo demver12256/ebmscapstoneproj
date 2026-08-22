@@ -6,10 +6,10 @@ import Input from '../components/ui/Input';
 import { authApi, barangayApi } from '../services/api';
 import {
   ShieldCheck, Sparkles, CreditCard, QrCode, Search, Users, CheckCircle2,
-  ArrowRight, Calendar, MapPin, Clock,
+  ArrowRight,
   HandHeart, Award, Zap, Lock, FileText, Check,
   Smartphone, Radio, Eye, EyeOff,
-  UserCheck, AlertCircle, ChevronDown, RefreshCw, X
+  AlertCircle, ChevronDown, RefreshCw, X
 } from 'lucide-react';
 
 // Google Sign-In Button component
@@ -348,6 +348,7 @@ export default function LandingPage() {
   // Registration Form
   const [regFirstName, setRegFirstName] = useState('');
   const [regLastName, setRegLastName] = useState('');
+  const [regUsername, setRegUsername] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regBarangayId, setRegBarangayId] = useState('');
   const [regSitio, setRegSitio] = useState('');
@@ -424,49 +425,103 @@ export default function LandingPage() {
     setRegError(null);
     setRegSuccess(false);
 
-    if (!regFirstName || !regLastName || !regEmail || !regBarangayId || !regPassword || !regConfirmPassword) {
-      setRegError('First name, last name, email, barangay, password, and confirm password are required');
+    if (!regFirstName.trim() || !regLastName.trim() || !regUsername.trim() || !regBarangayId || !regPassword || !regConfirmPassword) {
+      setRegError('Pakiusap punan ang First name, Last name, Username, Barangay, at Password');
+      return;
+    }
+
+    if (regUsername.trim().length < 3) {
+      setRegError('Ang Username ay dapat hindi bababa sa 3 characters');
       return;
     }
 
     if (regPassword !== regConfirmPassword) {
-      setRegError('Passwords do not match');
+      setRegError('Hindi magkatugma ang Password at Confirm Password');
       return;
     }
 
     if (regPassword.length < 6) {
-      setRegError('Password must be at least 6 characters');
+      setRegError('Ang Password ay dapat hindi bababa sa 6 characters');
       return;
     }
 
-    setOtpSending(true);
-    try {
-      const response = await authApi.sendOtp({ email: regEmail });
-      if (response.data.dev_otp) {
-        setDevOtp(response.data.dev_otp);
+    const selectedBrgy = barangays.find((b) => Number(b.id) === Number(regBarangayId));
+    const selectedBrgyName = selectedBrgy ? selectedBrgy.barangay_name : '';
+    const fullCombinedAddress = [
+      regSitio ? regSitio.trim() : null,
+      selectedBrgyName ? `Barangay ${selectedBrgyName}` : null,
+      'Bongabong, Oriental Mindoro',
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    const regData = {
+      first_name: regFirstName.trim(),
+      last_name: regLastName.trim(),
+      username: regUsername.trim(),
+      email: regEmail && regEmail.trim() !== '' ? regEmail.trim() : undefined,
+      password: regPassword,
+      barangay_id: Number(regBarangayId),
+      contact_number: regContactNumber ? regContactNumber.trim() : '',
+      sex: regSex,
+      birthdate: regBirthdate || undefined,
+      category: regCategory,
+      ip_classification: regIpClassification,
+      sitio: regSitio ? regSitio.trim() : '',
+      address: fullCombinedAddress,
+    };
+
+    // If email is provided, perform OTP verification
+    if (regEmail && regEmail.trim() !== '') {
+      setOtpSending(true);
+      try {
+        const response = await authApi.sendOtp({ email: regEmail.trim() });
+        if (response.data.dev_otp) {
+          setDevOtp(response.data.dev_otp);
+        }
+
+        setPendingRegData(regData);
+        setOtpEmail(regEmail.trim());
+        setShowOtpModal(true);
+      } catch (err) {
+        setRegError(err.response?.data?.message || 'Failed to send verification code');
+      } finally {
+        setOtpSending(false);
       }
+    } else {
+      // If NO email is provided, register directly without OTP verification (for IPs / elderly)
+      setOtpSending(true);
+      try {
+        await authApi.registerBeneficiary(regData);
+        setRegSuccess(true);
+        const savedUsername = regUsername.trim();
 
-      setPendingRegData({
-        first_name: regFirstName,
-        last_name: regLastName,
-        email: regEmail,
-        password: regPassword,
-        barangay_id: Number(regBarangayId),
-        contact_number: regContactNumber,
-        sex: regSex,
-        birthdate: regBirthdate || undefined,
-        category: regCategory,
-        ip_classification: regIpClassification,
-        sitio: regSitio,
-        address: `${regSitio}, Bongabong, Oriental Mindoro`,
-      });
+        setRegFirstName('');
+        setRegLastName('');
+        setRegUsername('');
+        setRegEmail('');
+        setRegBarangayId('');
+        setRegSex('Male');
+        setRegBirthdate('');
+        setRegCategory('4Ps Household Beneficiaries');
+        setRegContactNumber('');
+        setRegIpClassification('Non-IP');
+        setRegPassword('');
+        setRegConfirmPassword('');
+        setPendingRegData(null);
 
-      setOtpEmail(regEmail);
-      setShowOtpModal(true);
-    } catch (err) {
-      setRegError(err.response?.data?.message || 'Failed to send verification code');
-    } finally {
-      setOtpSending(false);
+        setTimeout(() => {
+          setShowRegisterModal(false);
+          setRegSuccess(false);
+          setEmail(savedUsername);
+          setPassword('');
+          setShowLoginModal(true);
+        }, 1800);
+      } catch (err) {
+        setRegError(err.response?.data?.message || 'Registration failed');
+      } finally {
+        setOtpSending(false);
+      }
     }
   };
 
@@ -480,10 +535,11 @@ export default function LandingPage() {
       setShowOtpModal(false);
       setRegSuccess(true);
       setDevOtp(null);
-      const savedEmail = pendingRegData.email;
+      const savedIdentifier = pendingRegData.username || pendingRegData.email;
 
       setRegFirstName('');
       setRegLastName('');
+      setRegUsername('');
       setRegEmail('');
       setRegBarangayId('');
       setRegSex('Male');
@@ -498,10 +554,10 @@ export default function LandingPage() {
       setTimeout(() => {
         setShowRegisterModal(false);
         setRegSuccess(false);
-        setEmail(savedEmail);
+        setEmail(savedIdentifier);
         setPassword('');
         setShowLoginModal(true);
-      }, 2000);
+      }, 1800);
     } catch (err) {
       setShowOtpModal(false);
       setRegError(err.response?.data?.message || 'Registration failed');
@@ -1291,13 +1347,13 @@ export default function LandingPage() {
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Email Address
+                    Username o Email Address
                   </label>
                   <Input
-                    type="email"
+                    type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@ebms.local"
+                    placeholder="Username o Email (e.g. maria_santos o admin@ebms.local)"
                     className="w-full"
                     required
                   />
@@ -1398,7 +1454,9 @@ export default function LandingPage() {
               <form onSubmit={handleRegisterStep1} className="space-y-3.5 text-left">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">First Name</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      First Name <span className="text-red-500">*</span>
+                    </label>
                     <Input
                       type="text"
                       value={regFirstName}
@@ -1409,7 +1467,9 @@ export default function LandingPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Last Name</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Last Name <span className="text-red-500">*</span>
+                    </label>
                     <Input
                       type="text"
                       value={regLastName}
@@ -1421,21 +1481,43 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Email Address</label>
-                  <Input
-                    type="email"
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="maria.santos@gmail.com"
-                    className="w-full"
-                    required
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                      <span>Username <span className="text-red-500">*</span></span>
+                      <span className="text-[10px] font-normal text-blue-600 lowercase bg-blue-50 px-1.5 py-0.2 rounded">pang-login</span>
+                    </label>
+                    <Input
+                      type="text"
+                      value={regUsername}
+                      onChange={(e) => setRegUsername(e.target.value.replace(/\s+/g, ''))}
+                      placeholder="e.g. mariasantos"
+                      className="w-full"
+                      required
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">Gagamitin sa pag-login kahit walang Gmail.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                      <span>Email Address</span>
+                      <span className="text-[10px] font-normal text-slate-400 lowercase bg-slate-100 px-1.5 py-0.2 rounded">opsyonal</span>
+                    </label>
+                    <Input
+                      type="email"
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="e.g. maria@gmail.com (Opsyonal)"
+                      className="w-full"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">May OTP verification kung lalagyan.</p>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Barangay</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Barangay <span className="text-red-500">*</span>
+                    </label>
                     <select
                       value={regBarangayId}
                       onChange={(e) => setRegBarangayId(e.target.value)}
@@ -1526,7 +1608,9 @@ export default function LandingPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Password</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Password <span className="text-red-500">*</span>
+                    </label>
                     <Input
                       type="password"
                       value={regPassword}
@@ -1539,7 +1623,9 @@ export default function LandingPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Confirm Password</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Confirm Password <span className="text-red-500">*</span>
+                    </label>
                     <Input
                       type="password"
                       value={regConfirmPassword}
@@ -1575,14 +1661,20 @@ export default function LandingPage() {
                 <Button
                   type="submit"
                   disabled={regSuccess || otpSending}
-                  className="w-full bg-[#00338D] hover:bg-[#002566] text-white py-3.5 font-bold rounded-xl shadow-sm text-sm"
+                  className="w-full bg-[#00338D] hover:bg-[#002566] text-white py-3.5 font-bold rounded-xl shadow-sm text-sm transition-all"
                 >
                   {otpSending ? (
                     <span className="flex items-center justify-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      Sending Verification Code...
+                      {regEmail && regEmail.trim() !== '' ? 'Sending Verification Code...' : 'Creating Account...'}
                     </span>
-                  ) : regSuccess ? 'Account Created!' : 'Send OTP & Verify Email'}
+                  ) : regSuccess ? (
+                    'Account Created!'
+                  ) : regEmail && regEmail.trim() !== '' ? (
+                    'Send OTP & Verify Email'
+                  ) : (
+                    'Create Beneficiary Account'
+                  )}
                 </Button>
 
                 <p className="text-center text-xs text-slate-600 pt-1">

@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   Users, TrendingUp, FileText, 
   Clock, CheckCircle, XCircle, Calendar,
-  Activity, Award, Target, Zap, ArrowRight, Megaphone, Smartphone, MapPin
+  Activity, Award, Target, Zap, ArrowRight, Megaphone, Smartphone, MapPin, Package, HandHeart
 } from 'lucide-react';
 
 const PesoIcon = ({ className = "w-6 h-6" }) => (
@@ -43,21 +43,24 @@ export default function ModernDashboard() {
   const loadDashboard = async () => {
     setLoading(true);
     try {
-      const [summaryRes, monthlyRes, appsRes, annRes] = await Promise.all([
+      const promises = [
         dashboardApi.summary(),
         dashboardApi.monthlyDistribution(),
-        beneficiaryApi.listApplications(),
         announcementApi.list(),
-      ]);
-      const summaryData = summaryRes.data?.data || summaryRes.data || {};
-      const monthlyData = monthlyRes.data?.data || monthlyRes.data || [];
-      const appsData = appsRes.data?.data || appsRes.data || [];
-      const annData = annRes.data?.data || annRes.data || [];
+      ];
+      if (user?.role === 'admin') {
+        promises.push(beneficiaryApi.listApplications());
+      }
+      const results = await Promise.all(promises);
+      const summaryData = results[0].data?.data || results[0].data || {};
+      const monthlyData = results[1].data?.data || results[1].data || [];
+      const annData = results[2].data?.data || results[2].data || [];
+      const appsData = (user?.role === 'admin' && results[3]) ? (results[3].data?.data || results[3].data || []) : [];
 
       setSummary(summaryData);
       setMonthly(Array.isArray(monthlyData) ? monthlyData : []);
-      setApplications(Array.isArray(appsData) ? appsData : []);
       setAnnouncements(Array.isArray(annData) ? annData : []);
+      setApplications(Array.isArray(appsData) ? appsData : []);
     } catch (err) {
       console.error('Failed to load dashboard:', err);
     } finally {
@@ -141,7 +144,7 @@ export default function ModernDashboard() {
       iconColor: 'text-green-600',
       onClick: () => navigate('/dashboard/distributions')
     },
-    {
+    ...(user?.role === 'admin' ? [{
       title: 'Pending Beneficiaries',
       value: pendingCount,
       change: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
@@ -151,7 +154,17 @@ export default function ModernDashboard() {
       iconBg: 'bg-amber-100',
       iconColor: 'text-amber-600',
       onClick: () => navigate('/dashboard/beneficiaries?pending=true', { state: { openPending: true } })
-    }
+    }] : [{
+      title: 'Assistance Requests',
+      value: summary?.pendingAssistanceRequests || 0,
+      change: 'Barangay aid',
+      trend: 'neutral',
+      icon: HandHeart,
+      gradient: 'from-amber-500 to-amber-600',
+      iconBg: 'bg-amber-100',
+      iconColor: 'text-amber-600',
+      onClick: () => navigate('/dashboard/assistance-requests')
+    }])
   ];
 
   const categoryData = [
@@ -529,7 +542,11 @@ export default function ModernDashboard() {
           <div className="space-y-2.5">
             {[
               { label: 'New Distribution Event', icon: PesoIcon, path: '/dashboard/distributions' },
-              { label: 'Review Applications', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' },
+              ...(user?.role === 'admin' ? [
+                { label: 'Review Applications', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' }
+              ] : [
+                { label: 'Distribution Scanner', icon: Smartphone, path: '/dashboard/rfid-scanner' }
+              ]),
               { label: 'Manage Programs', icon: Target, path: '/dashboard/programs' },
               { label: 'View Reports & Audit', icon: FileText, path: '/dashboard/reports' }
             ].map((action, index) => {
@@ -548,34 +565,36 @@ export default function ModernDashboard() {
             })}
           </div>
 
-          <div className="mt-6 p-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10">
-            <div className="flex items-center gap-2 mb-2">
-              <Award className="w-4 h-4 text-[#FFD100]" />
-              <span className="text-xs font-bold text-white">Application Verification Progress</span>
-            </div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="flex-1 bg-white/20 rounded-full h-2 overflow-hidden">
-                <div 
-                  className="bg-[#FFD100] h-full rounded-full transition-all duration-500"
-                  style={{ 
-                    width: `${applications.length > 0 ? 
-                      Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) 
-                      : 100}%` 
-                  }}
-                ></div>
+          {user?.role === 'admin' && (
+            <div className="mt-6 p-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10">
+              <div className="flex items-center gap-2 mb-2">
+                <Award className="w-4 h-4 text-[#FFD100]" />
+                <span className="text-xs font-bold text-white">Application Verification Progress</span>
               </div>
-              <span className="text-xs font-bold text-[#FFD100]">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="flex-1 bg-white/20 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-[#FFD100] h-full rounded-full transition-all duration-500"
+                    style={{ 
+                      width: `${applications.length > 0 ? 
+                        Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) 
+                        : 100}%` 
+                    }}
+                  ></div>
+                </div>
+                <span className="text-xs font-bold text-[#FFD100]">
+                  {applications.length > 0 ? 
+                    Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) 
+                    : 100}%
+                </span>
+              </div>
+              <p className="text-[11px] text-blue-200">
                 {applications.length > 0 ? 
-                  Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) 
-                  : 100}%
-              </span>
+                  `${Math.max(0, applications.length - (summary?.pendingApplications || 0))} of ${applications.length} applications processed` 
+                  : 'All applications processed!'}
+              </p>
             </div>
-            <p className="text-[11px] text-blue-200">
-              {applications.length > 0 ? 
-                `${Math.max(0, applications.length - (summary?.pendingApplications || 0))} of ${applications.length} applications processed` 
-                : 'All applications processed!'}
-            </p>
-          </div>
+          )}
         </div>
       </div>
     </div>

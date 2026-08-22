@@ -23,10 +23,15 @@ export const AuthProvider = ({ children }) => {
     }
   }, [token]);
 
-  const login = async (email, password) => {
+  const login = async (identifier, password) => {
     setLoading(true);
     try {
-      const response = await authApi.login({ email, password });
+      const response = await authApi.login({
+        identifier,
+        email: identifier,
+        username: identifier,
+        password,
+      });
       const { token: jwtToken, user: authUser } = response.data;
       setToken(jwtToken);
       setUser(authUser);

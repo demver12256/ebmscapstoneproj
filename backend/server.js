@@ -124,17 +124,21 @@ app.use(errorHandler);
 
 const createDefaultAdmin = async () => {
   const adminEmail = 'admin@ebms.local';
-  await User.findOrCreate({
+  const [adminUser] = await User.findOrCreate({
     where: { email: adminEmail },
     defaults: {
       first_name: 'System',
       last_name: 'Administrator',
+      username: 'admin',
       email: adminEmail,
       password: 'Admin@123',
       role: 'admin',
       status: 'active',
     },
   });
+  if (adminUser && !adminUser.username) {
+    await adminUser.update({ username: 'admin' });
+  }
 };
 
 const { checkAndProcessExpiredDistributions } = require('./utils/distributionScheduler');

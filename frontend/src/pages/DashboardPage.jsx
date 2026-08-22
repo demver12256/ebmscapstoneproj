@@ -244,7 +244,7 @@ export default function DashboardPage() {
     try {
       setLoading(true);
       await beneficiaryApi.submitApplication({ has_school_aged_children: hasSchoolChildren });
-      setActionSuccess('Your application has been successfully submitted for staff review!');
+      setActionSuccess('Your application has been successfully submitted for administrator review!');
       await loadBeneficiaryPortal();
     } catch (err) {
       setError(err.message || 'Failed to submit application. Please make sure you have selected a category.');
@@ -1162,8 +1162,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* STAFF DETAIL MODAL FOR REVIEW */}
-      {selectedApp && (
+      {/* ADMIN DETAIL MODAL FOR REVIEW */}
+      {selectedApp && user?.role === 'admin' && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             

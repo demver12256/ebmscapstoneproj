@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { X, Users, Clock, Eye, CheckCircle2, AlertTriangle, FileCheck, ShieldAlert, Download, Archive, Edit3 } from 'lucide-react';
+import { 
+  X, Users, Clock, Eye, AlertTriangle, FileCheck, ShieldAlert, 
+  Download, Archive, Edit3, CreditCard, User, MapPin, Calendar, Phone, Lock, ShieldCheck 
+} from 'lucide-react';
 import Table from '../components/ui/Table';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -18,6 +21,12 @@ export default function BeneficiaryListPage() {
   const [selectedIpClassification, setSelectedIpClassification] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Viewing Beneficiary Details State
+  const [viewingBeneficiary, setViewingBeneficiary] = useState(null);
+  const [rfidInput, setRfidInput] = useState('');
+  const [rfidSaving, setRfidSaving] = useState(false);
+  const [rfidMsg, setRfidMsg] = useState(null);
 
   // Edit Modal State
   const [editingBeneficiary, setEditingBeneficiary] = useState(null);
@@ -52,18 +61,25 @@ export default function BeneficiaryListPage() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [beneficiariesRes, barangaysRes, appsRes] = await Promise.all([
+      const promises = [
         beneficiaryApi.list(),
-        barangayApi.list(),
-        beneficiaryApi.listApplications()
-      ]);
-      setBeneficiaries(beneficiariesRes.data.data || []);
-      setBarangays(barangaysRes.data.data || []);
+        barangayApi.list()
+      ];
+      if (user?.role === 'admin') {
+        promises.push(beneficiaryApi.listApplications());
+      }
+      const results = await Promise.all(promises);
+      setBeneficiaries(results[0].data?.data || []);
+      setBarangays(results[1].data?.data || []);
       
-      const apps = appsRes.data.data || [];
-      // Filter non-approved applications for the pending queue
-      const pendingList = apps.filter(a => a.status !== 'Approved');
-      setPendingApplications(pendingList);
+      if (user?.role === 'admin' && results[2]) {
+        const apps = results[2].data?.data || [];
+        // Filter non-approved applications for the pending queue
+        const pendingList = apps.filter(a => a.status !== 'Approved');
+        setPendingApplications(pendingList);
+      } else {
+        setPendingApplications([]);
+      }
 
       if (user?.role === 'staff' && user?.barangay_id) {
         setSelectedBarangayId(String(user.barangay_id));
@@ -80,12 +96,13 @@ export default function BeneficiaryListPage() {
   }, [user]);
 
   useEffect(() => {
-    if (location.state?.openPending || new URLSearchParams(location.search).get('pending') === 'true') {
+    if (user?.role === 'admin' && (location.state?.openPending || new URLSearchParams(location.search).get('pending') === 'true')) {
       openPendingModal();
     }
-  }, [location]);
+  }, [location, user]);
 
   const openPendingModal = async () => {
+    if (user?.role !== 'admin') return;
     setShowPendingModal(true);
     setLoadingPending(true);
     try {
@@ -99,8 +116,34 @@ export default function BeneficiaryListPage() {
     }
   };
 
+  const handleViewBeneficiary = (beneficiary) => {
+    setViewingBeneficiary(beneficiary);
+    setRfidInput(beneficiary.RFID_number || '');
+    setRfidMsg(null);
+  };
+
+  const handleSaveRfidDirect = async (e) => {
+    if (e) e.preventDefault();
+    if (user?.role !== 'admin') return;
+    setRfidSaving(true);
+    setRfidMsg(null);
+    try {
+      const updatedValue = rfidInput.trim() || null;
+      await beneficiaryApi.update(viewingBeneficiary.id, {
+        RFID_number: updatedValue
+      });
+      setBeneficiaries(prev => prev.map(b => b.id === viewingBeneficiary.id ? { ...b, RFID_number: updatedValue } : b));
+      setViewingBeneficiary(prev => ({ ...prev, RFID_number: updatedValue }));
+      setRfidMsg({ type: 'success', text: '✓ RFID card registered successfully!' });
+    } catch (err) {
+      setRfidMsg({ type: 'error', text: err.message || 'Failed to save RFID card' });
+    } finally {
+      setRfidSaving(false);
+    }
+  };
+
   const handleEditClick = (beneficiary) => {
-    if ((user?.role === 'staff' || user?.role === 'barangay') && beneficiary.barangay_id !== user?.barangay_id) {
+    if (user?.role !== 'admin' && (user?.role === 'staff' || user?.role === 'barangay') && beneficiary.barangay_id !== user?.barangay_id) {
       setEditError('You can only edit beneficiaries from your own barangay');
       return;
     }
@@ -270,9 +313,32 @@ export default function BeneficiaryListPage() {
 
   const columns = [
     { header: 'Beneficiary ID', accessor: 'beneficiary_id_code', cell: (row) => (
-      <span className="font-mono font-bold text-slate-800">{row.beneficiary_id_code || '—'}</span>
+      <button
+        onClick={() => handleViewBeneficiary(row)}
+        className="font-mono font-bold text-blue-700 hover:text-blue-900 hover:underline text-left"
+        title="Click to view details"
+      >
+        {row.beneficiary_id_code || '—'}
+      </button>
     )},
-    { header: 'Full Name', accessor: 'first_name', cell: (row) => `${row.first_name} ${row.last_name}` },
+    { header: 'RFID No.', accessor: 'RFID_number', cell: (row) => (
+      row.RFID_number ? (
+        <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200 inline-block shadow-2xs">
+          {row.RFID_number}
+        </span>
+      ) : (
+        <span className="text-xs text-slate-400 italic font-medium">No RFID</span>
+      )
+    )},
+    { header: 'Full Name', accessor: 'first_name', cell: (row) => (
+      <button
+        onClick={() => handleViewBeneficiary(row)}
+        className="font-semibold text-slate-900 hover:text-blue-700 hover:underline text-left"
+        title="Click to view details"
+      >
+        {row.first_name} {row.last_name}
+      </button>
+    )},
     { header: 'Beneficiary Category', accessor: 'category', cell: (row) => (
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
         row.category?.includes('4Ps') ? 'bg-blue-100 text-blue-800' :
@@ -281,6 +347,15 @@ export default function BeneficiaryListPage() {
         'bg-slate-100 text-slate-800'
       }`}>
         {row.category}
+      </span>
+    )},
+    { header: 'IP / Non-IP', accessor: 'ip_classification', cell: (row) => (
+      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
+        row.ip_classification === 'IP' 
+          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs' 
+          : 'bg-slate-100 text-slate-700 border border-slate-200'
+      }`}>
+        {row.ip_classification === 'IP' ? 'IP (Mangyan)' : 'Non-IP'}
       </span>
     )},
     { header: 'Barangay', accessor: 'barangay_id', cell: (row) => row.Barangay?.barangay_name || '—' },
@@ -300,18 +375,25 @@ export default function BeneficiaryListPage() {
         )}
       </div>
     )},
-    ...(user?.role === 'admin' || user?.role === 'staff' ? [{
+    ...(user?.role === 'admin' || user?.role === 'staff' || user?.role === 'barangay' ? [{
       header: 'Action', 
       accessor: 'id', 
       cell: (row) => (
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => handleViewBeneficiary(row)}
+            title="View Details"
+            className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition"
+          >
+            <Eye className="w-4 h-4 text-blue-600" />
+          </button>
           {user?.role === 'admin' && (
             <button
               onClick={() => handleEditClick(row)}
-              title="Edit Beneficiary"
+              title="Edit & Register RFID"
               className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition"
             >
-              <Edit3 className="w-4 h-4 text-blue-600" />
+              <Edit3 className="w-4 h-4 text-amber-600" />
             </button>
           )}
           <button
@@ -373,14 +455,16 @@ export default function BeneficiaryListPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {/* View Pending Beneficiaries Button */}
-          <button
-            onClick={openPendingModal}
-            className="flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold px-4 py-3 rounded-xl shadow transition text-sm border border-amber-500"
-          >
-            <Clock className="w-5 h-5" />
-            <span>Pending ({pendingApplications.length})</span>
-          </button>
+          {/* View Pending Beneficiaries Button - Admin Only */}
+          {user?.role === 'admin' && (
+            <button
+              onClick={openPendingModal}
+              className="flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold px-4 py-3 rounded-xl shadow transition text-sm border border-amber-500"
+            >
+              <Clock className="w-5 h-5" />
+              <span>Pending ({pendingApplications.length})</span>
+            </button>
+          )}
           
           <button
             onClick={() => setShowArchivedOnly(!showArchivedOnly)}
@@ -456,8 +540,8 @@ export default function BeneficiaryListPage() {
         </div>
       </div>
 
-      {/* Stats (Grid with 4 Cards: Total, Active, Inactive, Pending Applications) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Stats (Grid: 4 Cards for Admin / 3 Cards for Staff) */}
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${user?.role === 'admin' ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
         <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">
           <p className="text-sm font-medium text-slate-600 mb-2">Total Records</p>
           <p className="text-3xl font-bold text-blue-600">{loading ? '...' : filteredBeneficiaries.length}</p>
@@ -471,20 +555,22 @@ export default function BeneficiaryListPage() {
           <p className="text-3xl font-bold text-emerald-600">{loading ? '...' : filteredBeneficiaries.filter(b => b.User?.status === 'inactive').length}</p>
         </div>
         
-        {/* Pending Beneficiaries Stat Box */}
-        <div 
-          onClick={openPendingModal}
-          className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-6 border border-amber-200 cursor-pointer hover:shadow-md transition-all group"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium text-slate-700">Pending Applications</p>
-            <Clock className="w-5 h-5 text-amber-600 group-hover:scale-110 transition-transform" />
+        {/* Pending Beneficiaries Stat Box - Admin Only */}
+        {user?.role === 'admin' && (
+          <div 
+            onClick={openPendingModal}
+            className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-6 border border-amber-200 cursor-pointer hover:shadow-md transition-all group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-slate-700">Pending Applications</p>
+              <Clock className="w-5 h-5 text-amber-600 group-hover:scale-110 transition-transform" />
+            </div>
+            <p className="text-3xl font-bold text-amber-700">{loading ? '...' : pendingApplications.length}</p>
+            <p className="text-xs text-amber-800 font-semibold mt-1 group-hover:underline">
+              Click to review pending &rarr;
+            </p>
           </div>
-          <p className="text-3xl font-bold text-amber-700">{loading ? '...' : pendingApplications.length}</p>
-          <p className="text-xs text-amber-800 font-semibold mt-1 group-hover:underline">
-            Click to review pending &rarr;
-          </p>
-        </div>
+        )}
       </div>
 
       {/* Table Container */}
@@ -500,9 +586,225 @@ export default function BeneficiaryListPage() {
             <p className="text-sm text-slate-600">No beneficiaries found</p>
           </div>
         ) : (
-          <Table columns={columns} data={filteredBeneficiaries} />
+          <Table 
+            columns={columns} 
+            data={filteredBeneficiaries} 
+            itemsPerPage={5}
+            onRowClick={handleViewBeneficiary}
+          />
         )}
       </div>
+
+      {/* BENEFICIARY DETAILS MODAL (View Information + Admin-only RFID Registration) */}
+      {viewingBeneficiary && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            
+            {/* Modal Header Banner */}
+            <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white px-6 py-5 flex justify-between items-center relative overflow-hidden">
+              <div className="flex items-center gap-4 z-10">
+                <div className="w-16 h-16 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center text-white text-2xl font-black shadow-md overflow-hidden shrink-0">
+                  {viewingBeneficiary.profile_picture ? (
+                    <img 
+                      src={`${backendUrl}/${viewingBeneficiary.profile_picture.replace(/\\/g, '/').replace(/^\/+/, '')}`} 
+                      alt="Profile" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span>{viewingBeneficiary.first_name?.[0]}{viewingBeneficiary.last_name?.[0]}</span>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-white">
+                      {viewingBeneficiary.first_name} {viewingBeneficiary.middle_name ? `${viewingBeneficiary.middle_name} ` : ''}{viewingBeneficiary.last_name}
+                    </h3>
+                    <span className={`px-2.5 py-0.5 text-xs font-extrabold rounded-full ${
+                      isArchivedBeneficiary(viewingBeneficiary)
+                        ? 'bg-purple-400 text-slate-950'
+                        : viewingBeneficiary.User?.status === 'active'
+                        ? 'bg-emerald-400 text-slate-950'
+                        : 'bg-slate-300 text-slate-900'
+                    }`}>
+                      {isArchivedBeneficiary(viewingBeneficiary) ? 'Archived' : (viewingBeneficiary.User?.status || 'inactive')}
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-200 mt-0.5 font-mono">
+                    ID: <strong className="text-yellow-300">{viewingBeneficiary.beneficiary_id_code || 'Pending'}</strong> • {viewingBeneficiary.category}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setViewingBeneficiary(null)}
+                className="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center font-bold transition z-10"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="overflow-y-auto p-6 space-y-5 flex-1 bg-slate-50/50">
+              
+              {/* RFID Card Management Card */}
+              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                      <CreditCard className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900">RFID Card Number</h4>
+                      <p className="text-xs text-slate-500">Official Municipal RFID for Attendance & Distribution Tracking</p>
+                    </div>
+                  </div>
+                  {viewingBeneficiary.RFID_number ? (
+                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 shadow-2xs">
+                      💳 {viewingBeneficiary.RFID_number}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                      ⚠️ No RFID Card Assigned
+                    </span>
+                  )}
+                </div>
+
+                {/* If Admin: show RFID registration form */}
+                {user?.role === 'admin' ? (
+                  <form onSubmit={handleSaveRfidDirect} className="pt-2 border-t border-slate-100 space-y-3">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Register / Update RFID Card Number
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={rfidInput}
+                        onChange={(e) => setRfidInput(e.target.value)}
+                        placeholder="Scan or enter RFID card number (e.g. RFID-0001)..."
+                        className="flex-1 px-3.5 py-2 border border-slate-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50/50"
+                      />
+                      <button
+                        type="submit"
+                        disabled={rfidSaving}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0"
+                      >
+                        {rfidSaving ? 'Saving...' : 'Save RFID'}
+                      </button>
+                    </div>
+                    {rfidMsg && (
+                      <div className={`p-2.5 rounded-xl text-xs font-semibold ${
+                        rfidMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                      }`}>
+                        {rfidMsg.text}
+                      </div>
+                    )}
+                  </form>
+                ) : (
+                  /* If Barangay Staff: Show read-only notice */
+                  <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Ang MSWD Administrator lamang ang may pahintulot na mag-rehistro o magbago ng RFID card numbers.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Personal Details & Location Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* Personal Information */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+                  <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-blue-600" /> Personal Details
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500">Sex:</span>
+                      <span className="font-semibold text-slate-800">{viewingBeneficiary.sex || '—'}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500">Birthdate:</span>
+                      <span className="font-semibold text-slate-800">{viewingBeneficiary.birthdate || '—'}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500">Civil Status:</span>
+                      <span className="font-semibold text-slate-800">{viewingBeneficiary.civil_status || '—'}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500">Contact Number:</span>
+                      <span className="font-semibold text-slate-800">{viewingBeneficiary.contact_number || '—'}</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-slate-500">IP Classification:</span>
+                      <span className="font-semibold text-slate-800">{viewingBeneficiary.ip_classification || 'Non-IP'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Location & Address */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+                  <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-red-500" /> Location & Residence
+                  </h4>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1.5">
+                    <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider block">
+                      Complete Address / Buong Tirahan
+                    </span>
+                    <p className="font-bold text-slate-900 text-sm leading-relaxed">
+                      {[
+                        viewingBeneficiary.sitio ? `${viewingBeneficiary.sitio}` : null,
+                        viewingBeneficiary.Barangay?.barangay_name
+                          ? `Barangay ${viewingBeneficiary.Barangay.barangay_name}`
+                          : (viewingBeneficiary.barangay_name ? `Barangay ${viewingBeneficiary.barangay_name}` : null),
+                        'Bongabong, Oriental Mindoro',
+                      ]
+                        .filter(Boolean)
+                        .join(', ')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Government ID Numbers & Approval History */}
+              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+                <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Identification & Verification History
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="text-slate-400 font-medium block">National ID No.</span>
+                    <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
+                      {viewingBeneficiary.national_id_number || '—'}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="text-slate-400 font-medium block">PSA Birth Cert No.</span>
+                    <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
+                      {viewingBeneficiary.psa_birth_cert_number || '—'}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="text-slate-400 font-medium block">Date Approved</span>
+                    <span className="font-semibold text-slate-800 text-sm mt-0.5 block">
+                      {viewingBeneficiary.approval_date || '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 bg-white flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setViewingBeneficiary(null)}
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition"
+              >
+                Close Window
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Beneficiary Modal */}
       {editingBeneficiary && (
@@ -617,8 +919,8 @@ export default function BeneficiaryListPage() {
         </div>
       )}
 
-      {/* Pending Beneficiaries Modal (Matching ProgramListPage Archived Modal style) */}
-      {showPendingModal && (
+      {/* Pending Beneficiaries Modal (Admin Only) */}
+      {showPendingModal && user?.role === 'admin' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
@@ -725,8 +1027,8 @@ export default function BeneficiaryListPage() {
         </div>
       )}
 
-      {/* STAFF / ADMIN DETAIL REVIEW MODAL */}
-      {selectedApp && (
+      {/* ADMIN DETAIL REVIEW MODAL */}
+      {selectedApp && user?.role === 'admin' && (
         <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/60 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/50">

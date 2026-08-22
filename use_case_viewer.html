@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EBMS - UML Use Case Diagram</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+    body { background-color: #0b1120; color: #f8fafc; display: flex; flex-direction: column; min-height: 100vh; }
+    
+    header {
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 14px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand h1 { font-size: 1.15rem; font-weight: 700; color: #38bdf8; letter-spacing: -0.5px; }
+    .brand span { font-size: 0.75rem; font-weight: 600; color: #94a3b8; background: #334155; padding: 3px 10px; border-radius: 9999px; }
+    
+    .controls { display: flex; gap: 12px; }
+    .btn {
+      background: #0284c7;
+      color: white;
+      text-decoration: none;
+      border: none;
+      padding: 9px 18px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { background: #0369a1; transform: translateY(-1px); }
+    .btn-secondary { background: #334155; color: #e2e8f0; }
+    .btn-secondary:hover { background: #475569; }
+    
+    main {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 30px 20px;
+    }
+    
+    .card {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      max-width: 1450px;
+      width: 100%;
+    }
+    
+    .card img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 10px;
+    }
+
+    @media print {
+      header { display: none; }
+      body, main { background: white; padding: 0; }
+      .card { box-shadow: none; padding: 0; max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>🏛️ EBMS Architecture</h1>
+      <span>UML Use Case Diagram</span>
+    </div>
+    <div class="controls">
+      <button class="btn btn-secondary" onclick="window.print()">🖨️ Print / Save PDF</button>
+      <a href="use_case_diagram.png" download="EBMS_Use_Case_Diagram.png" class="btn">💾 Download PNG</a>
+      <a href="use_case_diagram.svg" download="EBMS_Use_Case_Diagram.svg" class="btn btn-secondary">📐 Download SVG</a>
+    </div>
+  </header>
+  
+  <main>
+    <div class="card">
+      <img src="use_case_diagram.svg" alt="EBMS UML Use Case Diagram" onerror="this.src='use_case_diagram.png'" />
+    </div>
+  </main>
+</body>
+</html>

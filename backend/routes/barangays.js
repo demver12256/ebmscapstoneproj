@@ -27,8 +27,11 @@ router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) 
       order: [['barangay_name', 'ASC']],
     });
 
-    // Get beneficiary counts per barangay
+    // Get beneficiary counts per barangay (Only Approved Beneficiaries)
     const counts = await Beneficiary.findAll({
+      where: {
+        status: 'Approved',
+      },
       attributes: [
         'barangay_id',
         'category',

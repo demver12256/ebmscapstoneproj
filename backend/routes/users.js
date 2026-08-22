@@ -28,7 +28,7 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    let { first_name, last_name, email, password, contact_number, address, barangay_id, role } = req.body;
+    let { first_name, last_name, username, email, password, contact_number, address, barangay_id, role } = req.body;
 
     if (req.user.role === 'staff') {
       // Staff can only create beneficiaries for their own barangay
@@ -36,16 +36,38 @@ router.post('/', async (req, res, next) => {
       barangay_id = req.user.barangay_id;
     }
 
-    if (!first_name || !last_name || !email || !password || !role) {
-      return res.status(400).json({ success: false, message: 'first_name, last_name, email, password, and role are required' });
+    const trimmedUsername = username ? String(username).trim() : null;
+    const trimmedEmail = email && String(email).trim() !== '' ? String(email).trim().toLowerCase() : null;
+
+    if (!first_name || !last_name || (!trimmedUsername && !trimmedEmail) || !password || !role) {
+      return res.status(400).json({ success: false, message: 'First name, last name, username or email, password, and role are required' });
     }
 
-    const existing = await User.findOne({ where: { email } });
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'A user with this email already exists' });
+    if (trimmedUsername) {
+      const existingUser = await User.findOne({ where: { username: trimmedUsername } });
+      if (existingUser) {
+        return res.status(409).json({ success: false, message: 'A user with this username already exists' });
+      }
     }
 
-    const user = await User.create({ first_name, last_name, email, password, contact_number, address, barangay_id, role });
+    if (trimmedEmail) {
+      const existing = await User.findOne({ where: { email: trimmedEmail } });
+      if (existing) {
+        return res.status(409).json({ success: false, message: 'A user with this email already exists' });
+      }
+    }
+
+    const user = await User.create({
+      first_name,
+      last_name,
+      username: trimmedUsername,
+      email: trimmedEmail,
+      password,
+      contact_number,
+      address,
+      barangay_id,
+      role
+    });
 
     if (role === 'beneficiary') {
       await Beneficiary.create({

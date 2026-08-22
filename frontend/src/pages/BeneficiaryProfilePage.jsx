@@ -1,4 +1,4 @@
-import { User, Phone, MapPin, Calendar, Mail, CreditCard, IdCard, Upload, X } from 'lucide-react';
+import { User, Phone, MapPin, Calendar, Mail, CreditCard, IdCard, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useState, useEffect } from 'react';
 import { beneficiaryApi } from '../services/api';
@@ -7,7 +7,6 @@ export default function BeneficiaryProfilePage() {
   const { user } = useAuth();
   const [beneficiary, setBeneficiary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [profilePicture, setProfilePicture] = useState(null);
   const [uploadingPicture, setUploadingPicture] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -203,6 +202,14 @@ export default function BeneficiaryProfilePage() {
             <h3 className="font-semibold text-slate-900">Contact Information</h3>
             
             <div className="flex items-center gap-3 text-sm">
+              <User className="w-5 h-5 text-slate-400" />
+              <div>
+                <p className="text-slate-500">Username</p>
+                <p className="font-semibold">{user?.username || '—'}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 text-sm">
               <Phone className="w-5 h-5 text-slate-400" />
               <div>
                 <p className="text-slate-500">Contact Number</p>
@@ -213,8 +220,8 @@ export default function BeneficiaryProfilePage() {
             <div className="flex items-center gap-3 text-sm">
               <Mail className="w-5 h-5 text-slate-400" />
               <div>
-                <p className="text-slate-500">Email</p>
-                <p className="font-semibold">{user?.email}</p>
+                <p className="text-slate-500">Email Address</p>
+                <p className="font-semibold">{user?.email || 'None (Opsyonal)'}</p>
               </div>
             </div>
 

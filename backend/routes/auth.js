@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 const { OAuth2Client } = require('google-auth-library');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
+const { Op } = require('sequelize');
 const { User, Beneficiary, Otp } = require('../db');
 
 const router = express.Router();
@@ -250,10 +251,24 @@ router.post('/google', async (req, res, next) => {
 // ─── POST /api/auth/login ───
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ where: { email } });
+    const { email, username, identifier, password } = req.body;
+    const loginIdentifier = (identifier || username || email || '').trim();
+
+    if (!loginIdentifier || !password) {
+      return res.status(400).json({ success: false, message: 'Username/Email and password are required' });
+    }
+
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email: loginIdentifier },
+          { username: loginIdentifier },
+        ],
+      },
+    });
+
     if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     // Allow login even if inactive, but include status in response
@@ -270,6 +285,7 @@ router.post('/login', async (req, res, next) => {
         id: user.id,
         first_name: user.first_name,
         last_name: user.last_name,
+        username: user.username,
         email: user.email,
         role: user.role,
         status: user.status,
@@ -285,46 +301,98 @@ router.post('/login', async (req, res, next) => {
 // ─── POST /api/auth/register-beneficiary ───
 router.post('/register-beneficiary', async (req, res, next) => {
   try {
-    const { first_name, last_name, email, password, barangay_id, contact_number, sex, birthdate, category, ip_classification, sitio, address, otp_token } = req.body;
+    const {
+      first_name,
+      last_name,
+      username,
+      email,
+      password,
+      barangay_id,
+      contact_number,
+      sex,
+      birthdate,
+      category,
+      ip_classification,
+      sitio,
+      address,
+      otp_token,
+    } = req.body;
 
-    if (!first_name || !last_name || !email || !password || !barangay_id) {
-      return res.status(400).json({ success: false, message: 'First name, last name, email, password, and barangay are required' });
+    const trimmedUsername = username ? String(username).trim() : '';
+    const trimmedEmail = email && String(email).trim() !== '' ? String(email).trim().toLowerCase() : null;
+
+    if (!first_name || !last_name || !trimmedUsername || !password || !barangay_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name, last name, username, password, and barangay are required',
+      });
     }
 
-    // Verify OTP token
-    if (!otp_token) {
-      return res.status(400).json({ success: false, message: 'Email verification is required. Please verify your email with OTP first.' });
-    }
-
-    try {
-      const decoded = jwt.verify(otp_token, process.env.JWT_SECRET);
-      if (!decoded.otp_verified || decoded.email !== email) {
-        return res.status(400).json({ success: false, message: 'Invalid or expired OTP verification. Please verify your email again.' });
-      }
-    } catch (jwtErr) {
-      return res.status(400).json({ success: false, message: 'OTP verification has expired. Please verify your email again.' });
+    if (trimmedUsername.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username must be at least 3 characters long',
+      });
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters',
+      });
     }
 
-    // Check if email already exists
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
-      return res.status(409).json({ success: false, message: 'Email address is already registered' });
+    // Check if email already exists (if email is provided)
+    if (trimmedEmail) {
+      // Verify OTP token only when email is provided
+      if (!otp_token) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email verification is required when an email is provided. Please verify your email with OTP first.',
+        });
+      }
+
+      try {
+        const decoded = jwt.verify(otp_token, process.env.JWT_SECRET);
+        if (!decoded.otp_verified || decoded.email.toLowerCase() !== trimmedEmail) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid or expired OTP verification. Please verify your email again.',
+          });
+        }
+      } catch (jwtErr) {
+        return res.status(400).json({
+          success: false,
+          message: 'OTP verification has expired. Please verify your email again.',
+        });
+      }
+
+      const existingEmail = await User.findOne({ where: { email: trimmedEmail } });
+      if (existingEmail) {
+        return res.status(409).json({ success: false, message: 'Email address is already registered' });
+      }
+    }
+
+    // Check if username already exists
+    const existingUsername = await User.findOne({ where: { username: trimmedUsername } });
+    if (existingUsername) {
+      return res.status(409).json({
+        success: false,
+        message: 'Username is already taken. Please choose another username.',
+      });
     }
 
     // Create User record
     const user = await User.create({
-      first_name,
-      last_name,
-      email,
+      first_name: String(first_name).trim(),
+      last_name: String(last_name).trim(),
+      username: trimmedUsername,
+      email: trimmedEmail,
       password,
       role: 'beneficiary',
-      barangay_id,
-      contact_number,
-      status: 'active'
+      barangay_id: Number(barangay_id),
+      contact_number: contact_number ? String(contact_number).trim() : null,
+      status: 'active',
     });
 
     let stdCategory = category || 'Persons with Disabilities (PWD)';
@@ -335,22 +403,35 @@ router.post('/register-beneficiary', async (req, res, next) => {
       else if (lower.includes('pwd') || lower.includes('disabil')) stdCategory = 'Persons with Disabilities (PWD)';
     }
 
+    const { Barangay } = require('../db');
+    const brgy = await Barangay.findByPk(Number(barangay_id));
+    const brgyName = brgy ? brgy.barangay_name : '';
+    const computedAddress = address && address.trim() !== ''
+      ? address.trim()
+      : [sitio ? String(sitio).trim() : null, brgyName ? `Barangay ${brgyName}` : null, 'Bongabong, Oriental Mindoro']
+          .filter(Boolean)
+          .join(', ');
+
     // Create corresponding Beneficiary record
     const beneficiary = await Beneficiary.create({
       user_id: user.id,
-      first_name,
-      last_name,
+      first_name: String(first_name).trim(),
+      last_name: String(last_name).trim(),
       sex: sex || 'Other',
       birthdate: birthdate || '2000-01-01',
-      barangay_id,
+      barangay_id: Number(barangay_id),
       category: stdCategory,
       ip_classification: ip_classification || 'Non-IP',
-      contact_number,
+      contact_number: contact_number ? String(contact_number).trim() : '',
       sitio: sitio || '',
-      address: address || ''
+      address: computedAddress,
     });
 
-    res.status(201).json({ success: true, data: { user, beneficiary } });
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully',
+      data: { user, beneficiary },
+    });
   } catch (error) {
     next(error);
   }
@@ -359,14 +440,32 @@ router.post('/register-beneficiary', async (req, res, next) => {
 // ─── POST /api/auth/register (admin-only) ───
 router.post('/register', authenticate, authorize('admin'), async (req, res, next) => {
   try {
-    const { first_name, last_name, email, password, role, barangay_id, contact_number, address } = req.body;
+    const { first_name, last_name, username, email, password, role, barangay_id, contact_number, address } = req.body;
+    const trimmedUsername = username ? String(username).trim() : null;
+    const trimmedEmail = email && String(email).trim() !== '' ? String(email).trim().toLowerCase() : null;
+
+    if (trimmedUsername) {
+      const existingUser = await User.findOne({ where: { username: trimmedUsername } });
+      if (existingUser) {
+        return res.status(409).json({ success: false, message: 'Username is already taken' });
+      }
+    }
+
+    if (trimmedEmail) {
+      const existingEmail = await User.findOne({ where: { email: trimmedEmail } });
+      if (existingEmail) {
+        return res.status(409).json({ success: false, message: 'Email is already registered' });
+      }
+    }
+
     const user = await User.create({
       first_name,
       last_name,
-      email,
+      username: trimmedUsername,
+      email: trimmedEmail,
       password,
-      role,
-      barangay_id,
+      role: role || 'staff',
+      barangay_id: barangay_id || null,
       contact_number,
       address,
     });

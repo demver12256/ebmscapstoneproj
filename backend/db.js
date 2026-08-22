@@ -135,6 +135,12 @@ AssistanceRequest.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewed_by' })
 
 const connectDatabase = async () => {
   await sequelize.authenticate();
+  try {
+    // Ensure email column allows NULL for users without email
+    await sequelize.query('ALTER TABLE users MODIFY COLUMN email VARCHAR(255) NULL');
+  } catch (err) {
+    // Ignore error if table does not exist yet or already nullable
+  }
   // alter:{drop:false} adds new columns/tables but skips re-creating existing indexes,
   // preventing the duplicate _2, _3... index buildup that hits MySQL's 64-key limit.
   await sequelize.sync({ alter: { drop: false } });

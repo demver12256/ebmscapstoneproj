@@ -64,19 +64,14 @@ router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) 
   }
 });
 
-// Staff Dashboard Applications list: Return registrations (Pending Review, Under Review, Rejected, Approved)
-// Restricts staff / barangay users to their registered barangay
-router.get('/applications', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+// Admin Applications list: Return registrations (Pending Review, Under Review, Rejected, Approved)
+// Only Administrator can view applicant submissions queue
+router.get('/applications', authorize('admin'), async (req, res, next) => {
   try {
-    const where = {};
-    if (req.user.role === 'staff' || req.user.role === 'barangay') {
-      where.barangay_id = req.user.barangay_id;
-    }
-    
-    // Once beneficiary submits, application should appear in Staff Dashboard under Pending Applications.
-    // So status should not be 'Pending Submission'.
-    where.status = {
-      [Op.ne]: 'Pending Submission'
+    const where = {
+      status: {
+        [Op.ne]: 'Pending Submission'
+      }
     };
     const applications = await Beneficiary.findAll({
       where,
@@ -454,17 +449,12 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async
   }
 });
 
-// Update application status to Under Review
-router.put('/applications/:id/review', authorize('admin', 'staff'), async (req, res, next) => {
+// Update application status to Under Review (Admin only)
+router.put('/applications/:id/review', authorize('admin'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Application not found' });
-    }
-
-    // Barangay verification scoping check
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only review applications from your own Barangay' });
     }
 
     if (beneficiary.status === 'Pending Review') {
@@ -491,17 +481,12 @@ router.put('/applications/:id/review', authorize('admin', 'staff'), async (req, 
   }
 });
 
-// Approve application
-router.post('/applications/:id/approve', authorize('admin', 'staff'), async (req, res, next) => {
+// Approve application (Admin only)
+router.post('/applications/:id/approve', authorize('admin'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Application not found' });
-    }
-
-    // Barangay verification scoping check
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only approve applications from your own Barangay' });
     }
 
     const currentYear = new Date().getFullYear();
@@ -545,17 +530,12 @@ router.post('/applications/:id/approve', authorize('admin', 'staff'), async (req
   }
 });
 
-// Reject application
-router.post('/applications/:id/reject', authorize('admin', 'staff'), async (req, res, next) => {
+// Reject application (Admin only)
+router.post('/applications/:id/reject', authorize('admin'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Application not found' });
-    }
-
-    // Barangay verification scoping check
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only reject applications from your own Barangay' });
     }
 
     const { rejection_reason, missing_documents } = req.body;
@@ -625,6 +605,11 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
       }
     } else if (inactivation_reason !== undefined) {
       otherUpdates.inactivation_reason = inactivation_reason;
+    }
+
+    // Only Admin can register or update RFID numbers
+    if (otherUpdates.RFID_number !== undefined && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: Only administrators can register or update RFID numbers' });
     }
 
     // Update beneficiary with remaining fields (RFID_number, etc.)
