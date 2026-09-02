@@ -111,6 +111,14 @@ app.use('/api/assistance-requests', (req, res, next) => {
     return next(err);
   }
 });
+app.use('/api/medical-assistance', (req, res, next) => {
+  try {
+    delete require.cache[require.resolve('./routes/medicalAssistance')];
+    return require('./routes/medicalAssistance')(req, res, next);
+  } catch (err) {
+    return next(err);
+  }
+});
 
 app.get('/api', (req, res) => {
   res.json({ message: 'Welcome to EBMS API' });

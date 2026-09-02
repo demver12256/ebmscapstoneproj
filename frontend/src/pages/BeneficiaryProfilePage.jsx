@@ -57,8 +57,6 @@ export default function BeneficiaryProfilePage() {
         setSuccess('Profile picture updated successfully!');
         // Reload profile to get the updated picture from server
         await loadProfile();
-        // Clear the temporary blob URL
-        setProfilePicture(null);
       }
     } catch (err) {
       setError(err.message || 'Failed to upload profile picture');

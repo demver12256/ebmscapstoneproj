@@ -3,7 +3,8 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { 
   Home, Users, MapPin, ListChecks, BarChart3, UserCog, MessageSquare, LogOut, 
-  Smartphone, Package, User, FileText, Award, FileCheck, Bell, HelpCircle, Settings, Megaphone, Lock, HandHeart 
+  Smartphone, Package, User, FileText, Award, FileCheck, Bell, HelpCircle, Settings, Megaphone, Lock, HandHeart,
+  Stethoscope
 } from 'lucide-react';
 
 const staffNavItems = [

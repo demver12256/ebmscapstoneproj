@@ -45,6 +45,8 @@ const Announcement = require('./models/announcement')(sequelize, DataTypes);
 const AnnouncementRecipient = require('./models/announcementRecipient')(sequelize, DataTypes);
 const Otp = require('./models/otp')(sequelize, DataTypes);
 const AssistanceRequest = require('./models/assistanceRequest')(sequelize, DataTypes);
+const MedicalAssistanceApplication = require('./models/medicalAssistanceApplication')(sequelize, DataTypes);
+const MedicalAssistanceDocument = require('./models/medicalAssistanceDocument')(sequelize, DataTypes);
 
 // ── User ↔ Barangay ──
 User.belongsTo(Barangay, { foreignKey: 'barangay_id' });
@@ -133,6 +135,20 @@ AssistanceRequest.belongsTo(Barangay, { foreignKey: 'barangay_id' });
 Barangay.hasMany(AssistanceRequest, { foreignKey: 'barangay_id' });
 AssistanceRequest.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewed_by' });
 
+// ── MedicalAssistanceApplication Associations ──
+MedicalAssistanceApplication.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
+Beneficiary.hasMany(MedicalAssistanceApplication, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
+MedicalAssistanceApplication.belongsTo(User, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+User.hasMany(MedicalAssistanceApplication, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+MedicalAssistanceApplication.belongsTo(Barangay, { foreignKey: 'barangay_id' });
+Barangay.hasMany(MedicalAssistanceApplication, { foreignKey: 'barangay_id' });
+MedicalAssistanceApplication.belongsTo(User, { as: 'BarangayVerifier', foreignKey: 'barangay_verified_by' });
+MedicalAssistanceApplication.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewed_by' });
+MedicalAssistanceApplication.belongsTo(User, { as: 'ReleasedBy', foreignKey: 'released_by' });
+
+MedicalAssistanceApplication.hasMany(MedicalAssistanceDocument, { foreignKey: 'application_id', as: 'Documents', onDelete: 'CASCADE' });
+MedicalAssistanceDocument.belongsTo(MedicalAssistanceApplication, { foreignKey: 'application_id', onDelete: 'CASCADE' });
+
 const connectDatabase = async () => {
   await sequelize.authenticate();
   try {
@@ -167,4 +183,6 @@ module.exports = {
   AnnouncementRecipient,
   Otp,
   AssistanceRequest,
+  MedicalAssistanceApplication,
+  MedicalAssistanceDocument,
 };

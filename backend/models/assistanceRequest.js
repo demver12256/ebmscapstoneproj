@@ -15,14 +15,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       type: {
-        type: DataTypes.ENUM(
-          'Financial Assistance',
-          'Food Assistance',
-          'Medical Assistance',
-          'Educational Assistance',
-          'Livelihood Assistance',
-          'Other'
-        ),
+        type: DataTypes.STRING,
         allowNull: false,
       },
       subject: {

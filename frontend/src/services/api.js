@@ -195,4 +195,23 @@ export const assistanceRequestApi = {
   stats: () => apiClient.get('/assistance-requests/stats'),
 };
 
+export const medicalAssistanceApi = {
+  getRequirementsMatrix: (data) => apiClient.post('/medical-assistance/requirements-matrix', data),
+  getMyApplications: () => apiClient.get('/medical-assistance/my-applications'),
+  getMyApplication: (id) => apiClient.get(`/medical-assistance/my-applications/${id}`),
+  saveDraft: (data) => apiClient.post('/medical-assistance/save-draft', data),
+  uploadDocument: (formData) => apiClient.post('/medical-assistance/documents/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  deleteDocument: (id) => apiClient.delete(`/medical-assistance/documents/${id}`),
+  submitApplication: (id) => apiClient.post(`/medical-assistance/my-applications/${id}/submit`),
+  
+  // Admin & Staff
+  getAdminStats: () => apiClient.get('/medical-assistance/admin/stats'),
+  getAdminApplications: (params) => apiClient.get('/medical-assistance/admin/applications', { params }),
+  getAdminApplication: (id) => apiClient.get(`/medical-assistance/admin/applications/${id}`),
+  updateApplicationStatus: (id, data) => apiClient.patch(`/medical-assistance/admin/applications/${id}/status`, data),
+  reviewDocument: (id, data) => apiClient.patch(`/medical-assistance/admin/documents/${id}/review`, data),
+};
+
 export default apiClient;

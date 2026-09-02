@@ -92,6 +92,8 @@ const AppRoutes = () => (
       <Route path="documents" element={<MyDocumentsPage />} />
       <Route path="notifications" element={<NotificationsPage />} />
       <Route path="request-assistance" element={<RequestAssistancePage />} />
+      <Route path="medical-assistance" element={<Navigate to="/dashboard/request-assistance" replace />} />
+      <Route path="medical-assistance-admin" element={<Navigate to="/dashboard/assistance-requests" replace />} />
       <Route path="assistance-requests" element={<AssistanceRequestsManagementPage />} />
       <Route path="help-center" element={<ComingSoonPage />} />
       <Route path="settings" element={<ComingSoonPage />} />

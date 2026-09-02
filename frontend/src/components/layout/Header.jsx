@@ -554,7 +554,13 @@ export default function Header() {
                                 handleMarkAsRead(notif.id, { stopPropagation: () => {} });
                               }
                               setShowDropdown(false);
-                              navigate('/dashboard/notifications');
+                              if (notif.link) {
+                                navigate(notif.link);
+                              } else if (notif.title?.includes('Approved') || notif.message?.includes('APPROVED') || notif.type === 'assistance') {
+                                navigate('/dashboard/my-benefits');
+                              } else {
+                                navigate('/dashboard/notifications');
+                              }
                             }}
                             className={`w-full flex items-start gap-3 px-3 py-3 rounded-xl transition text-left group ${
                               notif.is_read ? 'hover:bg-slate-50' : 'bg-blue-50/60 hover:bg-blue-50'
