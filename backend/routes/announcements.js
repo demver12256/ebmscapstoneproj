@@ -15,6 +15,7 @@ const {
   Barangay,
   Attendance,
 } = require('../db');
+const { isMswdoRole } = require('../utils/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -214,7 +215,7 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
   // Staff from other barangays MUST NOT receive notifications
   const staffUsers = targetBarangayIds.length > 0 ? await User.findAll({
     where: {
-      role: { [Op.in]: ['staff', 'barangay'] }, // Exclude 'admin' role
+      role: { [Op.in]: ['staff','barangay'] }, // Exclude 'admin' role
       status: 'active',
       barangay_id: { 
         [Op.in]: targetBarangayIds, // Only staff whose barangay_id matches target barangays
@@ -244,20 +245,56 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
     is_read: false,
   }));
 
-  if (staffNotifications.length > 0) {
-    await Notification.bulkCreate(staffNotifications, { ignoreDuplicates: true });
-    
-    // Log staff notification details for verification
-    console.log(`[ANNOUNCEMENT ${announcement.id}] Notified ${staffUsers.length} staff for barangays: ${targetBarangayIds.join(', ')}`);
-    staffUsers.forEach(s => {
-      console.log(`  → Staff ID ${s.id}: ${s.first_name} ${s.last_name} (Barangay ID: ${s.barangay_id})`);
+    if (staffNotifications.length > 0) {
+      await Notification.bulkCreate(staffNotifications, { ignoreDuplicates: true });
+      
+      // Log staff notification details for verification
+      console.log(`[ANNOUNCEMENT ${announcement.id}] Notified ${staffUsers.length} staff for barangays: ${targetBarangayIds.join(', ')}`);
+      staffUsers.forEach(s => {
+        console.log(`  → Staff ID ${s.id}: ${s.first_name} ${s.last_name} (Barangay ID: ${s.barangay_id})`);
+      });
+    }
+
+  // OPTIONAL: NOTIFY MSWDO ADMIN IF notify_mswdo IS ENABLED BY DSWD ADMIN
+  let mswdoCount = 0;
+  if (announcement.notify_mswdo) {
+    const mswdoUsers = await User.findAll({
+      where: {
+        role: 'mswdo_admin',
+        status: 'active',
+      },
+      attributes: ['id', 'first_name', 'last_name', 'email'],
+    });
+
+    const mswdoNotifications = mswdoUsers.map((mswdo) => ({
+      user_id: mswdo.id,
+      title: `📢 MSWDO Notice: ${announcement.title}`,
+      message: `DSWD has published a new activity: "${announcement.title}" scheduled for ${announcement.event_date || 'upcoming date'} at ${announcement.venue || 'designated venue'}.`,
+      type: 'system',
+      reference_id: announcement.id,
+      reference_type: 'announcement_mswdo',
+      is_read: false,
+    }));
+
+    if (mswdoNotifications.length > 0) {
+      await Notification.bulkCreate(mswdoNotifications, { ignoreDuplicates: true });
+      mswdoCount = mswdoNotifications.length;
+      console.log(`[ANNOUNCEMENT ${announcement.id}] Notified ${mswdoCount} MSWDO administrators.`);
+    }
+  } else {
+    // If notify_mswdo is disabled, clean up any previous MSWDO notices
+    await Notification.destroy({
+      where: {
+        reference_id: announcement.id,
+        reference_type: 'announcement_mswdo',
+      },
     });
   }
 
   // Audit log entry
   await AuditLog.create({
     user_id: adminUserId,
-    action: `PUBLISHED_ANNOUNCEMENT: "${announcement.title}" (${matchingBeneficiaries.length} beneficiaries, ${staffUsers.length} staff notified)`,
+    action: `PUBLISHED_ANNOUNCEMENT: "${announcement.title}" (${matchingBeneficiaries.length} beneficiaries, ${staffUsers.length} staff notified${mswdoCount > 0 ? `, ${mswdoCount} MSWDO notified` : ''})`,
     module: 'Announcements',
     timestamp: new Date(),
   });
@@ -310,10 +347,14 @@ async function autoCompleteExpiredAnnouncements() {
 
     for (const ann of publishedAnnouncements) {
 
-      const timeToCheck = ann.end_time || ann.event_time;
+      const timeToCheck = ann.end_time || ann.event_time || '23:59';
       const expireTime = parseDateTime(ann.event_date, timeToCheck);
 
-      if (expireTime && now > expireTime) {
+      // Only auto-complete if at least 24 hours have passed since event ended, or past expiration_date
+      const gracePeriodPassed = expireTime && (now.getTime() - expireTime.getTime() > 24 * 60 * 60 * 1000);
+      const isPastExpiration = ann.expiration_date && (now > parseDateTime(ann.expiration_date, '23:59'));
+
+      if (gracePeriodPassed || isPastExpiration) {
         console.log(`⏰ Auto-completing expired announcement ID ${ann.id}: "${ann.title}"`);
 
         const [absentCount] = await AnnouncementRecipient.update(
@@ -350,15 +391,25 @@ async function autoCompleteExpiredAnnouncements() {
           const b = recipient.Beneficiary;
           if (!b || !b.User) continue;
 
-          inAppNotifications.push({
-            user_id: b.User.id,
-            title: `Absent: ${ann.title}`,
-            message: `You were marked absent for "${ann.title}" held on ${ann.event_date || 'N/A'}. Please contact the municipal office for more information.`,
-            type: 'program',
-            reference_id: ann.id,
-            reference_type: 'announcement_absence',
-            is_read: false,
+          const existingNotif = await Notification.findOne({
+            where: {
+              user_id: b.User.id,
+              reference_id: ann.id,
+              reference_type: 'announcement_absence',
+            },
           });
+
+          if (!existingNotif) {
+            inAppNotifications.push({
+              user_id: b.User.id,
+              title: `Absent: ${ann.title}`,
+              message: `You were marked absent for "${ann.title}" held on ${ann.event_date || 'N/A'}. Please contact the municipal office for more information.`,
+              type: 'program',
+              reference_id: ann.id,
+              reference_type: 'announcement_absence',
+              is_read: false,
+            });
+          }
 
           if (b.contact_number) {
             smsNotifications.push({
@@ -392,6 +443,192 @@ async function autoCompleteExpiredAnnouncements() {
     console.error('Error in autoCompleteExpiredAnnouncements:', err);
   }
 }
+
+// ── GET /my-attendance ── Beneficiary Meeting Attendance History & Summary Stats
+router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) => {
+  try {
+    await autoCompleteExpiredAnnouncements();
+
+    const beneficiary = await Beneficiary.findOne({
+      where: { user_id: req.user.id },
+      include: [
+        { model: Barangay, attributes: ['id', 'barangay_name'] },
+        { model: User, attributes: ['id', 'first_name', 'last_name', 'email', 'contact_number'] },
+      ],
+    });
+
+    if (!beneficiary) {
+      return res.status(404).json({ success: false, message: 'Beneficiary profile not found' });
+    }
+
+    // Auto-link any published or completed announcements targeting this beneficiary
+    const publishedAnnouncements = await Announcement.findAll({
+      where: { status: { [Op.in]: ['published', 'completed'] } },
+    });
+
+    const benCategory = (beneficiary.category || '').toLowerCase();
+
+    for (const ann of publishedAnnouncements) {
+      let targetBarangays = [];
+      if (typeof ann.target_barangays === 'string') {
+        try { targetBarangays = JSON.parse(ann.target_barangays); } catch (e) { targetBarangays = [ann.target_barangays]; }
+      } else if (Array.isArray(ann.target_barangays)) {
+        targetBarangays = ann.target_barangays;
+      }
+      targetBarangays = targetBarangays.map(Number).filter(Boolean);
+
+      let targetPrograms = [];
+      if (typeof ann.target_programs === 'string') {
+        try { targetPrograms = JSON.parse(ann.target_programs); } catch (e) { targetPrograms = [ann.target_programs]; }
+      } else if (Array.isArray(ann.target_programs)) {
+        targetPrograms = ann.target_programs;
+      }
+
+      let matchesCategory = false;
+      if (targetPrograms.length === 0) {
+        matchesCategory = true;
+      } else {
+        matchesCategory = targetPrograms.some(cat => {
+          const normCat = String(cat).toLowerCase();
+          if (normCat.includes('4ps')) return benCategory.includes('4ps');
+          if (normCat.includes('senior')) return benCategory.includes('senior');
+          if (normCat.includes('pwd') || normCat.includes('disabil')) return benCategory.includes('pwd') || benCategory.includes('disabil');
+          return benCategory.includes(normCat);
+        });
+      }
+
+      const matchesBarangay =
+        targetBarangays.length === 0 ||
+        (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
+
+      if (matchesBarangay && matchesCategory) {
+        await AnnouncementRecipient.findOrCreate({
+          where: {
+            announcement_id: ann.id,
+            beneficiary_id: beneficiary.id,
+          },
+          defaults: {
+            announcement_id: ann.id,
+            beneficiary_id: beneficiary.id,
+            user_id: req.user.id,
+            is_read: false,
+            attendance_status: 'Pending',
+            notification_sent: true,
+          },
+        });
+      }
+    }
+
+    // Fetch all recipient links with announcement details and staff scanner info
+    const recipientLinks = await AnnouncementRecipient.findAll({
+      where: { beneficiary_id: beneficiary.id },
+      include: [
+        {
+          model: Announcement,
+          include: [
+            {
+              model: User,
+              as: 'CreatedBy',
+              attributes: ['id', 'first_name', 'last_name', 'email'],
+            },
+          ],
+        },
+        {
+          model: User,
+          as: 'ScannedByStaff',
+          attributes: ['id', 'first_name', 'last_name'],
+        },
+      ],
+      order: [['created_at', 'DESC']],
+    });
+
+    const records = [];
+    for (const r of recipientLinks) {
+      if (!r.Announcement || !['published', 'completed'].includes(r.Announcement.status)) continue;
+
+      let targetBarangays = [];
+      if (typeof r.Announcement.target_barangays === 'string') {
+        try { targetBarangays = JSON.parse(r.Announcement.target_barangays); } catch (e) { targetBarangays = [r.Announcement.target_barangays]; }
+      } else if (Array.isArray(r.Announcement.target_barangays)) {
+        targetBarangays = r.Announcement.target_barangays;
+      }
+      targetBarangays = targetBarangays.map(Number).filter(Boolean);
+
+      let targetPrograms = [];
+      if (typeof r.Announcement.target_programs === 'string') {
+        try { targetPrograms = JSON.parse(r.Announcement.target_programs); } catch (e) { targetPrograms = [r.Announcement.target_programs]; }
+      } else if (Array.isArray(r.Announcement.target_programs)) {
+        targetPrograms = r.Announcement.target_programs;
+      }
+
+      const matchesBarangay =
+        targetBarangays.length === 0 ||
+        (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
+
+      let matchesCategory = false;
+      if (targetPrograms.length === 0) {
+        matchesCategory = true;
+      } else {
+        matchesCategory = targetPrograms.some(cat => {
+          const normCat = String(cat).toLowerCase();
+          if (normCat.includes('4ps')) return benCategory.includes('4ps');
+          if (normCat.includes('senior')) return benCategory.includes('senior');
+          if (normCat.includes('pwd') || normCat.includes('disabil')) return benCategory.includes('pwd') || benCategory.includes('disabil');
+          return benCategory.includes(normCat);
+        });
+      }
+
+      if (matchesBarangay && matchesCategory) {
+        const item = r.Announcement.toJSON();
+        item.attendance_status = r.attendance_status; // 'Pending' | 'Present' | 'Absent'
+        item.scanned_at = r.scanned_at;
+        item.is_read = r.is_read;
+        item.read_at = r.read_at;
+        item.recipient_id = r.id;
+        item.ScannedByStaff = r.ScannedByStaff ? {
+          id: r.ScannedByStaff.id,
+          first_name: r.ScannedByStaff.first_name,
+          last_name: r.ScannedByStaff.last_name,
+        } : null;
+        records.push(item);
+      }
+    }
+
+    // Compute stats
+    const totalMeetings = records.length;
+    const presentCount = records.filter(rec => rec.attendance_status === 'Present').length;
+    const absentCount = records.filter(rec => rec.attendance_status === 'Absent').length;
+    const pendingCount = records.filter(rec => rec.attendance_status === 'Pending').length;
+    const concludedCount = presentCount + absentCount;
+    const complianceRate = concludedCount > 0 ? Math.round((presentCount / concludedCount) * 100) : 100;
+
+    res.json({
+      success: true,
+      data: {
+        beneficiary: {
+          id: beneficiary.id,
+          first_name: beneficiary.first_name,
+          last_name: beneficiary.last_name,
+          RFID_number: beneficiary.RFID_number,
+          beneficiary_id_code: beneficiary.beneficiary_id_code,
+          category: beneficiary.category,
+          status: beneficiary.status,
+          barangay: beneficiary.Barangay?.barangay_name || 'N/A',
+        },
+        stats: {
+          total_meetings: totalMeetings,
+          present_count: presentCount,
+          absent_count: absentCount,
+          pending_count: pendingCount,
+          compliance_rate: complianceRate,
+        },
+        records,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // ── GET / ── List announcements
 router.get('/', async (req, res, next) => {
@@ -432,9 +669,9 @@ router.get('/', async (req, res, next) => {
         console.error('Error syncing beneficiary category:', e);
       }
 
-      // Auto-link any published announcements targeting this beneficiary's barangay/category
+      // Auto-link any published or completed announcements targeting this beneficiary's barangay/category
       const publishedAnnouncements = await Announcement.findAll({
-        where: { status: 'published' },
+        where: { status: { [Op.in]: ['published', 'completed'] } },
       });
 
       for (const ann of publishedAnnouncements) {
@@ -514,7 +751,7 @@ router.get('/', async (req, res, next) => {
       const invalidAnnouncementIds = [];
 
       for (const r of recipientLinks) {
-        if (!r.Announcement || r.Announcement.status !== 'published') continue;
+        if (!r.Announcement || !['published', 'completed'].includes(r.Announcement.status)) continue;
 
         let targetBarangays = [];
         if (typeof r.Announcement.target_barangays === 'string') {
@@ -592,6 +829,17 @@ router.get('/', async (req, res, next) => {
       ];
     }
 
+    // Filter MSWDO view at DB level: MSWDO only sees announcements they created OR where notify_mswdo is true
+    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin') {
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        [Op.or]: [
+          { created_by_user_id: req.user.id },
+          { notify_mswdo: true },
+        ],
+      });
+    }
+
     let announcements = await Announcement.findAll({
       where,
       include: [
@@ -646,6 +894,16 @@ router.get('/', async (req, res, next) => {
       console.log(`[ANNOUNCEMENT FILTER] After filter: ${announcements.length} announcements\n`);
     }
 
+    // Filter MSWDO view: If DSWD Admin did NOT notify MSWDO (notify_mswdo is false),
+    // then the announcement is direct-only for Barangay Staff & Beneficiary, and MUST NOT appear to MSWDO!
+    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin') {
+      announcements = announcements.filter((a) => {
+        const isAuthor = a.created_by_user_id === req.user.id || a.CreatedBy?.id === req.user.id;
+        const isNotified = Boolean(a.notify_mswdo);
+        return isAuthor || isNotified;
+      });
+    }
+
     // Attach present_count summary
     const formatted = announcements.map((a) => {
       const plain = a.toJSON();
@@ -695,6 +953,18 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Announcement not found' });
     }
 
+    // Security check: If MSWDO, cannot view direct-only announcements where MSWDO was not notified
+    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin') {
+      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
+      const isNotified = Boolean(announcement.notify_mswdo);
+      if (!isAuthor && !isNotified) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: MSWDO was not notified for this announcement.',
+        });
+      }
+    }
+
     const plain = announcement.toJSON();
     const recipients = plain.Recipients || [];
     plain.present_count = recipients.filter((r) => r.attendance_status === 'Present').length;
@@ -722,6 +992,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       expiration_date,
       target_programs = [],
       target_barangays = [],
+      notify_mswdo = false,
     } = req.body;
 
     if (!title || !message) {
@@ -731,6 +1002,13 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
     const targetCatsOrProgs = req.body.target_categories || target_programs;
     if (!Array.isArray(targetCatsOrProgs) || targetCatsOrProgs.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one target category must be selected' });
+    }
+
+    if (req.user.role === 'mswdo_admin') {
+      const has4Ps = targetCatsOrProgs.some(cat => String(cat).toLowerCase().includes('4ps'));
+      if (has4Ps) {
+        return res.status(403).json({ success: false, message: 'Access denied: MSWDO Admin cannot create announcements for 4Ps programs' });
+      }
     }
 
     const parsedBarangays = parseTargetBarangayIds(target_barangays);
@@ -751,6 +1029,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       expiration_date: expiration_date || null,
       target_programs: targetCatsOrProgs,
       target_barangays: parsedBarangays,
+      notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : false,
       created_by_user_id: req.user.id,
       recipient_count: 0,
       view_count: 0,
@@ -1157,10 +1436,19 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       target_programs,
       target_categories,
       target_barangays,
+      notify_mswdo,
     } = req.body;
 
     const previousStatus = announcement.status;
     const targetCatsOrProgs = target_categories || target_programs || announcement.target_programs;
+
+    if (req.user.role === 'mswdo_admin') {
+      const existingHas4Ps = Array.isArray(announcement.target_programs) && announcement.target_programs.some(cat => String(cat).toLowerCase().includes('4ps'));
+      const newHas4Ps = Array.isArray(targetCatsOrProgs) && targetCatsOrProgs.some(cat => String(cat).toLowerCase().includes('4ps'));
+      if (existingHas4Ps || newHas4Ps) {
+        return res.status(403).json({ success: false, message: 'Access denied: MSWDO Admin cannot modify 4Ps announcements' });
+      }
+    }
 
     const updatedBarangays = target_barangays !== undefined 
       ? parseTargetBarangayIds(target_barangays) 
@@ -1178,6 +1466,7 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       expiration_date: expiration_date !== undefined ? expiration_date : announcement.expiration_date,
       target_programs: targetCatsOrProgs,
       target_barangays: updatedBarangays,
+      notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : announcement.notify_mswdo,
     });
 
     if (announcement.status === 'published') {
@@ -1255,7 +1544,7 @@ router.patch('/:id/read', async (req, res, next) => {
             where: {
               user_id: req.user.id,
               reference_id: announcement.id,
-              reference_type: 'announcement',
+              reference_type: { [Op.in]: ['announcement', 'announcement_absence', 'announcement_staff', 'announcement_mswdo'] },
             },
           }
         );
@@ -1284,6 +1573,18 @@ router.delete('/:id', authorize('admin'), async (req, res, next) => {
     }
 
     const title = announcement.title;
+
+    // Clean up all related notifications & recipients
+    await Notification.destroy({
+      where: {
+        reference_id: req.params.id,
+        reference_type: { [Op.in]: ['announcement', 'announcement_staff', 'announcement_mswdo', 'announcement_absence'] },
+      },
+    });
+    await AnnouncementRecipient.destroy({
+      where: { announcement_id: req.params.id },
+    });
+
     await announcement.destroy();
 
     await AuditLog.create({

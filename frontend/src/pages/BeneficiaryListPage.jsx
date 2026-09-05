@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { 
   X, Users, Clock, Eye, AlertTriangle, FileCheck, ShieldAlert, 
-  Download, Archive, Edit3, CreditCard, User, MapPin, Calendar, Phone, Lock, ShieldCheck 
+  Download, Archive, Edit3, CreditCard, User, MapPin, Calendar, Phone, Lock, ShieldCheck,
+  CheckCircle2, XCircle, Clock4, Award, RefreshCw
 } from 'lucide-react';
 import Table from '../components/ui/Table';
 import Button from '../components/ui/Button';
@@ -27,6 +28,10 @@ export default function BeneficiaryListPage() {
   const [rfidInput, setRfidInput] = useState('');
   const [rfidSaving, setRfidSaving] = useState(false);
   const [rfidMsg, setRfidMsg] = useState(null);
+  const [modalTab, setModalTab] = useState('profile'); // 'profile' | 'attendance'
+  const [attendanceData, setAttendanceData] = useState(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceError, setAttendanceError] = useState(null);
 
   // Edit Modal State
   const [editingBeneficiary, setEditingBeneficiary] = useState(null);
@@ -44,11 +49,18 @@ export default function BeneficiaryListPage() {
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
 
+  const isMswdoAdmin = user?.role === 'mswdo_admin';
   const CATEGORIES = [
     '4Ps Household Beneficiary',
     'Senior Citizens (Social Pension)',
     'Persons with Disabilities (PWD)'
   ];
+  const displayCategories = isMswdoAdmin
+    ? [
+        'Senior Citizens (Social Pension)',
+        'Persons with Disabilities (PWD)'
+      ]
+    : CATEGORIES;
 
   const getBackendUrl = () => {
     const defaultApiUrl = 'http://localhost:5000/api';
@@ -65,14 +77,14 @@ export default function BeneficiaryListPage() {
         beneficiaryApi.list(),
         barangayApi.list()
       ];
-      if (user?.role === 'admin') {
+      if (['admin','mswdo_admin'].includes(user?.role)) {
         promises.push(beneficiaryApi.listApplications());
       }
       const results = await Promise.all(promises);
       setBeneficiaries(results[0].data?.data || []);
       setBarangays(results[1].data?.data || []);
       
-      if (user?.role === 'admin' && results[2]) {
+      if (['admin','mswdo_admin'].includes(user?.role) && results[2]) {
         const apps = results[2].data?.data || [];
         // Filter non-approved applications for the pending queue
         const pendingList = apps.filter(a => a.status !== 'Approved');
@@ -96,13 +108,13 @@ export default function BeneficiaryListPage() {
   }, [user]);
 
   useEffect(() => {
-    if (user?.role === 'admin' && (location.state?.openPending || new URLSearchParams(location.search).get('pending') === 'true')) {
+    if (['admin','mswdo_admin'].includes(user?.role) && (location.state?.openPending || new URLSearchParams(location.search).get('pending') === 'true')) {
       openPendingModal();
     }
   }, [location, user]);
 
   const openPendingModal = async () => {
-    if (user?.role !== 'admin') return;
+    if (!['admin','mswdo_admin'].includes(user?.role)) return;
     setShowPendingModal(true);
     setLoadingPending(true);
     try {
@@ -116,15 +128,68 @@ export default function BeneficiaryListPage() {
     }
   };
 
+  const formatEventDate = (dateStr) => {
+    if (!dateStr) return '—';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  const formatScanTime = (ts) => {
+    if (!ts) return null;
+    try {
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return ts;
+      return d.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch (e) {
+      return ts;
+    }
+  };
+
+  const fetchBeneficiaryAttendance = async (beneficiaryId) => {
+    if (!beneficiaryId) return;
+    setAttendanceLoading(true);
+    setAttendanceError(null);
+    try {
+      const res = await beneficiaryApi.getAttendance(beneficiaryId);
+      if (res.data?.success) {
+        setAttendanceData(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load beneficiary attendance:', err);
+      setAttendanceError(err.response?.data?.message || 'Hindi ma-load ang attendance records.');
+    } finally {
+      setAttendanceLoading(false);
+    }
+  };
+
   const handleViewBeneficiary = (beneficiary) => {
     setViewingBeneficiary(beneficiary);
     setRfidInput(beneficiary.RFID_number || '');
     setRfidMsg(null);
+    setModalTab('profile');
+    setAttendanceData(null);
+    fetchBeneficiaryAttendance(beneficiary.id);
   };
 
   const handleSaveRfidDirect = async (e) => {
     if (e) e.preventDefault();
-    if (user?.role !== 'admin') return;
+    if (!['admin','mswdo_admin'].includes(user?.role)) return;
     setRfidSaving(true);
     setRfidMsg(null);
     try {
@@ -143,7 +208,7 @@ export default function BeneficiaryListPage() {
   };
 
   const handleEditClick = (beneficiary) => {
-    if (user?.role !== 'admin' && (user?.role === 'staff' || user?.role === 'barangay') && beneficiary.barangay_id !== user?.barangay_id) {
+    if (!['admin','mswdo_admin'].includes(user?.role) && (user?.role === 'staff' || user?.role === 'barangay') && beneficiary.barangay_id !== user?.barangay_id) {
       setEditError('You can only edit beneficiaries from your own barangay');
       return;
     }
@@ -375,7 +440,7 @@ export default function BeneficiaryListPage() {
         )}
       </div>
     )},
-    ...(user?.role === 'admin' || user?.role === 'staff' || user?.role === 'barangay' ? [{
+    ...(['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff' || user?.role === 'barangay' ? [{
       header: 'Action', 
       accessor: 'id', 
       cell: (row) => (
@@ -387,7 +452,7 @@ export default function BeneficiaryListPage() {
           >
             <Eye className="w-4 h-4 text-blue-600" />
           </button>
-          {user?.role === 'admin' && (
+          {['admin','mswdo_admin'].includes(user?.role) && (
             <button
               onClick={() => handleEditClick(row)}
               title="Edit & Register RFID"
@@ -456,7 +521,7 @@ export default function BeneficiaryListPage() {
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {/* View Pending Beneficiaries Button - Admin Only */}
-          {user?.role === 'admin' && (
+          {['admin','mswdo_admin'].includes(user?.role) && (
             <button
               onClick={openPendingModal}
               className="flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold px-4 py-3 rounded-xl shadow transition text-sm border border-amber-500"
@@ -479,6 +544,16 @@ export default function BeneficiaryListPage() {
           </button>
         </div>
       </div>
+
+      {isMswdoAdmin && (
+        <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-4 flex items-start gap-3">
+          <span className="text-xl">🏥</span>
+          <div>
+            <p className="text-sm font-bold text-purple-900">MSWDO Focus: Senior Citizens & PWD</p>
+            <p className="text-xs text-purple-700">Dedicated focus on Senior Citizens (Social Pension) and Persons with Disabilities (PWD). 4Ps is managed by DSWD.</p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-start gap-3">
@@ -517,7 +592,7 @@ export default function BeneficiaryListPage() {
               className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
             >
               <option value="">All Categories</option>
-              {CATEGORIES.map((category) => (
+              {displayCategories.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>
@@ -541,7 +616,7 @@ export default function BeneficiaryListPage() {
       </div>
 
       {/* Stats (Grid: 4 Cards for Admin / 3 Cards for Staff) */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${user?.role === 'admin' ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${['admin','mswdo_admin'].includes(user?.role) ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
         <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">
           <p className="text-sm font-medium text-slate-600 mb-2">Total Records</p>
           <p className="text-3xl font-bold text-blue-600">{loading ? '...' : filteredBeneficiaries.length}</p>
@@ -556,7 +631,7 @@ export default function BeneficiaryListPage() {
         </div>
         
         {/* Pending Beneficiaries Stat Box - Admin Only */}
-        {user?.role === 'admin' && (
+        {['admin','mswdo_admin'].includes(user?.role) && (
           <div 
             onClick={openPendingModal}
             className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-6 border border-amber-200 cursor-pointer hover:shadow-md transition-all group"
@@ -595,7 +670,7 @@ export default function BeneficiaryListPage() {
         )}
       </div>
 
-      {/* BENEFICIARY DETAILS MODAL (View Information + Admin-only RFID Registration) */}
+      {/* BENEFICIARY DETAILS MODAL (View Information + Admin-only RFID Registration + Meeting Attendance Records) */}
       {viewingBeneficiary && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
@@ -642,158 +717,469 @@ export default function BeneficiaryListPage() {
               </button>
             </div>
 
+            {/* Modal Navigation Tabs */}
+            <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 pt-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModalTab('profile')}
+                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition ${
+                    modalTab === 'profile'
+                      ? 'border-blue-600 text-blue-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <User className="w-4 h-4" />
+                  Personal & RFID Details
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalTab('attendance')}
+                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition ${
+                    modalTab === 'attendance'
+                      ? 'border-blue-600 text-blue-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Calendar className="w-4 h-4" />
+                  Attendance Records
+                  {attendanceData?.stats ? (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                      attendanceData.stats.compliance_rate >= 80 
+                        ? 'bg-emerald-100 text-emerald-800' 
+                        : attendanceData.stats.compliance_rate >= 50
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-rose-100 text-rose-800'
+                    }`}>
+                      {attendanceData.stats.compliance_rate}% ({attendanceData.stats.present_count}/{attendanceData.stats.total_meetings})
+                    </span>
+                  ) : attendanceLoading ? (
+                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
+                  ) : null}
+                </button>
+              </div>
+
+              {/* Refresh Button if on Attendance Tab */}
+              {modalTab === 'attendance' && (
+                <button
+                  type="button"
+                  onClick={() => fetchBeneficiaryAttendance(viewingBeneficiary.id)}
+                  disabled={attendanceLoading}
+                  className="pb-3 pt-2 text-xs text-slate-500 hover:text-blue-600 font-semibold flex items-center gap-1 transition"
+                  title="I-refresh ang attendance data"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${attendanceLoading ? 'animate-spin text-blue-600' : ''}`} />
+                  Refresh
+                </button>
+              )}
+            </div>
+
             {/* Modal Body */}
             <div className="overflow-y-auto p-6 space-y-5 flex-1 bg-slate-50/50">
-              
-              {/* RFID Card Management Card */}
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
-                      <CreditCard className="w-5 h-5" />
+              {modalTab === 'profile' ? (
+                <>
+                  {/* Attendance Quick KPI Banner inside Profile Tab */}
+                  <div className="bg-gradient-to-r from-blue-50 via-indigo-50/60 to-purple-50 rounded-2xl p-4 border border-blue-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs shrink-0">
+                        <Calendar className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h5 className="font-bold text-sm text-slate-900">Attendance Compliance Record</h5>
+                          {attendanceData?.stats && (
+                            <span className={`px-2 py-0.5 text-xs font-black rounded-full ${
+                              attendanceData.stats.compliance_rate >= 80 
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                                : attendanceData.stats.compliance_rate >= 50
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : 'bg-rose-100 text-rose-800 border border-rose-200'
+                            }`}>
+                              {attendanceData.stats.compliance_rate}% Rating
+                            </span>
+                          )}
+                        </div>
+                        {attendanceLoading ? (
+                          <p className="text-xs text-blue-600 font-medium flex items-center gap-1 mt-0.5">
+                            <RefreshCw className="w-3 h-3 animate-spin" /> Kinukuha ang attendance record...
+                          </p>
+                        ) : attendanceData?.stats ? (
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            Naka-attend: <strong className="text-emerald-700">{attendanceData.stats.present_count}</strong> • 
+                            Liban: <strong className="text-rose-700">{attendanceData.stats.absent_count}</strong> • 
+                            Pending: <strong className="text-amber-700">{attendanceData.stats.pending_count}</strong> 
+                            &nbsp;(Kabuuang <strong>{attendanceData.stats.total_meetings}</strong> na meetings)
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-500 mt-0.5">Walang nakatalang attendance stats.</p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-slate-900">RFID Card Number</h4>
-                      <p className="text-xs text-slate-500">Official Municipal RFID for Attendance & Distribution Tracking</p>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('attendance')}
+                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                    >
+                      Tingnan Buong Talaan →
+                    </button>
                   </div>
-                  {viewingBeneficiary.RFID_number ? (
-                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 shadow-2xs">
-                      💳 {viewingBeneficiary.RFID_number}
-                    </span>
-                  ) : (
-                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                      ⚠️ No RFID Card Assigned
-                    </span>
-                  )}
-                </div>
 
-                {/* If Admin: show RFID registration form */}
-                {user?.role === 'admin' ? (
-                  <form onSubmit={handleSaveRfidDirect} className="pt-2 border-t border-slate-100 space-y-3">
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                      Register / Update RFID Card Number
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={rfidInput}
-                        onChange={(e) => setRfidInput(e.target.value)}
-                        placeholder="Scan or enter RFID card number (e.g. RFID-0001)..."
-                        className="flex-1 px-3.5 py-2 border border-slate-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50/50"
-                      />
-                      <button
-                        type="submit"
-                        disabled={rfidSaving}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0"
-                      >
-                        {rfidSaving ? 'Saving...' : 'Save RFID'}
-                      </button>
+                  {/* RFID Card Management Card */}
+                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                          <CreditCard className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-900">RFID Card Number</h4>
+                          <p className="text-xs text-slate-500">Official Municipal RFID for Attendance & Distribution Tracking</p>
+                        </div>
+                      </div>
+                      {viewingBeneficiary.RFID_number ? (
+                        <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 shadow-2xs">
+                          💳 {viewingBeneficiary.RFID_number}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                          ⚠️ No RFID Card Assigned
+                        </span>
+                      )}
                     </div>
-                    {rfidMsg && (
-                      <div className={`p-2.5 rounded-xl text-xs font-semibold ${
-                        rfidMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
-                      }`}>
-                        {rfidMsg.text}
+
+                    {/* If Admin: show RFID registration form */}
+                    {['admin','mswdo_admin'].includes(user?.role) ? (
+                      <form onSubmit={handleSaveRfidDirect} className="pt-2 border-t border-slate-100 space-y-3">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Register / Update RFID Card Number
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={rfidInput}
+                            onChange={(e) => setRfidInput(e.target.value)}
+                            placeholder="Scan or enter RFID card number (e.g. RFID-0001)..."
+                            className="flex-1 px-3.5 py-2 border border-slate-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50/50"
+                          />
+                          <button
+                            type="submit"
+                            disabled={rfidSaving}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0"
+                          >
+                            {rfidSaving ? 'Saving...' : 'Save RFID'}
+                          </button>
+                        </div>
+                        {rfidMsg && (
+                          <div className={`p-2.5 rounded-xl text-xs font-semibold ${
+                            rfidMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                          }`}>
+                            {rfidMsg.text}
+                          </div>
+                        )}
+                      </form>
+                    ) : (
+                      /* If Barangay Staff: Show read-only notice */
+                      <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Ang MSWD Administrator lamang ang may pahintulot na mag-rehistro o magbago ng RFID card numbers.</span>
                       </div>
                     )}
-                  </form>
-                ) : (
-                  /* If Barangay Staff: Show read-only notice */
-                  <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-800 flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Ang MSWD Administrator lamang ang may pahintulot na mag-rehistro o magbago ng RFID card numbers.</span>
                   </div>
-                )}
-              </div>
 
-              {/* Personal Details & Location Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                
-                {/* Personal Information */}
-                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                  <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-blue-600" /> Personal Details
-                  </h4>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Sex:</span>
-                      <span className="font-semibold text-slate-800">{viewingBeneficiary.sex || '—'}</span>
+                  {/* Personal Details & Location Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    {/* Personal Information */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+                      <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-blue-600" /> Personal Details
+                      </h4>
+                      <div className="space-y-2 text-xs">
+                        <div className="flex justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500">Sex:</span>
+                          <span className="font-semibold text-slate-800">{viewingBeneficiary.sex || '—'}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500">Birthdate:</span>
+                          <span className="font-semibold text-slate-800">{viewingBeneficiary.birthdate || '—'}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500">Civil Status:</span>
+                          <span className="font-semibold text-slate-800">{viewingBeneficiary.civil_status || '—'}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500">Contact Number:</span>
+                          <span className="font-semibold text-slate-800">{viewingBeneficiary.contact_number || '—'}</span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-slate-500">IP Classification:</span>
+                          <span className="font-semibold text-slate-800">{viewingBeneficiary.ip_classification || 'Non-IP'}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Birthdate:</span>
-                      <span className="font-semibold text-slate-800">{viewingBeneficiary.birthdate || '—'}</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Civil Status:</span>
-                      <span className="font-semibold text-slate-800">{viewingBeneficiary.civil_status || '—'}</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Contact Number:</span>
-                      <span className="font-semibold text-slate-800">{viewingBeneficiary.contact_number || '—'}</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-slate-500">IP Classification:</span>
-                      <span className="font-semibold text-slate-800">{viewingBeneficiary.ip_classification || 'Non-IP'}</span>
+
+                    {/* Location & Address */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+                      <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-red-500" /> Location & Residence
+                      </h4>
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1.5">
+                        <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider block">
+                          Complete Address / Buong Tirahan
+                        </span>
+                        <p className="font-bold text-slate-900 text-sm leading-relaxed">
+                          {[
+                            viewingBeneficiary.sitio ? `${viewingBeneficiary.sitio}` : null,
+                            viewingBeneficiary.Barangay?.barangay_name
+                              ? `Barangay ${viewingBeneficiary.Barangay.barangay_name}`
+                              : (viewingBeneficiary.barangay_name ? `Barangay ${viewingBeneficiary.barangay_name}` : null),
+                            'Bongabong, Oriental Mindoro',
+                          ]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </p>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Government ID Numbers & Approval History */}
+                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+                    <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Identification & Verification History
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-slate-400 font-medium block">National ID No.</span>
+                        <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
+                          {viewingBeneficiary.national_id_number || '—'}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-slate-400 font-medium block">PSA Birth Cert No.</span>
+                        <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
+                          {viewingBeneficiary.psa_birth_cert_number || '—'}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-slate-400 font-medium block">Date Approved</span>
+                        <span className="font-semibold text-slate-800 text-sm mt-0.5 block">
+                          {viewingBeneficiary.approval_date || '—'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* ATTENDANCE RECORDS TAB */
+                <div className="space-y-5">
+                  {attendanceLoading && !attendanceData ? (
+                    <div className="py-12 text-center bg-white rounded-2xl border border-slate-200">
+                      <RefreshCw className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-3" />
+                      <p className="text-sm font-bold text-slate-800">Kinukuha ang talaan ng attendance...</p>
+                      <p className="text-xs text-slate-500 mt-1">Hinihintay ang datos mula sa sistema</p>
+                    </div>
+                  ) : attendanceError ? (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                        <span>{attendanceError}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => fetchBeneficiaryAttendance(viewingBeneficiary.id)}
+                        className="px-3 py-1 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition"
+                      >
+                        Subukang Muli
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Attendance KPIs Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {/* Compliance Rate Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Compliance</span>
+                            <Award className={`w-4 h-4 ${
+                              (attendanceData?.stats?.compliance_rate || 0) >= 80 ? 'text-emerald-600' : 'text-amber-600'
+                            }`} />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className={`text-2xl font-black ${
+                              (attendanceData?.stats?.compliance_rate || 0) >= 80 
+                                ? 'text-emerald-700' 
+                                : (attendanceData?.stats?.compliance_rate || 0) >= 50
+                                ? 'text-amber-700'
+                                : 'text-rose-700'
+                            }`}>
+                              {attendanceData?.stats?.compliance_rate || 0}%
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-medium mt-1">
+                            {(attendanceData?.stats?.compliance_rate || 0) >= 80 ? 'Mahusay / Compliant' : 'Kailangang Subaybayan'}
+                          </span>
+                        </div>
+
+                        {/* Present Count Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-emerald-100 bg-emerald-50/20 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">Naka-attend</span>
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-black text-emerald-700">
+                              {attendanceData?.stats?.present_count || 0}
+                            </span>
+                            <span className="text-xs text-emerald-600">/ {attendanceData?.stats?.total_meetings || 0}</span>
+                          </div>
+                          <span className="text-[10px] text-emerald-600 font-medium mt-1">
+                            Present sa pagpupulong
+                          </span>
+                        </div>
+
+                        {/* Absent Count Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-rose-100 bg-rose-50/20 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-rose-600 uppercase tracking-wider">Liban (Absent)</span>
+                            <XCircle className="w-4 h-4 text-rose-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-black text-rose-700">
+                              {attendanceData?.stats?.absent_count || 0}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-rose-600 font-medium mt-1">
+                            Hindi nakapag-attend
+                          </span>
+                        </div>
+
+                        {/* Pending Count Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-amber-100 bg-amber-50/20 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">Pending</span>
+                            <Clock4 className="w-4 h-4 text-amber-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-black text-amber-700">
+                              {attendanceData?.stats?.pending_count || 0}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-amber-600 font-medium mt-1">
+                            Paparating na pulong
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Meeting Attendance Records List */}
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                          <div>
+                            <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-blue-600" />
+                              Talaan ng Lahat ng Meetings ({attendanceData?.records?.length || 0})
+                            </h4>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              Listahan ng mga opisyal na pagpupulong para sa kategoryang <strong>{viewingBeneficiary.category}</strong>
+                            </p>
+                          </div>
+                        </div>
+
+                        {attendanceData?.records?.length === 0 ? (
+                          <div className="p-8 text-center">
+                            <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                            <p className="text-sm font-bold text-slate-700">Walang Nakatalang Meetings</p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              Wala pang nai-publish na pulong na tumutugma sa barangay at kategorya ng benepisyaryong ito.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-slate-100">
+                            {attendanceData?.records?.map((record) => (
+                              <div key={record.id} className="p-4 hover:bg-slate-50/60 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="space-y-1.5 flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h5 className="font-bold text-sm text-slate-900 leading-snug">
+                                      {record.title}
+                                    </h5>
+                                    {record.announcement_type && (
+                                      <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-blue-50 text-blue-700 rounded-md border border-blue-200">
+                                        {record.announcement_type}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
+                                    <span className="flex items-center gap-1 font-medium text-slate-700">
+                                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                      {formatEventDate(record.event_date)}
+                                      {record.event_time && ` • ${record.event_time}`}
+                                    </span>
+                                    {record.venue && (
+                                      <span className="flex items-center gap-1 text-slate-600">
+                                        <MapPin className="w-3.5 h-3.5 text-red-400" />
+                                        {record.venue}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {record.attendance_status === 'Present' && record.scanned_at && (
+                                    <p className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                      Na-scan ang RFID card noong: <strong>{formatScanTime(record.scanned_at)}</strong>
+                                      {record.ScannedByStaff && ` ni Staff ${record.ScannedByStaff.first_name} ${record.ScannedByStaff.last_name}`}
+                                    </p>
+                                  )}
+                                  {record.attendance_status === 'Absent' && (
+                                    <p className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
+                                      <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                      Hindi nakadalo sa itinakdang oras ng pulong
+                                    </p>
+                                  )}
+                                  {record.attendance_status === 'Pending' && (
+                                    <p className="text-[11px] text-amber-600 font-medium flex items-center gap-1">
+                                      <Clock4 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                      Naka-iskedyul — I-tap ang RFID card sa staff scanner sa araw ng pulong
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* Status Badge */}
+                                <div className="shrink-0 sm:self-center">
+                                  {record.attendance_status === 'Present' ? (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                      Naka-attend (Present)
+                                    </span>
+                                  ) : record.attendance_status === 'Absent' ? (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-200 shadow-2xs">
+                                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                                      Hindi Naka-attend (Absent)
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-200 shadow-2xs">
+                                      <Clock4 className="w-3.5 h-3.5 text-amber-600" />
+                                      Naka-iskedyul (Pending)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
-
-                {/* Location & Address */}
-                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                  <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-red-500" /> Location & Residence
-                  </h4>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1.5">
-                    <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider block">
-                      Complete Address / Buong Tirahan
-                    </span>
-                    <p className="font-bold text-slate-900 text-sm leading-relaxed">
-                      {[
-                        viewingBeneficiary.sitio ? `${viewingBeneficiary.sitio}` : null,
-                        viewingBeneficiary.Barangay?.barangay_name
-                          ? `Barangay ${viewingBeneficiary.Barangay.barangay_name}`
-                          : (viewingBeneficiary.barangay_name ? `Barangay ${viewingBeneficiary.barangay_name}` : null),
-                        'Bongabong, Oriental Mindoro',
-                      ]
-                        .filter(Boolean)
-                        .join(', ')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Government ID Numbers & Approval History */}
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Identification & Verification History
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <span className="text-slate-400 font-medium block">National ID No.</span>
-                    <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
-                      {viewingBeneficiary.national_id_number || '—'}
-                    </span>
-                  </div>
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <span className="text-slate-400 font-medium block">PSA Birth Cert No.</span>
-                    <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
-                      {viewingBeneficiary.psa_birth_cert_number || '—'}
-                    </span>
-                  </div>
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <span className="text-slate-400 font-medium block">Date Approved</span>
-                    <span className="font-semibold text-slate-800 text-sm mt-0.5 block">
-                      {viewingBeneficiary.approval_date || '—'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
+              )}
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-200 bg-white flex justify-end gap-3">
+            <div className="p-4 border-t border-slate-200 bg-white flex justify-between items-center gap-3">
+              <div className="text-xs text-slate-500 font-medium">
+                {modalTab === 'attendance' && attendanceData?.stats && (
+                  <span>Kabuuang Meetings: <strong>{attendanceData.stats.total_meetings}</strong> • Attendance Rating: <strong>{attendanceData.stats.compliance_rate}%</strong></span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setViewingBeneficiary(null)}
@@ -920,7 +1306,7 @@ export default function BeneficiaryListPage() {
       )}
 
       {/* Pending Beneficiaries Modal (Admin Only) */}
-      {showPendingModal && user?.role === 'admin' && (
+      {showPendingModal && ['admin','mswdo_admin'].includes(user?.role) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
@@ -1028,7 +1414,7 @@ export default function BeneficiaryListPage() {
       )}
 
       {/* ADMIN DETAIL REVIEW MODAL */}
-      {selectedApp && user?.role === 'admin' && (
+      {selectedApp && ['admin','mswdo_admin'].includes(user?.role) && (
         <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/60 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/50">

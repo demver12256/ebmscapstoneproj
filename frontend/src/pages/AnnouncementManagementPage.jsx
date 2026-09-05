@@ -26,14 +26,140 @@ import {
   Check,
   Archive,
   ArchiveRestore,
+  Sparkles,
 } from 'lucide-react';
 import { announcementApi, programApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-const TARGET_CATEGORIES = [
+export const TARGET_CATEGORIES = [
   '4Ps Household Beneficiaries',
   'Senior Citizens (Social Pension)',
   'Persons with Disabilities (PWD)',
+];
+
+export const OFFICIAL_MEETING_PRESETS = [
+  // ── 4Ps (Pantawid Pamilyang Pilipino Program - DSWD) ──
+  {
+    id: '4ps-fds',
+    program: '4Ps',
+    sector: '4Ps Household Beneficiaries',
+    sectorLabel: '4Ps (DSWD Family Development Session)',
+    title: '4Ps: Family Development Session (FDS)',
+    message: 'Buwanang Family Development Session (FDS) para sa lahat ng 4Ps household beneficiaries. Tatalakayin ang responsableng pagiging magulang, kalusugan, nutrisyon, at edukasyon ng mga bata. Mangyaring dalhin ang inyong RFID Beneficiary Card para sa attendance verification.',
+    event_time: '08:00',
+    end_time: '11:30',
+    venue: 'Barangay Covered Court',
+    priority: 'High',
+    target_categories: ['4Ps Household Beneficiaries'],
+  },
+  {
+    id: '4ps-program-orientation',
+    program: '4Ps',
+    sector: '4Ps Household Beneficiaries',
+    sectorLabel: '4Ps (Program Activity)',
+    title: '4Ps: Program Orientation',
+    message: 'Oryentasyon ukol sa mga patakaran, karapatan, at responsibilidad ng mga benepisyaryo ng Pantawid Pamilyang Pilipino Program (4Ps). Pagsusuri ng compliance rules, RFID card verification, at gabay sa paggamit ng mga serbisyong pampamahalaan.',
+    event_time: '08:30',
+    end_time: '12:00',
+    venue: 'Bongabong Municipal Gymnasium',
+    priority: 'Medium',
+    target_categories: ['4Ps Household Beneficiaries'],
+  },
+  {
+    id: '4ps-financial-literacy',
+    program: '4Ps',
+    sector: '4Ps Household Beneficiaries',
+    sectorLabel: '4Ps (Program Activity)',
+    title: '4Ps: Financial Literacy Session',
+    message: 'Pagsasanay sa wastong paghawak ng pera, pagbabadyet ng sambahayan, pag-iimpok (savings), at mga oportunidad sa micro-livelihood sa ilalim ng Sustainable Livelihood Program (SLP) module.',
+    event_time: '09:00',
+    end_time: '12:00',
+    venue: 'Barangay Multi-Purpose Hall',
+    priority: 'Medium',
+    target_categories: ['4Ps Household Beneficiaries'],
+  },
+
+  // ── Senior Citizens (OSCA / MSWDO) ──
+  {
+    id: 'senior-social-pension-orientation',
+    program: 'Senior',
+    sector: 'Senior Citizens (Social Pension)',
+    sectorLabel: 'Senior Citizens (Social Pension)',
+    title: 'Senior Citizens: Social Pension Orientation',
+    message: 'Oryentasyon at balidasyon para sa mga benepisyaryo ng Social Pension for Indigent Senior Citizens. Tatalakayin ang mga patakaran sa pagtanggap ng stipend, verification ng senior documents, at nakatakdang payout schedule.',
+    event_time: '09:00',
+    end_time: '12:00',
+    venue: 'OSCA Office / Municipal Session Hall',
+    priority: 'Medium',
+    target_categories: ['Senior Citizens (Social Pension)'],
+  },
+  {
+    id: 'senior-citizen-assembly',
+    program: 'Senior',
+    sector: 'Senior Citizens (Social Pension)',
+    sectorLabel: 'Senior Citizens (Senior Citizen Assembly)',
+    title: 'Senior Citizens: Senior Citizen Assembly',
+    message: 'Pangkalahatang pagpupulong at asembleya ng mga Senior Citizens kasama ang OSCA at MSWDO para sa updates sa mga bagong benepisyo, lokal na ordinansa, at kapakanan ng mga nakatatanda sa komunidad.',
+    event_time: '08:30',
+    end_time: '12:00',
+    venue: 'Bongabong Municipal Gymnasium',
+    priority: 'Medium',
+    target_categories: ['Senior Citizens (Social Pension)'],
+  },
+  {
+    id: 'senior-health-wellness',
+    program: 'Senior',
+    sector: 'Senior Citizens (Social Pension)',
+    sectorLabel: 'Senior Citizens (Health & Wellness Session)',
+    title: 'Senior Citizens: Health/Wellness Session',
+    message: 'Libreng konsultasyong medikal, geriatric wellness checkup, pamamahagi ng maintenance medicines para sa altapresyon at diabetes, pamimigay ng bitamina, at blood pressure monitoring para sa mga Senior Citizens.',
+    event_time: '08:00',
+    end_time: '14:00',
+    venue: 'Rural Health Unit / Barangay Health Center',
+    priority: 'High',
+    target_categories: ['Senior Citizens (Social Pension)'],
+  },
+
+  // ── Persons with Disabilities (PDAO / MSWDO) ──
+  {
+    id: 'pwd-orientation',
+    program: 'PWD',
+    sector: 'Persons with Disabilities (PWD)',
+    sectorLabel: 'Persons with Disabilities (PWD Orientation)',
+    title: 'PWD: PWD Orientation',
+    message: 'Komprehensibong oryentasyon ukol sa mga karapatan at pribilehiyo ng mga Persons with Disabilities (PWD) alinsunod sa RA 7277 at RA 10754 (20% discount sa bilihin, gamot, pamasahe, at VAT exemption), PhilHealth benefits, at mga proteksyon sa batas.',
+    event_time: '09:00',
+    end_time: '12:00',
+    venue: 'PDAO Center / Municipal Multi-Purpose Hall',
+    priority: 'Medium',
+    target_categories: ['Persons with Disabilities (PWD)'],
+  },
+  {
+    id: 'pwd-assembly-consultation',
+    program: 'PWD',
+    sector: 'Persons with Disabilities (PWD)',
+    sectorLabel: 'Persons with Disabilities (PWD Assembly/Consultation)',
+    title: 'PWD: PWD Assembly/Consultation',
+    message: 'Pangkalahatang konsultasyon at asembleya ng PDAO kasama ang MSWDO upang dinggin ang mga pangangailangan ng PWD community, accessibility concerns, assistive device applications, at suportang medikal.',
+    event_time: '09:00',
+    end_time: '13:00',
+    venue: 'Bongabong Municipal Gymnasium / Covered Court',
+    priority: 'Medium',
+    target_categories: ['Persons with Disabilities (PWD)'],
+  },
+  {
+    id: 'pwd-skills-training',
+    program: 'PWD',
+    sector: 'Persons with Disabilities (PWD)',
+    sectorLabel: 'Persons with Disabilities (Skills/Capability Training)',
+    title: 'PWD: Skills/Capability Training',
+    message: 'Pagsasanay sa kasanayan at pangkabuhayan (skills & capability development) na angkop sa kakayahan ng mga Persons with Disabilities upang magkaroon ng sariling hanapbuhay at produktibong kabuhayan.',
+    event_time: '08:30',
+    end_time: '15:00',
+    venue: 'Bongabong Skills Training Center / Multi-Purpose Hall',
+    priority: 'Medium',
+    target_categories: ['Persons with Disabilities (PWD)'],
+  },
 ];
 
 const calculatePriorityFromDate = (dateStr) => {
@@ -89,6 +215,14 @@ export default function AnnouncementManagementPage() {
   // Recipient Stats / Audit Modal
   const [selectedAnnouncementStats, setSelectedAnnouncementStats] = useState(null);
 
+  const activeAllowedCategories = user?.role === 'mswdo_admin'
+    ? TARGET_CATEGORIES.filter((c) => !c.toLowerCase().includes('4ps'))
+    : TARGET_CATEGORIES;
+
+  const availablePresets = user?.role === 'mswdo_admin'
+    ? OFFICIAL_MEETING_PRESETS.filter((p) => !p.sector.toLowerCase().includes('4ps'))
+    : OFFICIAL_MEETING_PRESETS;
+
   // Form State
   const [formData, setFormData] = useState({
     title: '',
@@ -100,9 +234,10 @@ export default function AnnouncementManagementPage() {
     priority: 'Medium',
     status: 'published',
     expiration_date: '',
-    target_categories: [...TARGET_CATEGORIES],
+    target_categories: [...activeAllowedCategories],
     target_programs: [],
     target_barangays: [],
+    notify_mswdo: false,
   });
 
   // Load programs & barangays for dropdowns/target options
@@ -119,7 +254,7 @@ export default function AnnouncementManagementPage() {
 
       setFormData((prev) => ({
         ...prev,
-        target_categories: (prev.target_categories && prev.target_categories.length > 0) ? prev.target_categories : [...TARGET_CATEGORIES],
+        target_categories: (prev.target_categories && prev.target_categories.length > 0) ? prev.target_categories : [...activeAllowedCategories],
         target_programs: loadedPrograms.map((p) => p.id),
         target_barangays: prev.target_barangays || [],
       }));
@@ -141,13 +276,17 @@ export default function AnnouncementManagementPage() {
       if (searchQuery) params.search = searchQuery;
 
       const res = await announcementApi.list(params);
-      setAnnouncements(res.data?.data || []);
+      let list = res.data?.data || [];
+      if (user?.role === 'mswdo_admin') {
+        list = list.filter((a) => a.created_by_user_id === user.id || a.notify_mswdo);
+      }
+      setAnnouncements(list);
     } catch (err) {
       setError(err.message || 'Failed to fetch announcements');
     } finally {
       setLoading(false);
     }
-  }, [filterProgram, filterBarangay, filterPriority, filterStatus, searchQuery]);
+  }, [filterProgram, filterBarangay, filterPriority, filterStatus, searchQuery, user]);
 
   useEffect(() => {
     fetchMetadata();
@@ -233,9 +372,10 @@ export default function AnnouncementManagementPage() {
       priority: 'Medium',
       status: 'published',
       expiration_date: '',
-      target_categories: [...TARGET_CATEGORIES],
-      target_programs: programs.map((p) => p.id),
-      target_barangays: [],
+      target_categories: [...activeAllowedCategories],
+      target_programs: mapCategoriesToProgramIds(activeAllowedCategories, programs),
+      target_barangays: barangays.map((b) => b.id),
+      notify_mswdo: false,
     });
     setIsModalOpen(true);
   };
@@ -257,7 +397,7 @@ export default function AnnouncementManagementPage() {
     }
 
     const annPrograms = Array.isArray(ann.target_programs) ? ann.target_programs : [];
-    const matchedCategories = TARGET_CATEGORIES.filter((cat) => {
+    const matchedCategories = activeAllowedCategories.filter((cat) => {
       const catProgIds = mapCategoriesToProgramIds([cat], programs);
       return catProgIds.some((id) => annPrograms.includes(id));
     });
@@ -276,9 +416,10 @@ export default function AnnouncementManagementPage() {
       priority: ann.priority || 'Medium',
       status: ann.status || 'published',
       expiration_date: ann.expiration_date || '',
-      target_categories: matchedCategories.length > 0 ? matchedCategories : [...TARGET_CATEGORIES],
+      target_categories: matchedCategories.length > 0 ? matchedCategories : [...activeAllowedCategories],
       target_programs: annPrograms.length > 0 ? annPrograms : programs.map((p) => p.id),
       target_barangays: parsedTargetBarangays,
+      notify_mswdo: !!ann.notify_mswdo,
     });
     setIsModalOpen(true);
   };
@@ -286,7 +427,7 @@ export default function AnnouncementManagementPage() {
   // Toggle Category Selection
   const toggleCategoryTarget = (catName) => {
     setFormData((prev) => {
-      const currentCats = prev.target_categories || [...TARGET_CATEGORIES];
+      const currentCats = prev.target_categories || [...activeAllowedCategories];
       const exists = currentCats.includes(catName);
       const updatedCats = exists
         ? currentCats.filter((c) => c !== catName)
@@ -304,10 +445,10 @@ export default function AnnouncementManagementPage() {
 
   const toggleAllCategories = () => {
     setFormData((prev) => {
-      const currentCats = prev.target_categories || [...TARGET_CATEGORIES];
-      const allSelected = currentCats.length === TARGET_CATEGORIES.length;
-      const updatedCats = allSelected ? [] : [...TARGET_CATEGORIES];
-      const matchingPrograms = allSelected ? [] : programs.map((p) => p.id);
+      const currentCats = prev.target_categories || [...activeAllowedCategories];
+      const allSelected = currentCats.length === activeAllowedCategories.length;
+      const updatedCats = allSelected ? [] : [...activeAllowedCategories];
+      const matchingPrograms = allSelected ? [] : mapCategoriesToProgramIds(activeAllowedCategories, programs);
 
       return {
         ...prev,
@@ -555,7 +696,7 @@ export default function AnnouncementManagementPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {user?.role === 'admin' && (
+          {['admin','mswdo_admin'].includes(user?.role) && (
             <button
               onClick={handleOpenCreateModal}
               className="flex items-center gap-2.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95"
@@ -777,6 +918,18 @@ export default function AnnouncementManagementPage() {
                               {getBarangayNames(ann.target_barangays)}
                             </span>
                           </div>
+                          <div className="pt-0.5">
+                            {ann.notify_mswdo ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                                <BellRing className="w-2.5 h-2.5 text-indigo-600" />
+                                <span>+ MSWDO Notified</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                                Direct Only (Barangay & Beneficiary)
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
 
@@ -868,7 +1021,7 @@ export default function AnnouncementManagementPage() {
                           </div>
 
                           <div className="flex items-center gap-2 pt-0.5">
-                            {isAnnouncementActive(ann) && (
+                            {isAnnouncementActive(ann) && (user?.role === 'staff' || user?.role === 'barangay') && (
                               <button
                                 onClick={() => navigate(`/dashboard/announcement-scanner?id=${ann.id}`)}
                                 className="text-[11px] font-bold text-amber-700 hover:text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded flex items-center gap-1 shadow-sm transition"
@@ -905,7 +1058,7 @@ export default function AnnouncementManagementPage() {
                               <Send className="w-4 h-4" />
                             </button>
                           )}
-                          {user?.role === 'admin' && (
+                          {['admin','mswdo_admin'].includes(user?.role) && (
                             <button
                               onClick={() => handleOpenEditModal(ann)}
                               title="Edit announcement"
@@ -952,6 +1105,65 @@ export default function AnnouncementManagementPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-4 space-y-3 overflow-y-auto max-h-[80vh]">
+              {/* Quick Fill from DSWD / MSWDO Meeting Presets */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 mb-2 shadow-sm">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-black text-dswd-blue uppercase flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+                    <span>Pumili sa DSWD / MSWDO Official Meeting Templates:</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    Auto-fill details & target audience
+                  </span>
+                </div>
+                <select
+                  onChange={(e) => {
+                    const selectedId = e.target.value;
+                    if (!selectedId) return;
+                    const preset = availablePresets.find((p) => p.id === selectedId);
+                    if (preset) {
+                      setFormData((prev) => {
+                        const autoPriority = prev.event_date ? calculatePriorityFromDate(prev.event_date) : preset.priority;
+                        return {
+                          ...prev,
+                          title: preset.title,
+                          message: preset.message,
+                          venue: preset.venue,
+                          priority: autoPriority || preset.priority,
+                          event_time: preset.event_time,
+                          end_time: preset.end_time,
+                          target_categories: preset.target_categories,
+                          target_programs: mapCategoriesToProgramIds(preset.target_categories, programs),
+                          target_barangays: prev.target_barangays.length > 0 ? prev.target_barangays : barangays.map((b) => b.id),
+                        };
+                      });
+                    }
+                  }}
+                  defaultValue=""
+                  className="w-full px-3 py-2 border border-blue-300 rounded-lg text-xs font-bold text-slate-800 bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm cursor-pointer hover:border-blue-400 transition"
+                >
+                  <option value="">-- Pumili ng Opisyal na Meeting Template (Quick Fill) --</option>
+                  {['4Ps Household Beneficiaries', 'Senior Citizens (Social Pension)', 'Persons with Disabilities (PWD)'].map((sec) => {
+                    const presetsInSec = availablePresets.filter((p) => p.sector === sec);
+                    if (presetsInSec.length === 0) return null;
+                    const groupLabel = sec.includes('4Ps')
+                      ? '🔵 DSWD 4Ps Meetings'
+                      : sec.includes('Senior')
+                      ? '👵 OSCA / MSWDO Senior Citizens Meetings'
+                      : '♿ PDAO / MSWDO PWD Assemblies & Meetings';
+                    return (
+                      <optgroup key={sec} label={groupLabel}>
+                        {presetsInSec.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
@@ -1084,13 +1296,13 @@ export default function AnnouncementManagementPage() {
                         onClick={toggleAllCategories}
                         className="text-xs font-bold text-dswd-blue hover:underline"
                       >
-                        {(formData.target_categories || TARGET_CATEGORIES).length === TARGET_CATEGORIES.length ? 'Deselect All' : 'Select All'}
+                        {(formData.target_categories || activeAllowedCategories).length === activeAllowedCategories.length ? 'Deselect All' : 'Select All'}
                       </button>
                     </div>
 
                     <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-                      {TARGET_CATEGORIES.map((cat) => {
-                        const selected = (formData.target_categories || TARGET_CATEGORIES).includes(cat);
+                      {activeAllowedCategories.map((cat) => {
+                        const selected = (formData.target_categories || activeAllowedCategories).includes(cat);
                         return (
                           <div
                             key={cat}
@@ -1153,6 +1365,86 @@ export default function AnnouncementManagementPage() {
                 </div>
               </div>
 
+              {/* DSWD Publish Notification Options (Direct to Barangay/Beneficiary vs Include MSWDO) */}
+              {user?.role === 'admin' && formData.status === 'published' && (
+                <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-purple-50/80 border-2 border-blue-200 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-900 uppercase flex items-center gap-1.5 tracking-wide">
+                      <BellRing className="w-4 h-4 text-dswd-blue shrink-0" />
+                      <span>Notification Scope & Distribution (DSWD Options)</span>
+                    </label>
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-white shadow-xs text-slate-700">
+                      {formData.notify_mswdo ? '🔔 Option 2: + MSWDO' : '📢 Option 1: Direct'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    Pumili kung nais mo bang direktang i-anunsyo lamang sa Barangay at Benepisyaryo, o isama rin si MSWDO sa abiso:
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+                    {/* Option 1: Direct only */}
+                    <button
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, notify_mswdo: false }))}
+                      className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition select-none cursor-pointer ${
+                        !formData.notify_mswdo
+                          ? 'bg-white border-blue-600 shadow-md ring-2 ring-blue-500/20'
+                          : 'bg-white/70 border-slate-200 hover:border-slate-300 text-slate-600'
+                      }`}
+                    >
+                      <div className="mt-0.5 shrink-0">
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          !formData.notify_mswdo ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white'
+                        }`}>
+                          {!formData.notify_mswdo && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
+                          <span>Direct Lamang</span>
+                          <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded border border-blue-200">
+                            Barangay + Benepisyaryo
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-snug">
+                          Direktang ipapadala ang announcement sa mga benepisyaryo at Barangay Staff lamang. <strong className="text-slate-800">Hindi ma-nonotify si MSWDO.</strong>
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Option 2: Direct + Also Notify MSWDO */}
+                    <button
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, notify_mswdo: true }))}
+                      className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition select-none cursor-pointer ${
+                        formData.notify_mswdo
+                          ? 'bg-white border-indigo-600 shadow-md ring-2 ring-indigo-500/20'
+                          : 'bg-white/70 border-slate-200 hover:border-slate-300 text-slate-600'
+                      }`}
+                    >
+                      <div className="mt-0.5 shrink-0">
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          formData.notify_mswdo ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'
+                        }`}>
+                          {formData.notify_mswdo && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
+                          <span>Direct + Notify MSWDO</span>
+                          <span className="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded border border-indigo-200">
+                            + MSWDO Admin
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-snug">
+                          Bukod sa mga benepisyaryo at Barangay Staff, <strong className="text-indigo-900">makakatanggap din ng abiso ang MSWDO</strong> para sa koordinasyon.
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between pt-3 border-t border-slate-200">
                 <div className="flex items-center gap-4">
                   <label className="text-xs font-bold text-slate-700">Action Status:</label>
@@ -1165,7 +1457,7 @@ export default function AnnouncementManagementPage() {
                       onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                       className="text-dswd-blue focus:ring-blue-500"
                     />
-                    Publish & Notify Beneficiaries + Staff
+                    Publish & Notify
                   </label>
                   <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
                     <input
@@ -1198,7 +1490,11 @@ export default function AnnouncementManagementPage() {
                     ) : (
                       <Send className="w-4 h-4" />
                     )}
-                    {editingAnnouncement ? 'Update Announcement' : 'Publish Announcement'}
+                    {editingAnnouncement
+                      ? 'Update Announcement'
+                      : (formData.status === 'published'
+                          ? (formData.notify_mswdo ? 'Publish & Notify (+ MSWDO)' : 'Publish & Notify Direct')
+                          : 'Save Draft')}
                   </button>
                 </div>
               </div>

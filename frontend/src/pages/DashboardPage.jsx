@@ -1163,7 +1163,7 @@ export default function DashboardPage() {
       )}
 
       {/* ADMIN DETAIL MODAL FOR REVIEW */}
-      {selectedApp && user?.role === 'admin' && (
+      {selectedApp && ['admin','mswdo_admin'].includes(user?.role) && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             

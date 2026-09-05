@@ -14,6 +14,8 @@ const {
   AuditLog,
   sequelize,
 } = require('../db');
+const { isMswdoRole } = require('../utils/roles');
+const { calculateRetroForBeneficiary, calculateRetroPreview } = require('../utils/retroCalculator');
 
 const router = express.Router();
 router.use(authenticate);
@@ -22,7 +24,7 @@ router.use(authenticate);
 const restrictToAssignedBarangay = async (req, res, next) => {
   console.log('[RESTRICT_BARANGAY] Checking access for user:', req.user.role, req.user.id);
   
-  if (req.user.role === 'admin') {
+  if (['admin','mswdo_admin'].includes(req.user.role)) {
     console.log('[RESTRICT_BARANGAY] Admin - access granted');
     return next(); // Admins have full access
   }
@@ -105,8 +107,15 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
     }
 
     // Apply barangay filter if provided (admin only)
-    if (req.query.barangay_id && req.query.barangay_id !== 'all' && req.user.role === 'admin') {
+    if (req.query.barangay_id && req.query.barangay_id !== 'all' && ['admin','mswdo_admin'].includes(req.user.role)) {
       where.barangay_id = parseInt(req.query.barangay_id);
+    }
+
+    // MSWDO: restrict to Senior Citizens, PWD, and 4Ps program distributions
+    if (isMswdoRole(req.user.role)) {
+      where.program_id = {
+        [Op.in]: sequelize.literal(`(SELECT id FROM benefit_programs WHERE eligibility_category LIKE '%Senior%' OR eligibility_category LIKE '%PWD%' OR eligibility_category LIKE '%Disabilit%' OR eligibility_category LIKE '%4Ps%' OR eligibility_category LIKE '%Pantawid%')`)
+      };
     }
 
     const events = await DistributionEvent.findAll({
@@ -294,7 +303,8 @@ router.get('/events/:id/count-eligible', authorize('admin', 'staff', 'barangay')
     const eligibleCount = enrollments.length;
     const amountPerBeneficiary = parseFloat(event.amount_per_beneficiary);
     const totalRequired = amountPerBeneficiary * eligibleCount;
-    const availableBudget = parseFloat(event.budget);
+    const rawBudget = parseFloat(event.budget || 0);
+    const availableBudget = rawBudget > 0 ? rawBudget : totalRequired;
     const budgetSufficient = totalRequired <= availableBudget;
 
     res.json({
@@ -321,15 +331,14 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
     console.log('[CREATE EVENT] Request body:', req.body);
     console.log('[CREATE EVENT] User:', req.user.role, req.user.id);
     
-    // Validate required fields
-    const { title, program_id, barangay_id, distribution_date, budget, amount_per_beneficiary } = req.body;
+    // Validate required fields (budget and venue are now optional; amount_per_beneficiary is manual and required)
+    const { title, program_id, barangay_id, distribution_date, amount_per_beneficiary, budget, venue } = req.body;
     
     const missingFields = [];
     if (!title) missingFields.push('title');
     if (!program_id) missingFields.push('program_id');
     if (!barangay_id) missingFields.push('barangay_id');
     if (!distribution_date) missingFields.push('distribution_date');
-    if (!budget) missingFields.push('budget');
     if (!amount_per_beneficiary) missingFields.push('amount_per_beneficiary');
     
     if (missingFields.length > 0) {
@@ -361,21 +370,18 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
       });
     }
     
-    // Validate numeric fields
-    if (isNaN(parseFloat(budget)) || parseFloat(budget) <= 0) {
-      console.error('[CREATE EVENT] Invalid budget:', budget);
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Budget must be a positive number',
-      });
-    }
-    
+    // Validate numeric field for amount_per_beneficiary
     if (isNaN(parseFloat(amount_per_beneficiary)) || parseFloat(amount_per_beneficiary) <= 0) {
       console.error('[CREATE EVENT] Invalid amount_per_beneficiary:', amount_per_beneficiary);
       return res.status(400).json({ 
         success: false, 
         message: 'Amount per beneficiary must be a positive number',
       });
+    }
+
+    let finalBudget = parseFloat(budget || 0);
+    if (isNaN(finalBudget) || finalBudget < 0) {
+      finalBudget = 0;
     }
     
     // Validate date
@@ -392,6 +398,8 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
     
     const event = await DistributionEvent.create({
       ...req.body,
+      venue: venue && venue.trim() ? venue.trim() : null,
+      budget: finalBudget,
       status: 'draft',
       total_beneficiaries: 0,
       total_released: 0,
@@ -563,7 +571,13 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     const eligibleCount = enrollments.length;
     const amountPerBeneficiary = parseFloat(event.amount_per_beneficiary);
     const totalRequired = amountPerBeneficiary * eligibleCount;
-    const availableBudget = parseFloat(event.budget);
+    let availableBudget = parseFloat(event.budget || 0);
+
+    // If budget was not explicitly set or is 0 (budget field is now removed from form),
+    // automatically set availableBudget to match totalRequired
+    if (availableBudget <= 0) {
+      availableBudget = totalRequired;
+    }
 
     console.log('[PUBLISH EVENT] Budget calculation:', {
       eligibleCount,
@@ -573,41 +587,60 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       sufficient: totalRequired <= availableBudget,
     });
 
-    // STRICT BUDGET VALIDATION
-    if (totalRequired > availableBudget) {
-      console.error('[PUBLISH EVENT] Insufficient budget');
-      await transaction.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Insufficient Budget',
-        error_code: 'INSUFFICIENT_BUDGET',
-        details: {
-          eligible_beneficiaries: eligibleCount,
-          amount_per_beneficiary: amountPerBeneficiary,
-          total_required: totalRequired.toFixed(2),
-          available_budget: availableBudget.toFixed(2),
-          deficit: (totalRequired - availableBudget).toFixed(2),
-          message: `You need ₱${(totalRequired - availableBudget).toLocaleString('en-PH', { minimumFractionDigits: 2 })} more to publish this distribution.`,
-        },
+    // Generate transactions WITH retroactive payment calculation
+    const models = { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay };
+    const transactions = [];
+    let totalRetroAmount = 0;
+
+    for (let i = 0; i < enrollments.length; i++) {
+      const enrollment = enrollments[i];
+      const beneficiaryId = enrollment.Beneficiary.id;
+
+      // Calculate retroactive payment for this beneficiary
+      const retro = await calculateRetroForBeneficiary({
+        beneficiaryId,
+        programId: event.program_id,
+        currentEventId: event.id,
+        amountPerBeneficiary: parseFloat(event.amount_per_beneficiary),
+        models,
+        transaction,
+      });
+
+      totalRetroAmount += retro.retro_amount;
+
+      transactions.push({
+        transaction_number: generateTransactionNumber(event.id, i + 1),
+        distribution_event_id: event.id,
+        beneficiary_id: beneficiaryId,
+        amount: event.amount_per_beneficiary,
+        retro_amount: retro.retro_amount,
+        retro_periods: retro.retro_periods,
+        retro_details: retro.retro_details.length > 0 ? JSON.stringify(retro.retro_details) : null,
+        status: 'pending',
       });
     }
 
-    // Generate unique transaction numbers for each beneficiary
-    const transactions = enrollments.map((enrollment, index) => ({
-      transaction_number: generateTransactionNumber(event.id, index + 1),
-      distribution_event_id: event.id,
-      beneficiary_id: enrollment.Beneficiary.id,
-      amount: event.amount_per_beneficiary,
-      status: 'pending',
-    }));
+    // Calculate total including retro amounts
+    const totalWithRetro = totalRequired + totalRetroAmount;
+    // Auto-set availableBudget to match totalWithRetro so manual budget constraint is not required
+    if (parseFloat(event.budget || 0) <= 0 || availableBudget < totalWithRetro) {
+      availableBudget = totalWithRetro;
+    }
+
+    console.log('[PUBLISH EVENT] Retro summary:', {
+      totalRetroAmount,
+      beneficiariesWithRetro: transactions.filter(t => t.retro_periods > 0).length,
+      totalWithRetro,
+    });
 
     // Create distribution batch
     await DistributionTransaction.bulkCreate(transactions, { transaction });
 
-    // Update event status
+    // Update event status and save exact total budget
     await event.update({
       status: 'scheduled',
       total_beneficiaries: eligibleCount,
+      budget: totalWithRetro,
       published_at: new Date(),
     }, { transaction });
 
@@ -626,12 +659,20 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     }
 
     // ── Notify all eligible beneficiaries ──
-    const notificationPromises = enrollments.map(async (enrollment) => {
+    const notificationPromises = enrollments.map(async (enrollment, idx) => {
       if (enrollment.Beneficiary.user_id) {
+        const txn = transactions[idx];
+        const regularAmt = parseFloat(event.amount_per_beneficiary);
+        const retroAmt = txn ? parseFloat(txn.retro_amount || 0) : 0;
+        const totalPayout = regularAmt + retroAmt;
+        const retroMsg = (txn && txn.retro_periods > 0)
+          ? ` (Includes ₱${retroAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} retroactive pay for ${txn.retro_periods} missed period(s))`
+          : '';
+
         return Notification.create({
           user_id: enrollment.Beneficiary.user_id,
           title: 'Upcoming Benefit Distribution',
-          message: `You are scheduled to receive ₱${parseFloat(event.amount_per_beneficiary).toLocaleString('en-PH', { minimumFractionDigits: 2 })} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`,
+          message: `You are scheduled to receive ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`,
           type: 'distribution',
           reference_id: event.id,
           reference_type: 'DistributionEvent',
@@ -645,14 +686,16 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     // Create audit log
     await AuditLog.create({
       user_id: req.user.id,
-      action: `Published distribution event: ${event.title} with ${eligibleCount} beneficiaries (₱${totalRequired.toLocaleString('en-PH', { minimumFractionDigits: 2 })} total)`,
+      action: `Published distribution event: ${event.title} with ${eligibleCount} beneficiaries (₱${totalWithRetro.toLocaleString('en-PH', { minimumFractionDigits: 2 })} total with retro)`,
       module: 'distributions',
       details: JSON.stringify({
         event_id: event.id,
         program_id: event.program_id,
         barangay_id: event.barangay_id,
         eligible_count: eligibleCount,
-        total_budget: totalRequired,
+        regular_total: totalRequired,
+        retro_total: totalRetroAmount,
+        total_budget: totalWithRetro,
       }),
     }, { transaction });
 
@@ -682,7 +725,10 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       message: `Distribution event published successfully! ${eligibleCount} beneficiaries will be notified.`,
       summary: {
         total_beneficiaries: eligibleCount,
-        total_budget_allocated: totalRequired.toFixed(2),
+        total_budget_allocated: totalWithRetro.toFixed(2),
+        regular_budget: totalRequired.toFixed(2),
+        retro_budget: totalRetroAmount.toFixed(2),
+        beneficiaries_with_retro: transactions.filter(t => t.retro_periods > 0).length,
         amount_per_beneficiary: amountPerBeneficiary.toFixed(2),
       }
     });
@@ -690,6 +736,128 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     console.error('[PUBLISH EVENT] Error:', error.message);
     console.error('[PUBLISH EVENT] Error stack:', error.stack);
     await transaction.rollback();
+    next(error);
+  }
+});
+
+// ── GET /events/:id/retro-preview ── Preview retroactive payment calculation
+router.get('/events/:id/retro-preview', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+  try {
+    const event = await DistributionEvent.findByPk(req.params.id, {
+      include: [
+        { model: BenefitProgram, as: 'Program' },
+        { model: Barangay },
+      ],
+    });
+
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    }
+
+    const models = { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay };
+
+    // If transactions already exist for this event (already published)
+    const existingTxns = await DistributionTransaction.findAll({
+      where: { distribution_event_id: event.id },
+      include: [
+        {
+          model: Beneficiary,
+          attributes: ['id', 'first_name', 'last_name', 'RFID_number', 'beneficiary_id_code'],
+        },
+      ],
+    });
+
+    if (existingTxns.length > 0) {
+      let totalRetroAmount = 0;
+      let beneficiariesWithRetro = 0;
+      const retroBreakdown = [];
+
+      for (const txn of existingTxns) {
+        const retroAmt = parseFloat(txn.retro_amount || 0);
+        if (txn.retro_periods > 0 || retroAmt > 0) {
+          beneficiariesWithRetro += 1;
+          totalRetroAmount += retroAmt;
+          retroBreakdown.push({
+            beneficiary_id: txn.beneficiary_id,
+            beneficiary_name: txn.Beneficiary
+              ? `${txn.Beneficiary.first_name} ${txn.Beneficiary.last_name}`
+              : `Beneficiary #${txn.beneficiary_id}`,
+            beneficiary_code: txn.Beneficiary?.beneficiary_id_code,
+            retro_amount: retroAmt,
+            retro_periods: txn.retro_periods || 0,
+            retro_details: txn.retro_details ? (typeof txn.retro_details === 'string' ? JSON.parse(txn.retro_details) : txn.retro_details) : [],
+            regular_amount: parseFloat(txn.amount),
+            total_payout: parseFloat(txn.amount) + retroAmt,
+          });
+        }
+      }
+
+      const regularTotal = existingTxns.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+      const grandTotal = regularTotal + totalRetroAmount;
+      const availableBudget = parseFloat(event.budget || 0);
+
+      return res.json({
+        success: true,
+        data: {
+          is_published: true,
+          total_beneficiaries: existingTxns.length,
+          beneficiaries_with_retro: beneficiariesWithRetro,
+          beneficiaries_without_retro: existingTxns.length - beneficiariesWithRetro,
+          regular_total: Math.round(regularTotal * 100) / 100,
+          retro_total: Math.round(totalRetroAmount * 100) / 100,
+          grand_total: Math.round(grandTotal * 100) / 100,
+          available_budget: availableBudget,
+          budget_sufficient: grandTotal <= availableBudget,
+          deficit: grandTotal > availableBudget ? Math.round((grandTotal - availableBudget) * 100) / 100 : 0,
+          amount_per_beneficiary: parseFloat(event.amount_per_beneficiary),
+          retro_breakdown: retroBreakdown,
+        },
+      });
+    }
+
+    // Event is still in draft: calculate dynamically based on eligible enrollments
+    const program = event.Program || (await BenefitProgram.findByPk(event.program_id));
+    const enrollmentWhere = {
+      program_id: event.program_id,
+      status: 'active',
+    };
+
+    const beneficiaryWhere = {
+      barangay_id: event.barangay_id,
+      status: 'Approved',
+    };
+
+    if (event.target_category) {
+      beneficiaryWhere.category = { [Op.like]: `%${event.target_category}%` };
+    } else if (program?.eligibility_category) {
+      beneficiaryWhere.category = { [Op.like]: `%${program.eligibility_category}%` };
+    }
+
+    const enrollments = await Enrollment.findAll({
+      where: enrollmentWhere,
+      include: [{ model: Beneficiary, where: beneficiaryWhere }],
+    });
+
+    const preview = await calculateRetroPreview({
+      eventId: event.id,
+      programId: event.program_id,
+      enrollments,
+      amountPerBeneficiary: parseFloat(event.amount_per_beneficiary),
+      models,
+    });
+
+    const setBudget = parseFloat(event.budget || 0);
+    const availableBudget = setBudget > 0 ? setBudget : preview.grand_total;
+    preview.available_budget = availableBudget;
+    preview.budget_sufficient = preview.grand_total <= availableBudget;
+    preview.deficit = preview.grand_total > availableBudget ? Math.round((preview.grand_total - availableBudget) * 100) / 100 : 0;
+    preview.is_published = false;
+
+    res.json({
+      success: true,
+      data: preview,
+    });
+  } catch (error) {
     next(error);
   }
 });
@@ -1014,6 +1182,13 @@ router.post('/events/:id/transactions/:txnId/verify', authorize('admin', 'staff'
         program_name: txn.Event?.Program?.name,
         amount: parseFloat(txn.amount),
         formatted_amount: `₱${parseFloat(txn.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+        regular_amount: parseFloat(txn.amount),
+        retro_amount: parseFloat(txn.retro_amount || 0),
+        retro_periods: txn.retro_periods || 0,
+        retro_details: txn.retro_details ? (typeof txn.retro_details === 'string' ? JSON.parse(txn.retro_details) : txn.retro_details) : [],
+        total_payout: parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0),
+        formatted_total_payout: `₱${(parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+        formatted_retro_amount: `₱${parseFloat(txn.retro_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
         barangay: txn.Beneficiary.Barangay?.barangay_name,
         status: txn.status,
         category: txn.Beneficiary.category,
@@ -1118,16 +1293,21 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
 
     console.log('[RELEASE BENEFIT] Updating event counters...');
 
-    // Update event counters
+    // Update event counters (including retro amount)
     const event = txn.Event;
     const releasedCount = await DistributionTransaction.count({
       where: { distribution_event_id: event.id, status: 'released' },
       transaction: dbTransaction,
     });
-    const releasedAmount = await DistributionTransaction.sum('amount', {
+    const regularSum = await DistributionTransaction.sum('amount', {
       where: { distribution_event_id: event.id, status: 'released' },
       transaction: dbTransaction,
     }) || 0;
+    const retroSum = await DistributionTransaction.sum('retro_amount', {
+      where: { distribution_event_id: event.id, status: 'released' },
+      transaction: dbTransaction,
+    }) || 0;
+    const releasedAmount = parseFloat(regularSum) + parseFloat(retroSum);
 
     await event.update({
       total_released: releasedCount,
@@ -1137,7 +1317,38 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
     console.log('[RELEASE BENEFIT] Event counters updated:', {
       total_released: releasedCount,
       total_amount_released: releasedAmount,
+      regular_sum: regularSum,
+      retro_sum: retroSum,
     });
+
+    // Cancel previous unclaimed transactions covered by this retroactive payment
+    if (txn.retro_details) {
+      try {
+        const retroItems = typeof txn.retro_details === 'string' ? JSON.parse(txn.retro_details) : txn.retro_details;
+        const originalTxnIds = retroItems
+          .filter(item => item.type === 'unclaimed' && item.original_transaction_id)
+          .map(item => item.original_transaction_id);
+
+        if (originalTxnIds.length > 0) {
+          console.log('[RELEASE BENEFIT] Cancelling old unclaimed transactions covered by retro:', originalTxnIds);
+          await DistributionTransaction.update(
+            {
+              status: 'cancelled',
+              notes: `Cancelled: Retroactive payment disbursed under transaction ${txn.transaction_number} (Event #${event.id})`,
+            },
+            {
+              where: {
+                id: { [Op.in]: originalTxnIds },
+                status: 'pending',
+              },
+              transaction: dbTransaction,
+            }
+          );
+        }
+      } catch (e) {
+        console.error('[RELEASE BENEFIT] Error parsing retro_details for cancellation:', e);
+      }
+    }
 
     // AUTO-COMPLETE: If all beneficiaries have received their benefits, mark event as completed
     const totalBeneficiaries = event.total_beneficiaries;
@@ -1196,13 +1407,21 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
       }
     }
 
+    // Total payout amount (regular + retro)
+    const regularPayout = parseFloat(txn.amount);
+    const retroPayout = parseFloat(txn.retro_amount || 0);
+    const totalPayout = regularPayout + retroPayout;
+    const retroText = txn.retro_periods > 0
+      ? ` (Includes ₱${retroPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })} retroactive pay for ${txn.retro_periods} missed period(s))`
+      : '';
+
     // Notify beneficiary
     const beneficiary = txn.Beneficiary;
     if (beneficiary?.user_id) {
       await Notification.create({
         user_id: beneficiary.user_id,
         title: 'Benefit Successfully Released',
-        message: `Your benefit of ₱${parseFloat(txn.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })} has been successfully released. Transaction Number: ${txn.transaction_number}. You can now view and download your receipt.`,
+        message: `Your benefit of ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroText} has been successfully released. Transaction Number: ${txn.transaction_number}. You can now view and download your receipt.`,
         type: 'distribution',
         reference_id: txn.id,
         reference_type: 'DistributionTransaction',
@@ -1213,12 +1432,15 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
     // Create audit log
     await AuditLog.create({
       user_id: req.user.id,
-      action: `Released benefit ₱${parseFloat(txn.amount).toFixed(2)} to ${beneficiary.first_name} ${beneficiary.last_name} (TXN: ${txn.transaction_number})`,
+      action: `Released benefit ₱${totalPayout.toFixed(2)} (Regular: ₱${regularPayout.toFixed(2)}, Retro: ₱${retroPayout.toFixed(2)}) to ${beneficiary.first_name} ${beneficiary.last_name} (TXN: ${txn.transaction_number})`,
       module: 'distributions',
       details: JSON.stringify({
         transaction_id: txn.id,
         beneficiary_id: beneficiary.id,
-        amount: parseFloat(txn.amount),
+        amount: regularPayout,
+        retro_amount: retroPayout,
+        total_payout: totalPayout,
+        retro_periods: txn.retro_periods,
         verification_method,
         event_id: event.id,
       }),
@@ -1318,9 +1540,17 @@ router.get('/events/:id/receipt/:txnId', authorize('admin', 'staff', 'barangay',
         venue: txn.Event?.venue,
         
         // Amount Details
-        amount: parseFloat(txn.amount),
-        formatted_amount: `₱${parseFloat(txn.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
-        amount_in_words: numberToWords(parseFloat(txn.amount)),
+        regular_amount: parseFloat(txn.amount),
+        retro_amount: parseFloat(txn.retro_amount || 0),
+        retro_periods: txn.retro_periods || 0,
+        retro_details: txn.retro_details ? (typeof txn.retro_details === 'string' ? JSON.parse(txn.retro_details) : txn.retro_details) : [],
+        total_amount: parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0),
+        formatted_regular_amount: `₱${parseFloat(txn.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+        formatted_retro_amount: `₱${parseFloat(txn.retro_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+        formatted_total_amount: `₱${(parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+        amount: parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0),
+        formatted_amount: `₱${(parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+        amount_in_words: numberToWords(parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0)),
         
         // Staff Details
         released_by: txn.ReleasedByStaff ? `${txn.ReleasedByStaff.first_name} ${txn.ReleasedByStaff.last_name}` : 'N/A',
@@ -1348,7 +1578,7 @@ function numberToWords(num) {
 
   if (num === 0) return 'Zero Pesos';
 
-  const intPart = Math.floor(num);
+  let intPart = Math.floor(num);
   const decPart = Math.round((num - intPart) * 100);
 
   let words = '';
@@ -1488,7 +1718,7 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
           total_amount_pending: parseFloat(transactionStats.total_amount_pending).toFixed(2),
           release_percentage: parseFloat(releasePercentage),
         },
-        scope: req.user.role === 'admin' ? 'all_barangays' : 'assigned_barangay',
+        scope: ['admin','mswdo_admin'].includes(req.user.role) ? 'all_barangays' : 'assigned_barangay',
         generated_at: new Date().toISOString(),
       },
     });
@@ -1526,7 +1756,7 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
     }
 
     // STRICT: Staff can only verify beneficiaries in their assigned barangay
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.role !== 'admin') {
+    if ((req.user.role === 'staff' || req.user.role === 'barangay') && !['admin','mswdo_admin'].includes(req.user.role)) {
       if (req.user.barangay_id !== event.barangay_id) {
         return res.status(403).json({
           success: false,
@@ -1625,6 +1855,13 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
           transaction_number: txn.transaction_number,
           amount: parseFloat(txn.amount),
           formatted_amount: `₱${parseFloat(txn.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+          regular_amount: parseFloat(txn.amount),
+          retro_amount: parseFloat(txn.retro_amount || 0),
+          retro_periods: txn.retro_periods || 0,
+          retro_details: txn.retro_details ? (typeof txn.retro_details === 'string' ? JSON.parse(txn.retro_details) : txn.retro_details) : [],
+          total_payout: parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0),
+          formatted_total_payout: `₱${(parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+          formatted_retro_amount: `₱${parseFloat(txn.retro_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
           status: txn.status,
           released_at: txn.released_at,
           verification_method: txn.verification_method,

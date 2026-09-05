@@ -20,6 +20,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 'pending',
       },
+      eligibility_date: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+        comment: 'Date when beneficiary became eligible for this program. Defaults to enrollment_date if not set.',
+      },
     },
     {
       tableName: 'enrollments',

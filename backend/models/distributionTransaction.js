@@ -64,6 +64,23 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+      retro_amount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0,
+        comment: 'Retroactive payment amount added on top of regular amount',
+      },
+      retro_periods: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        comment: 'Number of missed periods being compensated',
+      },
+      retro_details: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'JSON breakdown of retro periods covered',
+      },
     },
     {
       tableName: 'distribution_transactions',

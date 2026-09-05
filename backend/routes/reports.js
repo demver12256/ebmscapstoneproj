@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { sequelize, Beneficiary, BenefitProgram, DistributionEvent, DistributionTransaction, Barangay, Enrollment } = require('../db');
+const { isMswdoRole, MSWDO_CATEGORY_FILTER, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory } = require('../utils/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -18,6 +19,10 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     if (isBarangayScoped) {
       beneficiaryWhere.barangay_id = barangayId;
     }
+    // MSWDO focuses on Senior Citizens and PWD only
+    if (isMswdoRole(req.user.role)) {
+      beneficiaryWhere[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+    }
 
     // ── Core counts ──
     const totalBeneficiaries = await Beneficiary.count({
@@ -28,6 +33,9 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     if (isBarangayScoped && barangayId) {
       programWhere.barangay_id = barangayId;
     }
+    if (isMswdoRole(req.user.role)) {
+      programWhere[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
+    }
 
     const totalPrograms = await BenefitProgram.count({
       where: programWhere,
@@ -37,6 +45,11 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     const eventWhere = {};
     if (isBarangayScoped && barangayId) {
       eventWhere.barangay_id = barangayId;
+    }
+    if (isMswdoRole(req.user.role)) {
+      eventWhere.program_id = {
+        [Op.in]: sequelize.literal(`(SELECT id FROM benefit_programs WHERE eligibility_category LIKE '%Senior%' OR eligibility_category LIKE '%PWD%' OR eligibility_category LIKE '%Disabilit%' OR eligibility_category LIKE '%4Ps%' OR eligibility_category LIKE '%Pantawid%')`)
+      };
     }
 
     const totalDistributionEvents = await DistributionEvent.count({ where: eventWhere });
@@ -64,9 +77,18 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
         [Op.in]: sequelize.literal(`(SELECT id FROM distribution_events WHERE barangay_id = ${sequelize.escape(barangayId)})`)
       };
     }
-    const totalDistributedFunds = await DistributionTransaction.sum('amount', {
+    if (isMswdoRole(req.user.role)) {
+      txnWhere.distribution_event_id = {
+        [Op.in]: sequelize.literal(`(SELECT id FROM distribution_events WHERE program_id IN (SELECT id FROM benefit_programs WHERE eligibility_category LIKE '%Senior%' OR eligibility_category LIKE '%PWD%' OR eligibility_category LIKE '%Disabilit%' OR eligibility_category LIKE '%4Ps%' OR eligibility_category LIKE '%Pantawid%'))`)
+      };
+    }
+    const regularFunds = await DistributionTransaction.sum('amount', {
       where: { ...txnWhere, status: 'released' },
     }) || 0;
+    const retroFunds = await DistributionTransaction.sum('retro_amount', {
+      where: { ...txnWhere, status: 'released' },
+    }) || 0;
+    const totalDistributedFunds = parseFloat(regularFunds) + parseFloat(retroFunds);
 
     // ── Category counts ──
     const fourPsCount = await Beneficiary.count({
@@ -111,15 +133,24 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     });
 
     // ── Enrollment count ──
+    let enrollWhere = { status: 'active' };
+    if (isBarangayScoped && barangayId) {
+      enrollWhere.beneficiary_id = {
+        [Op.in]: sequelize.literal(`(SELECT id FROM beneficiaries WHERE barangay_id = ${sequelize.escape(barangayId)})`)
+      };
+    }
+    if (isMswdoRole(req.user.role)) {
+      const mswdoSub = `(SELECT id FROM beneficiaries WHERE category LIKE '%Senior%' OR category LIKE '%PWD%' OR category LIKE '%Disabilit%' OR category LIKE '%4Ps%' OR category LIKE '%Pantawid%')`;
+      if (enrollWhere.beneficiary_id) {
+        enrollWhere.beneficiary_id = {
+          [Op.in]: sequelize.literal(`(SELECT id FROM beneficiaries WHERE barangay_id = ${sequelize.escape(barangayId)} AND (category LIKE '%Senior%' OR category LIKE '%PWD%' OR category LIKE '%Disabilit%' OR category LIKE '%4Ps%' OR category LIKE '%Pantawid%'))`)
+        };
+      } else {
+        enrollWhere.beneficiary_id = { [Op.in]: sequelize.literal(mswdoSub) };
+      }
+    }
     const activeBeneficiaries = await Enrollment.count({
-      where: {
-        status: 'active',
-        ...(isBarangayScoped && barangayId && {
-          beneficiary_id: {
-            [Op.in]: sequelize.literal(`(SELECT id FROM beneficiaries WHERE barangay_id = ${sequelize.escape(barangayId)})`)
-          },
-        }),
-      },
+      where: enrollWhere,
     });
 
     // ── Barangay distribution counts ──
@@ -210,6 +241,7 @@ router.get('/monthly-distribution', authorize('admin', 'staff', 'barangay'), asy
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
     const barangayId = req.user.barangay_id;
+    const isMswdo = isMswdoRole(req.user.role);
 
     const query = `
       SELECT 
@@ -217,9 +249,11 @@ router.get('/monthly-distribution', authorize('admin', 'staff', 'barangay'), asy
         SUM(dt.amount) as total
       FROM distribution_transactions dt
       INNER JOIN distribution_events de ON dt.distribution_event_id = de.id
+      ${isMswdo ? `INNER JOIN benefit_programs bp ON de.program_id = bp.id` : ''}
       WHERE dt.status = 'released'
         AND dt.released_at IS NOT NULL
         ${isBarangayScoped ? `AND de.barangay_id = ${sequelize.escape(barangayId)}` : ''}
+        ${isMswdo ? `AND (bp.eligibility_category LIKE '%Senior%' OR bp.eligibility_category LIKE '%PWD%' OR bp.eligibility_category LIKE '%Disabilit%' OR bp.eligibility_category LIKE '%4Ps%' OR bp.eligibility_category LIKE '%Pantawid%')` : ''}
       GROUP BY DATE_FORMAT(dt.released_at, '%Y-%m')
       ORDER BY month ASC
     `;
@@ -253,6 +287,9 @@ router.get('/beneficiaries-by-program', authorize('admin', 'staff', 'barangay'),
     const programWhere = {};
     if (isBarangayScoped && barangayId) {
       programWhere.barangay_id = barangayId;
+    }
+    if (isMswdoRole(req.user.role)) {
+      programWhere[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
     }
 
     const programs = await BenefitProgram.findAll({
@@ -320,6 +357,19 @@ router.get('/recent-distributions', authorize('admin', 'staff', 'barangay'), asy
       eventWhere.distribution_date = {
         [Op.lte]: end_date
       };
+    }
+
+    // MSWDO: restrict to Senior/PWD/4Ps program distributions only
+    if (isMswdoRole(req.user.role)) {
+      const mswdoProgLiteral = sequelize.literal(`(SELECT id FROM benefit_programs WHERE eligibility_category LIKE '%Senior%' OR eligibility_category LIKE '%PWD%' OR eligibility_category LIKE '%Disabilit%' OR eligibility_category LIKE '%4Ps%' OR eligibility_category LIKE '%Pantawid%')`);
+      if (eventWhere.program_id) {
+        const prog = await BenefitProgram.findByPk(eventWhere.program_id);
+        if (!prog || !isMswdoCategory(prog.eligibility_category)) {
+          return res.json({ success: true, data: [], pagination: { total: 0, page: 1, limit: parseInt(limit), totalPages: 0 } });
+        }
+      } else {
+        eventWhere.program_id = { [Op.in]: mswdoProgLiteral };
+      }
     }
 
     // Calculate pagination
@@ -418,6 +468,9 @@ router.get('/distribution-status', authorize('admin', 'staff', 'barangay'), asyn
     if (isBarangayScoped && barangayId) {
       eventWhere.barangay_id = barangayId;
     }
+    if (isMswdoRole(req.user.role)) {
+      eventWhere.program_id = { [Op.in]: sequelize.literal(`(SELECT id FROM benefit_programs WHERE eligibility_category LIKE '%Senior%' OR eligibility_category LIKE '%PWD%' OR eligibility_category LIKE '%Disabilit%' OR eligibility_category LIKE '%4Ps%' OR eligibility_category LIKE '%Pantawid%')`) };
+    }
 
     const completed = await DistributionEvent.count({ where: { ...eventWhere, status: 'completed' } });
     const ongoing = await DistributionEvent.count({ where: { ...eventWhere, status: 'ongoing' } });
@@ -442,15 +495,18 @@ router.get('/monthly-aid', authorize('admin', 'staff', 'barangay'), async (req, 
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
     const barangayId = req.user.barangay_id;
+    const isMswdo = isMswdoRole(req.user.role);
 
     const query = `
       SELECT 
         DATE_FORMAT(de.distribution_date, '%b') as month,
         SUM(de.total_amount_released) as total
       FROM distribution_events de
+      ${isMswdo ? `INNER JOIN benefit_programs bp ON de.program_id = bp.id` : ''}
       WHERE de.status IN ('completed', 'ongoing')
         AND YEAR(de.distribution_date) = YEAR(CURDATE())
         ${isBarangayScoped ? `AND de.barangay_id = ${sequelize.escape(barangayId)}` : ''}
+        ${isMswdo ? `AND (bp.eligibility_category LIKE '%Senior%' OR bp.eligibility_category LIKE '%PWD%' OR bp.eligibility_category LIKE '%Disabilit%' OR bp.eligibility_category LIKE '%4Ps%' OR bp.eligibility_category LIKE '%Pantawid%')` : ''}
       GROUP BY DATE_FORMAT(de.distribution_date, '%Y-%m'), DATE_FORMAT(de.distribution_date, '%b')
       ORDER BY DATE_FORMAT(de.distribution_date, '%Y-%m') ASC
     `;
@@ -481,7 +537,7 @@ function toCSV(headers, rows) {
   return [headerLine, ...dataLines].join('\n');
 }
 
-// Export Beneficiary List as CSV
+// Export Beneficiary List as CSV — MSWDO limited to Senior/PWD
 router.get('/export/beneficiaries', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
@@ -491,7 +547,16 @@ router.get('/export/beneficiaries', authorize('admin', 'staff', 'barangay'), asy
     const where = { status: 'Approved' };
     if (isBarangayScoped && barangayId) where.barangay_id = barangayId;
     else if (qBarangay) where.barangay_id = qBarangay;
-    if (category) where.category = category;
+    if (isMswdoRole(req.user.role)) {
+      // Enforce Senior/PWD/4Ps even if category query provided
+      const cat = category || '';
+      const lower = String(cat).toLowerCase();
+      if (!cat || (!lower.includes('senior') && !lower.includes('pwd') && !lower.includes('disabilit') && !lower.includes('4ps') && !lower.includes('pantawid'))) {
+        where[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+      } else {
+        where.category = category;
+      }
+    } else if (category) where.category = category;
 
     const beneficiaries = await Beneficiary.findAll({
       where,
@@ -575,7 +640,7 @@ router.get('/export/distributions', authorize('admin', 'staff', 'barangay'), asy
   }
 });
 
-// Export Program Summary as CSV
+// Export Program Summary as CSV — MSWDO limited to Senior/PWD programs
 router.get('/export/programs', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
@@ -583,6 +648,9 @@ router.get('/export/programs', authorize('admin', 'staff', 'barangay'), async (r
 
     const programWhere = {};
     if (isBarangayScoped && barangayId) programWhere.barangay_id = barangayId;
+    if (isMswdoRole(req.user.role)) {
+      programWhere[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
+    }
 
     const programs = await BenefitProgram.findAll({
       where: { ...programWhere, status: { [Op.ne]: 'archived' } },
@@ -611,7 +679,7 @@ router.get('/export/programs', authorize('admin', 'staff', 'barangay'), async (r
   }
 });
 
-// Export Enrollment Report as CSV
+// Export Enrollment Report as CSV — MSWDO limited to Senior/PWD
 router.get('/export/enrollments', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
@@ -621,7 +689,18 @@ router.get('/export/enrollments', authorize('admin', 'staff', 'barangay'), async
     const enrollWhere = { status: 'active' };
     const benWhere = { status: 'Approved' };
     if (isBarangayScoped && barangayId) benWhere.barangay_id = barangayId;
-    if (program_id) enrollWhere.program_id = program_id;
+    if (isMswdoRole(req.user.role)) {
+      benWhere[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+    }
+    if (program_id) {
+      if (isMswdoRole(req.user.role)) {
+        const prog = await BenefitProgram.findByPk(program_id);
+        if (!prog || !isMswdoCategory(prog.eligibility_category)) {
+          return res.setHeader('Content-Type', 'text/csv').setHeader('Content-Disposition', 'attachment; filename="enrollment-report.csv"').send('Enrollment ID,Beneficiary Name,Category,Barangay,Program,Status,Date Enrolled\n');
+        }
+      }
+      enrollWhere.program_id = program_id;
+    }
 
     const enrollments = await Enrollment.findAll({
       where: enrollWhere,
@@ -654,7 +733,7 @@ router.get('/export/enrollments', authorize('admin', 'staff', 'barangay'), async
 
 // ── Table JSON Endpoints ──
 
-// Beneficiaries table JSON
+// Beneficiaries table JSON — MSWDO limited to Senior/PWD
 router.get('/table/beneficiaries', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
@@ -664,12 +743,22 @@ router.get('/table/beneficiaries', authorize('admin', 'staff', 'barangay'), asyn
     const where = { status: 'Approved' };
     if (isBarangayScoped && barangayId) where.barangay_id = barangayId;
     else if (qBarangay) where.barangay_id = qBarangay;
+    if (isMswdoRole(req.user.role)) {
+      where[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+    }
 
     // Filter by program if specified
     if (program_id) {
       where.id = {
         [Op.in]: sequelize.literal(`(SELECT beneficiary_id FROM enrollments WHERE program_id = ${sequelize.escape(program_id)} AND status = 'active')`)
       };
+      // For MSWDO, ensure program is Senior/PWD eligible — if not, return empty
+      if (isMswdoRole(req.user.role)) {
+        const prog = await BenefitProgram.findByPk(program_id);
+        if (prog && !isMswdoCategory(prog.eligibility_category)) {
+          return res.json({ success: true, data: [], pagination: { total: 0, page: 1, limit: parseInt(limit), totalPages: 0 } });
+        }
+      }
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -706,7 +795,7 @@ router.get('/table/beneficiaries', authorize('admin', 'staff', 'barangay'), asyn
   }
 });
 
-// Programs table JSON
+// Programs table JSON — MSWDO limited to Senior/PWD programs
 router.get('/table/programs', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
@@ -716,6 +805,9 @@ router.get('/table/programs', authorize('admin', 'staff', 'barangay'), async (re
     const programWhere = { status: { [Op.ne]: 'archived' } };
     if (isBarangayScoped && barangayId) programWhere.barangay_id = barangayId;
     else if (qBarangay) programWhere.barangay_id = qBarangay;
+    if (isMswdoRole(req.user.role)) {
+      programWhere[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
+    }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const { count, rows } = await BenefitProgram.findAndCountAll({
@@ -753,7 +845,7 @@ router.get('/table/programs', authorize('admin', 'staff', 'barangay'), async (re
   }
 });
 
-// Enrollments table JSON
+// Enrollments table JSON — MSWDO limited to Senior/PWD
 router.get('/table/enrollments', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
@@ -761,11 +853,24 @@ router.get('/table/enrollments', authorize('admin', 'staff', 'barangay'), async 
     const { program_id, barangay_id: qBarangay, page = 1, limit = 10 } = req.query;
 
     const enrollWhere = { status: 'active' };
-    if (program_id) enrollWhere.program_id = program_id;
+    if (program_id) {
+      if (isMswdoRole(req.user.role)) {
+        const prog = await BenefitProgram.findByPk(program_id);
+        if (!prog || !isMswdoCategory(prog.eligibility_category)) {
+          return res.json({ success: true, data: [], pagination: { total: 0, page: 1, limit: parseInt(limit), totalPages: 0 } });
+        }
+      }
+      enrollWhere.program_id = program_id;
+    } else if (isMswdoRole(req.user.role)) {
+      enrollWhere.program_id = { [Op.in]: sequelize.literal(`(SELECT id FROM benefit_programs WHERE eligibility_category LIKE '%Senior%' OR eligibility_category LIKE '%PWD%' OR eligibility_category LIKE '%Disabilit%' OR eligibility_category LIKE '%4Ps%' OR eligibility_category LIKE '%Pantawid%')`) };
+    }
 
     const benWhere = { status: 'Approved' };
     if (isBarangayScoped && barangayId) benWhere.barangay_id = barangayId;
     else if (qBarangay) benWhere.barangay_id = qBarangay;
+    if (isMswdoRole(req.user.role)) {
+      benWhere[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+    }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const { count, rows } = await Enrollment.findAndCountAll({

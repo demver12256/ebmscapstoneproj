@@ -12,22 +12,49 @@ const CATEGORIES = [
   'Persons with Disabilities (PWD)'
 ];
 
-// Program descriptions mapping
+// Program descriptions mapping (Updated 2026 DSWD & MSWDO Standards)
 const PROGRAM_DESCRIPTIONS = {
   '4Ps Household Beneficiaries': {
+    '4Ps Health & Nutrition Cash Grant': 'Monthly health subsidy (₱750/month) for qualified 4Ps households compliant with regular health center check-ups and child immunization.',
+    '4Ps First 1,000 Days (F1KD) Nutrition Subsidy': 'Conditional cash grant for pregnant women, nursing mothers, and children aged 0-24 months to address malnutrition and stunting.',
+    '4Ps Education Grant - Elementary': 'Educational cash assistance (₱300/month per child) for elementary school students of 4Ps households (up to 10 months/year).',
+    '4Ps Education Grant - Junior High School': 'Educational cash assistance (₱500/month per child) for junior high school students of 4Ps households (up to 10 months/year).',
+    '4Ps Education Grant - Senior High School': 'Educational cash assistance (₱700/month per child) for senior high school students of 4Ps households (up to 10 months/year).',
+    '4Ps Rice Subsidy Allowance': 'Monthly rice assistance cash subsidy (₱600/month per household) to augment staple food and grain security.',
+    '4Ps Family Development Sessions (FDS)': 'Mandatory monthly modular workshops on responsible parenting, home management, health, financial literacy, and disaster resilience.',
+    'Sustainable Livelihood Program (SLP) Referral & Seed Capital': 'Micro-enterprise development or employment facilitation capital grant for graduating 4Ps households under Kilos Unlad.',
+    'Cash-for-Work / Climate & Disaster Resiliency': 'Temporary community employment and financial assistance for disaster risk reduction and community rehabilitation.',
+    'Assistance to Individuals in Crisis Situation (AICS) - Emergency Relief': 'Immediate emergency financial assistance for medical, burial, and transportation crises.',
+    // Backward compatibility aliases
     'Regular Cash Grant': 'Regular monthly cash assistance for qualified 4Ps households',
     'Education Grant': 'Educational assistance for children of 4Ps beneficiaries',
     'Health Grant': 'Health-related assistance and medical support',
     'Rice Assistance (kapag may implementasyon ng DSWD o national government)': 'Rice subsidy program (subject to DSWD/national government implementation)',
-    'Family Development Sessions (FDS)': 'Educational and family development programs',
-    'Sustainable Livelihood Program (SLP) Referral': 'Skills training and livelihood opportunities referral',
-    'Cash-for-Work Program (kung available)': 'Employment assistance and work opportunities',
+    'Rice Assistance': 'Rice subsidy program to augment food security',
     'Disaster Relief Assistance': 'Emergency assistance during disasters and calamities',
     'Educational Assistance': 'Comprehensive educational support programs',
-    'Assistance to Individuals in Crisis Situation (AICS)': 'Emergency assistance for individuals in crisis situations',
   },
   'Senior Citizens (Social Pension)': {
-    'Social Pension for Indigent Senior Citizens (SocPen)': 'Monthly social pension for indigent senior citizens aged 60 and above',
+    // MSWDO Municipal Programs (Local Level)
+    'MSWDO Local Social Pension (Municipal Counterpart)': 'Monthly municipal social pension (₱500–₱1,000/month) for indigent senior citizens waitlisted or uncovered by national SocPen.',
+    'Senior Citizens Birthday Cash Incentive & Gift Pack': 'Annual birthday cash gift (₱500–₱2,000) and nutritious grocery package for registered senior citizens under municipal ordinance.',
+    'Senior Citizens Longevity Milestone Award (70, 75, 80+)': 'Municipal longevity cash incentive (₱5,000–₱10,000) honoring senior citizens reaching milestone ages prior to centenarian status.',
+    'OSCA Free Assistive Mobility Devices (Wheelchairs & Canes)': 'Free distribution of standard wheelchairs, walkers, quad canes, and hearing aids for frail, mobility-impaired, or bedridden seniors.',
+    'MSWDO Senior Maintenance Medicine & Health Subsidy': 'Free maintenance medicines (hypertension, diabetes), vitamins, and geriatric vaccinations in partnership with the Rural Health Unit (RHU).',
+    'Local Senior Burial & Funeral Assistance (Damayan)': 'Municipal burial and mortuary cash aid (₱3,000–₱10,000) to support bereaved indigent senior citizen families.',
+    'Bedridden Senior Home Care & Mobile Payout Service': 'House-to-house delivery of pensions, medical wellness monitoring, and basic care packages for immobile or bedridden seniors.',
+    'Elderly Filipino Week & Senior Wellness Celebration': 'Annual municipal celebration featuring health screenings, socialization, sports and arts festivals, and wellness gift packs.',
+    // National DSWD Programs
+    'Social Pension for Indigent Senior Citizens (SocPen)': 'Monthly social pension (₱1,000/month; ₱6,000 semestrally under RA 11916) for indigent seniors aged 60 and above without permanent income or other pensions.',
+    'Expanded Centenarian Milestone Cash Gift (Ages 80, 85, 90, 95)': 'Cash grant of ₱10,000 for elderly Filipinos reaching age milestones of 80, 85, 90, and 95 (under RA 11982) with official letter of felicitation.',
+    'Centenarian Cash Gift (100 Years Old)': 'National cash gift of ₱100,000 and Presidential Letter of Felicitation for Filipino centenarians reaching 100 years of age (RA 10868).',
+    'Assistive Devices Allocation (Wheelchairs, Walking Canes, Hearing Aids)': 'Free distribution of wheelchairs, walkers, quad canes, and hearing assistive devices for frail and indigent senior citizens.',
+    'AICS Senior Medical & Hospitalization Assistance': 'Emergency financial assistance, guarantee letters (GL), laboratory aid, and maintenance medicine subsidies for indigent elderly.',
+    'AICS Senior Funeral and Burial Assistance': 'Financial assistance (₱5,000 - ₱10,000+) to support indigent families with senior citizen mortuary and burial expenses.',
+    'Senior Citizens Health & Geriatric Wellness Program': 'Periodic medical check-ups, geriatric consultations, health screening, and wellness activities in coordination with OSCA.',
+    'Senior Citizens OSCA Assistance & Referral Services': 'Information dissemination, senior privileges enforcement, and referral coordination with OSCA and DSWD/NCSC.',
+    'Emergency Food & Calamity Relief for Seniors': 'Emergency family food packs and priority relief assistance during typhoons, floods, and natural disasters.',
+    // Backward compatibility aliases
     'Centenarian Benefits': 'Special benefits and cash gifts for centenarians',
     'Medical Assistance': 'Healthcare support and medical services',
     'Funeral Assistance': 'Financial assistance for funeral and burial expenses',
@@ -36,9 +63,31 @@ const PROGRAM_DESCRIPTIONS = {
     'AICS (Assistance to Individuals in Crisis Situation)': 'Emergency assistance for individuals in crisis situations',
     'Livelihood Assistance (kung kwalipikado)': 'Livelihood support for qualified senior citizens',
     'Health and Wellness Programs': 'Health promotion and wellness activities',
-    'Senior Citizens Information and Referral Services': 'Information and referral services for senior citizens',
   },
   'Persons with Disabilities (PWD)': {
+    // MSWDO Municipal Programs (Local Level)
+    'MSWDO Local PWD Monthly Financial Allowance': 'Monthly or quarterly municipal financial stipend (₱500–₱1,000/month funded via the 1% LGU PWD budget) for indigent PWDs.',
+    'PDAO Free Assistive Devices (Wheelchairs, Crutches, Canes)': 'Provision of customized wheelchairs, crutches, walking canes, white canes, and hearing aids via PDAO and MSWDO.',
+    'PWD Microenterprise & Livelihood Capital Grant': 'Start-up capital assistance (₱5,000–₱15,000) and livelihood toolkits for sari-sari stores, craft making, and home-based micro-businesses.',
+    'PWD Educational Subsidy & SPED Assistance': 'Annual educational financial assistance (₱2,000–₱5,000/year) and school supplies for learners with disabilities and SPED students.',
+    'PWD Medical & Physical Therapy Referral Assistance': 'Subsidized physical therapy, occupational therapy sessions, medical supplies, and maintenance medicine support via RHU/partner clinics.',
+    'PWD Inclusive Skills & Vocational Training Program': 'Free skills training, tech-voc livelihood courses, and computer literacy workshops in partnership with TESDA and PDAO.',
+    'Disaster Priority Relief & Evacuation for PWD Households': 'Targeted disaster evacuation registry, priority rescue support, and specialized emergency food and hygiene packs.',
+    'PWD Inclusive LGU Employment Facilitation (1% Mandate)': 'Workplace accommodation advocacy and priority contractual/temporary job placement within the Municipal Hall and barangays.',
+    'PDAO / PWD ID & Purchase Booklet Issuance': 'Official municipal registration, digitized PWD ID, and medicine/grocery discount booklets for statutory 20% discount and VAT exemption.',
+    'AICS Municipal Emergency Financial Relief for PWD': 'Immediate emergency financial, medical, and transportation assistance for PWD individuals and families in crisis.',
+    // National DSWD Programs
+    'PWD ID Registration and Benefit Card Issuance': 'Official municipal registration and ID issuance for statutory 20% discounts, VAT exemption, and government social protection.',
+    'Assistive Mobility Devices Distribution (Wheelchairs, Crutches, White Canes)': 'Distribution of mobility and sensory assistive devices including wheelchairs, crutches, white canes, and hearing aids.',
+    'PWD Medical, Diagnostic & Physical Therapy Assistance': 'Medical subsidies, physical and occupational therapy coverage, assistive prosthetics, and maintenance medicines via AICS.',
+    'PWD Sustainable Livelihood Program (SLP-PWD Seed Capital)': 'Capital seed funding and livelihood toolkits for micro-enterprises, sari-sari stores, craft making, and home-based businesses.',
+    'PWD Skills & Vocational Tech-Voc Training': 'Free vocational training, livelihood workshops, and skills enhancement programs in partnership with TESDA and DSWD centers.',
+    'PWD Educational Assistance & SPED Learning Grant': 'Financial support, stipend, and learning supplies for learners with disabilities and Special Education (SPED) students.',
+    'Local PWD Monthly / Quarterly Cash Allowance': 'LGU/municipal financial stipend to augment daily living, transportation, and nutritional needs of indigent PWDs.',
+    'PWD Inclusive Employment Facilitation': 'Job matching, workplace accommodation advocacy, and employment facilitation with local businesses and government offices.',
+    'AICS (Assistance to Individuals in Crisis Situation) for PWD': 'Immediate emergency financial and medical aid for PWD individuals and families encountering severe hardship or crisis.',
+    'Disaster Preparedness & Priority Evacuation Relief': 'Disability-inclusive emergency relief, special dietary/hygiene packs, and priority disaster evacuation support.',
+    // Backward compatibility aliases
     'PWD ID Registration and Renewal': 'Registration and renewal of PWD identification cards',
     'Assistive Devices Distribution (wheelchair, cane, hearing aid, crutches, atbp.)': 'Distribution of assistive devices (wheelchairs, canes, hearing aids, crutches, etc.)',
     'Medical Assistance': 'Healthcare support and medical services for PWD',
@@ -46,52 +95,74 @@ const PROGRAM_DESCRIPTIONS = {
     'Livelihood Assistance': 'Income-generating livelihood programs for PWD',
     'Skills Training Program': 'Vocational and technical skills training for PWD',
     'Physical Rehabilitation Services': 'Physical rehabilitation and therapy services',
-    'Occupational Therapy Referral': 'Referral services for occupational therapy',
-    'Employment Facilitation': 'Job placement and employment assistance',
-    'Transportation Assistance': 'Transportation support for PWD',
-    'Disaster Assistance': 'Emergency assistance during disasters',
-    'AICS (Assistance to Individuals in Crisis Situation)': 'Emergency assistance for PWD in crisis situations',
   },
 };
 
+// Standard DSWD Programs (National Mandates)
 const PROGRAMS_BY_CATEGORY = {
   '4Ps Household Beneficiaries': [
-    'Regular Cash Grant',
-    'Education Grant',
-    'Health Grant',
-    'Rice Assistance (kapag may implementasyon ng DSWD o national government)',
-    'Family Development Sessions (FDS)',
-    'Sustainable Livelihood Program (SLP) Referral',
-    'Cash-for-Work Program (kung available)',
-    'Disaster Relief Assistance',
-    'Educational Assistance',
-    'Assistance to Individuals in Crisis Situation (AICS)',
+    '4Ps Health & Nutrition Cash Grant',
+    '4Ps First 1,000 Days (F1KD) Nutrition Subsidy',
+    '4Ps Education Grant - Elementary',
+    '4Ps Education Grant - Junior High School',
+    '4Ps Education Grant - Senior High School',
+    '4Ps Rice Subsidy Allowance',
+    '4Ps Family Development Sessions (FDS)',
+    'Sustainable Livelihood Program (SLP) Referral & Seed Capital',
+    'Cash-for-Work / Climate & Disaster Resiliency',
+    'Assistance to Individuals in Crisis Situation (AICS) - Emergency Relief',
   ],
   'Senior Citizens (Social Pension)': [
     'Social Pension for Indigent Senior Citizens (SocPen)',
-    'Centenarian Benefits',
-    'Medical Assistance',
-    'Funeral Assistance',
-    'Assistive Devices Distribution',
-    'Relief Assistance',
-    'AICS (Assistance to Individuals in Crisis Situation)',
-    'Livelihood Assistance (kung kwalipikado)',
-    'Health and Wellness Programs',
-    'Senior Citizens Information and Referral Services',
+    'Expanded Centenarian Milestone Cash Gift (Ages 80, 85, 90, 95)',
+    'Centenarian Cash Gift (100 Years Old)',
+    'Assistive Devices Allocation (Wheelchairs, Walking Canes, Hearing Aids)',
+    'AICS Senior Medical & Hospitalization Assistance',
+    'AICS Senior Funeral and Burial Assistance',
+    'Senior Citizens Health & Geriatric Wellness Program',
+    'Senior Citizens OSCA Assistance & Referral Services',
+    'Emergency Food & Calamity Relief for Seniors',
   ],
   'Persons with Disabilities (PWD)': [
-    'PWD ID Registration and Renewal',
-    'Assistive Devices Distribution (wheelchair, cane, hearing aid, crutches, atbp.)',
-    'Medical Assistance',
-    'Educational Assistance',
-    'Livelihood Assistance',
-    'Skills Training Program',
-    'Physical Rehabilitation Services',
-    'Occupational Therapy Referral',
-    'Employment Facilitation',
-    'Transportation Assistance',
-    'Disaster Assistance',
-    'AICS (Assistance to Individuals in Crisis Situation)',
+    'PWD ID Registration and Benefit Card Issuance',
+    'Assistive Mobility Devices Distribution (Wheelchairs, Crutches, White Canes)',
+    'PWD Medical, Diagnostic & Physical Therapy Assistance',
+    'PWD Sustainable Livelihood Program (SLP-PWD Seed Capital)',
+    'PWD Skills & Vocational Tech-Voc Training',
+    'PWD Educational Assistance & SPED Learning Grant',
+    'Local PWD Monthly / Quarterly Cash Allowance',
+    'PWD Inclusive Employment Facilitation',
+    'AICS (Assistance to Individuals in Crisis Situation) for PWD',
+    'Disaster Preparedness & Priority Evacuation Relief',
+  ],
+};
+
+// Dedicated MSWDO Municipal Programs (Local Level for MSWDO Admin - Senior & PWD Only)
+const MSWDO_PROGRAMS_BY_CATEGORY = {
+  'Senior Citizens (Social Pension)': [
+    'MSWDO Local Social Pension (Municipal Counterpart)',
+    'Senior Citizens Birthday Cash Incentive & Gift Pack',
+    'Senior Citizens Longevity Milestone Award (70, 75, 80+)',
+    'OSCA Free Assistive Mobility Devices (Wheelchairs & Canes)',
+    'MSWDO Senior Maintenance Medicine & Health Subsidy',
+    'Local Senior Burial & Funeral Assistance (Damayan)',
+    'Bedridden Senior Home Care & Mobile Payout Service',
+    'Elderly Filipino Week & Senior Wellness Celebration',
+    'Social Pension for Indigent Senior Citizens (SocPen)',
+    'Expanded Centenarian Milestone Cash Gift (Ages 80, 85, 90, 95)',
+    'Centenarian Cash Gift (100 Years Old)',
+  ],
+  'Persons with Disabilities (PWD)': [
+    'MSWDO Local PWD Monthly Financial Allowance',
+    'PDAO Free Assistive Devices (Wheelchairs, Crutches, Canes)',
+    'PWD Microenterprise & Livelihood Capital Grant',
+    'PWD Educational Subsidy & SPED Assistance',
+    'PWD Medical & Physical Therapy Referral Assistance',
+    'PWD Inclusive Skills & Vocational Training Program',
+    'Disaster Priority Relief & Evacuation for PWD Households',
+    'PWD Inclusive LGU Employment Facilitation (1% Mandate)',
+    'PDAO / PWD ID & Purchase Booklet Issuance',
+    'AICS Municipal Emergency Financial Relief for PWD',
   ],
 };
 
@@ -110,7 +181,14 @@ const EMPTY_FORM = {
 
 export default function ProgramListPage() {
   const { user, token } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = ['admin','mswdo_admin'].includes(user?.role);
+  const isMswdoAdmin = user?.role === 'mswdo_admin';
+  const displayCategories = isMswdoAdmin
+    ? [
+        'Senior Citizens (Social Pension)',
+        'Persons with Disabilities (PWD)'
+      ]
+    : CATEGORIES;
   const [programs, setPrograms] = useState([]);
   const [allPrograms, setAllPrograms] = useState([]);
   const [barangays, setBarangays] = useState([]);
@@ -123,6 +201,7 @@ export default function ProgramListPage() {
   const [formError, setFormError] = useState(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [isCustomProgramName, setIsCustomProgramName] = useState(false);
   
   // Program Details Modal
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -149,11 +228,18 @@ export default function ProgramListPage() {
   // Helper to safely get program options for any category variation
   const getProgramOptions = (category) => {
     if (!category) return [];
-    if (PROGRAMS_BY_CATEGORY[category]) return PROGRAMS_BY_CATEGORY[category];
-    const foundKey = Object.keys(PROGRAMS_BY_CATEGORY).find(
+    const source = isMswdoAdmin ? MSWDO_PROGRAMS_BY_CATEGORY : PROGRAMS_BY_CATEGORY;
+    if (source[category]) return source[category];
+    const foundKey = Object.keys(source).find(
       (k) => k.toLowerCase().includes(category.toLowerCase()) || category.toLowerCase().includes(k.toLowerCase())
     );
-    return foundKey ? PROGRAMS_BY_CATEGORY[foundKey] : [];
+    if (foundKey) return source[foundKey];
+    // Fallback to general list if not found in MSWDO
+    if (PROGRAMS_BY_CATEGORY[category]) return PROGRAMS_BY_CATEGORY[category];
+    const fallbackKey = Object.keys(PROGRAMS_BY_CATEGORY).find(
+      (k) => k.toLowerCase().includes(category.toLowerCase()) || category.toLowerCase().includes(k.toLowerCase())
+    );
+    return fallbackKey ? PROGRAMS_BY_CATEGORY[fallbackKey] : [];
   };
 
   const programOptions = getProgramOptions(form.category);
@@ -205,9 +291,17 @@ export default function ProgramListPage() {
         }
       }
 
-      setAllPrograms(allFetched);
+      // MSWDO can only access Senior Citizens and PWD programs (4Ps is strictly DSWD)
+      const allowedPrograms = isMswdoAdmin
+        ? allFetched.filter(p => {
+            const cat = String(p.eligibility_category || p.category || '').toLowerCase();
+            return (cat.includes('senior') || cat.includes('pwd') || cat.includes('disabilit')) && !cat.includes('4ps') && !cat.includes('pantawid');
+          })
+        : allFetched;
+
+      setAllPrograms(allowedPrograms);
       // Filter out archived programs from main table list
-      setPrograms(allFetched.filter(p => p.status !== 'archived'));
+      setPrograms(allowedPrograms.filter(p => p.status !== 'archived'));
     } catch (err) {
       setError(getErrorMessage(err, 'Unable to load programs'));
     } finally {
@@ -240,6 +334,13 @@ export default function ProgramListPage() {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
+    // If custom program name option selected
+    if (name === 'name' && value === '__custom__') {
+      setIsCustomProgramName(true);
+      setForm((prev) => ({ ...prev, name: '' }));
+      return;
+    }
+
     // If program name is selected, auto-fill the description
     if (name === 'name' && form.category && value) {
       let description = PROGRAM_DESCRIPTIONS[form.category]?.[value];
@@ -262,16 +363,21 @@ export default function ProgramListPage() {
   const openCreateModal = () => {
     setEditingProgram(null);
     setForm({ ...EMPTY_FORM });
+    setIsCustomProgramName(false);
     setFormError(null);
     setShowModal(true);
   };
 
   const openEditModal = (program) => {
     setEditingProgram(program);
+    const progCategory = program.eligibility_category || program.category || '';
+    const availableOptions = getProgramOptions(progCategory);
+    const isCustom = program.name && !availableOptions.includes(program.name);
+    setIsCustomProgramName(Boolean(isCustom));
     setForm({
       name: program.name || '',
       description: program.description || '',
-      category: program.eligibility_category || program.category || '',
+      category: progCategory,
       barangay_id: program.barangay_id || '',
       barangay_ids: program.barangay_id ? [String(program.barangay_id)] : [],
       total_budget: program.total_budget || '',
@@ -491,7 +597,14 @@ export default function ProgramListPage() {
       if (isAdmin && filterBarangay) params.barangay_id = filterBarangay;
       
       const response = await programApi.list(params);
-      setArchivedPrograms(response.data.data || []);
+      const rawArchived = response.data.data || [];
+      const allowedArchived = isMswdoAdmin
+        ? rawArchived.filter(p => {
+            const cat = String(p.eligibility_category || p.category || '').toLowerCase();
+            return (cat.includes('senior') || cat.includes('pwd') || cat.includes('disabilit')) && !cat.includes('4ps') && !cat.includes('pantawid');
+          })
+        : rawArchived;
+      setArchivedPrograms(allowedArchived);
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to load archived programs'));
     } finally {
@@ -612,7 +725,9 @@ export default function ProgramListPage() {
             <h1 className="text-3xl font-black tracking-tight">Benefit Programs Module</h1>
           </div>
           <p className="text-blue-100 text-sm max-w-2xl">
-            {isAdmin
+            {isMswdoAdmin
+              ? 'MSWDO: Primary focus on Senior Citizens & PWD programs. (4Ps programs are managed exclusively by DSWD).'
+              : isAdmin
               ? 'Create and manage municipal benefit programs, set eligibility categories, and oversee assistance allocations.'
               : `Showing programs assigned to ${userBarangayName ? `Barangay ${userBarangayName}` : 'your assigned barangay'}.`}
           </p>
@@ -636,6 +751,16 @@ export default function ProgramListPage() {
           </button>
         </div>
       </div>
+
+      {isMswdoAdmin && (
+        <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-4 flex items-start gap-3">
+          <span className="text-xl">🏥</span>
+          <div>
+            <p className="text-sm font-bold text-purple-900">MSWDO Program Scope: Senior Citizens & PWD Only</p>
+            <p className="text-xs text-purple-700">MSWDO administers programs for Senior Citizens (Social Pension) and Persons with Disabilities (PWD). 4Ps programs are managed exclusively by DSWD and are not accessible to MSWDO.</p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-start gap-3">
@@ -829,17 +954,31 @@ export default function ProgramListPage() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
                   required
                 >
-                  <option value="">Select Category</option>
-                  {CATEGORIES.map((cat) => (
+                  <option value="">{isMswdoAdmin ? 'Select Category (Senior Citizens, PWD)' : 'Select Category'}</option>
+                  {displayCategories.map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Program Name</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">Program Name</label>
+                  {form.category && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomProgramName(!isCustomProgramName);
+                        if (!isCustomProgramName) setForm((prev) => ({ ...prev, name: '' }));
+                      }}
+                      className="text-xs text-purple-600 hover:text-purple-800 font-medium transition"
+                    >
+                      {isCustomProgramName ? (isMswdoAdmin ? '← Choose from MSWDO Presets' : '← Choose from DSWD Presets') : '+ Enter Custom Program Name'}
+                    </button>
+                  )}
+                </div>
                 {form.category ? (
-                  programOptions.length > 0 ? (
+                  !isCustomProgramName && programOptions.length > 0 ? (
                     <select
                       name="name"
                       value={form.name}
@@ -847,10 +986,11 @@ export default function ProgramListPage() {
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
                       required
                     >
-                      <option value="">Select Program</option>
+                      <option value="">{isMswdoAdmin ? 'Select MSWDO Municipal Program' : 'Select Official DSWD Program'}</option>
                       {programOptions.map((prog) => (
                         <option key={prog} value={prog}>{prog}</option>
                       ))}
+                      <option value="__custom__">+ Enter Custom Program Name...</option>
                     </select>
                   ) : (
                     <input
@@ -878,11 +1018,12 @@ export default function ProgramListPage() {
                   onChange={handleChange}
                   placeholder="Program description and objectives..."
                   rows="2"
-                  readOnly={form.name ? true : false}
-                  className={`w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200 ${form.name ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
                 />
-                {form.name && (
-                  <p className="text-xs text-slate-500 mt-1">✓ Description auto-filled from program</p>
+                {form.name && !isCustomProgramName && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    ✓ Description auto-filled from {isMswdoAdmin ? 'MSWDO municipal standards' : 'official DSWD guidelines'} (editable)
+                  </p>
                 )}
               </div>
 

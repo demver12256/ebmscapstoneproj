@@ -20,7 +20,7 @@ export default function Header() {
   const dropdownRef = useRef(null);
   const bellRef = useRef(null);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = ['admin','mswdo_admin'].includes(user?.role);
   const isStaff = user?.role === 'staff' || user?.role === 'barangay';
 
   // Time ago helper
@@ -272,7 +272,7 @@ export default function Header() {
 
   const getUserRoleLabel = () => {
     if (!user) return '';
-    if (user.role === 'admin') return 'Administrator';
+    if (['admin','mswdo_admin'].includes(user.role)) return user.role === 'mswdo_admin' ? 'MSWDO Administrator' : 'Administrator';
     if (user.role === 'staff') return 'Barangay Staff';
     if (user.role === 'barangay') return 'Barangay Captain';
     if (user.role === 'beneficiary') return 'Beneficiary Member';

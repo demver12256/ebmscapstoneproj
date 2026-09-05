@@ -1,5 +1,16 @@
+const ADMIN_ROLES = ['admin', 'mswdo_admin'];
+
+const expandRoles = (roles) => {
+  const expanded = new Set(roles);
+  // mswdo_admin inherits all admin permissions
+  if (expanded.has('admin')) {
+    ADMIN_ROLES.forEach(r => expanded.add(r));
+  }
+  return [...expanded];
+};
+
 const authorize = (...allowedRoles) => {
-  const roles = allowedRoles.flat();
+  const roles = expandRoles(allowedRoles.flat());
   return (req, res, next) => {
     console.log('[AUTHORIZE] Checking authorization for:', req.user?.role, '| Allowed roles:', roles);
     

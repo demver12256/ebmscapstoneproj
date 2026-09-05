@@ -152,7 +152,7 @@ router.patch('/:id/status', async (req, res, next) => {
   try {
     const currentUser = req.user;
 
-    if (!['admin', 'staff', 'barangay'].includes(currentUser.role)) {
+    if (!['admin','mswdo_admin','staff','barangay'].includes(currentUser.role)) {
       return res.status(403).json({ success: false, message: 'Only admin or staff can update assistance requests.' });
     }
 

@@ -622,7 +622,7 @@ export default function LandingPage() {
       icon: Users,
       grants: 'Cash & Education Grants',
       desc: 'National poverty reduction strategy providing conditional cash grants to extremely poor households to improve health, nutrition, and education of children aged 0-18.',
-      perks: ['Monthly Health Subsidy', 'Education Grants per Child', 'Rice Assistance Subsidy', 'Family Development Sessions (FDS)']
+      perks: ['Health & Nutrition Grant (₱750)', 'Education Grants per Child', 'Rice Subsidy Allowance (₱600)', 'Family Development Sessions (FDS)']
     },
     {
       id: 'socpen',
@@ -633,7 +633,7 @@ export default function LandingPage() {
       icon: Award,
       grants: '₱1,000 / month',
       desc: 'Periodic monetary grant provided to indigent seniors aged 60 and above to augment daily subsistence and medical needs.',
-      perks: ['Regular Payouts', 'RFID Priority Lane Verification', 'Assistive Devices Allocation', 'Centenarian Cash Gift (₱100,000)']
+      perks: ['Regular Payouts (₱1,000/mo)', 'Expanded Centenarian Milestones (₱10k)', 'Assistive Devices Allocation', 'Centenarian Gift (₱100,000)']
     },
     {
       id: 'pwd',

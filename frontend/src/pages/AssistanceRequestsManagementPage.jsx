@@ -830,7 +830,7 @@ export default function AssistanceRequestsManagementPage() {
                     🏛️ Barangay Staff Reviewer
                   </span>
                 )}
-                {(user?.role === 'admin' || user?.role === 'staff') && (
+                {(['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff') && (
                   <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
                     👑 System Administrator (Final Approver)
                   </span>
@@ -875,7 +875,7 @@ export default function AssistanceRequestsManagementPage() {
                 )}
 
                 {/* ADMIN ACTION: FINAL APPROVAL & RELEASE */}
-                {(user?.role === 'admin' || user?.role === 'staff') && (
+                {(['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff') && (
                   <>
                     <button
                       type="button"

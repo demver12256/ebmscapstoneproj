@@ -200,14 +200,11 @@ export default function DistributionPage() {
         // Filter by approved status
         const qualifiedBeneficiaries = enrolledBeneficiaries.filter(b => b.status === 'Approved');
 
-        // Auto-calculate amount per beneficiary
-        const eligibleCount = qualifiedBeneficiaries.length;
-        if (updatedForm.budget && eligibleCount > 0) {
-          const totalBudget = parseFloat(updatedForm.budget);
-          const amountPerBeneficiary = totalBudget / eligibleCount;
+        // Suggest default amount per beneficiary from program if available
+        if (selectedProgram.amount && !formData.amount_per_beneficiary) {
           setFormData(prev => ({
             ...prev,
-            amount_per_beneficiary: amountPerBeneficiary.toFixed(2)
+            amount_per_beneficiary: selectedProgram.amount.toString()
           }));
         }
 
@@ -232,7 +229,15 @@ export default function DistributionPage() {
     setSuccess(null);
     
     try {
-      await distributionApi.createEvent(formData);
+      const amountPerBen = parseFloat(formData.amount_per_beneficiary || 0);
+      const benCount = eligibleMeta.qualified_count || 1;
+      const computedBudget = amountPerBen * benCount;
+
+      await distributionApi.createEvent({
+        ...formData,
+        venue: formData.venue?.trim() || null,
+        budget: computedBudget,
+      });
       setSuccess('Distribution event created successfully!');
       setFormData({
         title: '',
@@ -333,19 +338,6 @@ export default function DistributionPage() {
         b => b.status === 'Approved'
       );
       
-      // Auto-calculate Amount per Beneficiary based on Total Budget and Eligible Count
-      const eligibleCount = qualifiedBeneficiaries.length;
-      if (formData.budget && eligibleCount > 0) {
-        const totalBudget = parseFloat(formData.budget);
-        const amountPerBeneficiary = totalBudget / eligibleCount;
-        
-        // Update formData with calculated amount
-        setFormData(prev => ({
-          ...prev,
-          amount_per_beneficiary: amountPerBeneficiary.toFixed(2)
-        }));
-      }
-      
       setEligibleBeneficiaries(qualifiedBeneficiaries);
       setEligibleMeta({
         total: enrolledBeneficiaries.length,
@@ -361,7 +353,29 @@ export default function DistributionPage() {
   };
 
   const handlePublishEvent = async (eventId) => {
-    if (!window.confirm('Are you sure you want to publish this event? This will create transactions for all eligible beneficiaries and send notifications.')) {
+    let confirmMsg = 'Are you sure you want to publish this event? This will create transactions for all eligible beneficiaries and send notifications.';
+    
+    try {
+      const previewRes = await distributionApi.getRetroPreview(eventId);
+      if (previewRes.data?.success) {
+        const preview = previewRes.data.data;
+        if (preview.beneficiaries_with_retro > 0) {
+          confirmMsg = `⚡ RETROACTIVE PAYMENTS DETECTED:\n\n` +
+            `• ${preview.beneficiaries_with_retro} beneficiaries will receive retroactive backpay for missed past periods.\n` +
+            `• Regular Total: ₱${parseFloat(preview.regular_total).toLocaleString('en-PH', { minimumFractionDigits: 2 })}\n` +
+            `• Retroactive Backpay: +₱${parseFloat(preview.retro_total).toLocaleString('en-PH', { minimumFractionDigits: 2 })}\n` +
+            `• Grand Total Required: ₱${parseFloat(preview.grand_total).toLocaleString('en-PH', { minimumFractionDigits: 2 })}\n` +
+            `• Available Budget: ₱${parseFloat(preview.available_budget).toLocaleString('en-PH', { minimumFractionDigits: 2 })}\n\n` +
+            (preview.budget_sufficient
+              ? '✅ Budget is sufficient to cover regular + retro payments. Proceed with publishing?'
+              : `⚠️ INSUFFICIENT BUDGET! Deficit: ₱${parseFloat(preview.deficit).toLocaleString('en-PH', { minimumFractionDigits: 2 })}. Publishing will be rejected unless budget is increased.\n\nAttempt to publish anyway?`);
+        }
+      }
+    } catch (err) {
+      console.warn('Could not check retro preview before publish:', err);
+    }
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
     
@@ -369,8 +383,10 @@ export default function DistributionPage() {
     setError(null);
     
     try {
-      await distributionApi.publishEvent(eventId);
-      setSuccess('Event published successfully! Notifications sent to staff and beneficiaries.');
+      const res = await distributionApi.publishEvent(eventId);
+      const retroCount = res.data?.summary?.beneficiaries_with_retro || 0;
+      const retroInfo = retroCount > 0 ? ` (${retroCount} with retroactive backpay)` : '';
+      setSuccess(`Event published successfully! Notifications sent to staff and beneficiaries${retroInfo}.`);
       await loadEvents();
       await loadDashboardStats();
       setTimeout(() => setSuccess(null), 5000);
@@ -378,21 +394,19 @@ export default function DistributionPage() {
       console.error('Publish event error:', err);
       console.error('Error response:', err.response?.data);
       
-      // Extract error from response
       const errorData = err.response?.data;
       
-      if (errorData?.error_code === 'INSUFFICIENT_BUDGET') {
+      if (errorData?.error_code === 'INSUFFICIENT_BUDGET_WITH_RETRO') {
+        const details = errorData.details;
+        setError(`Insufficient Budget for Retroactive Payments: Grand Total ₱${parseFloat(details?.grand_total || 0).toLocaleString()} (Regular: ₱${parseFloat(details?.regular_total || 0).toLocaleString()} + Retro: ₱${parseFloat(details?.retro_total || 0).toLocaleString()}). You need ₱${parseFloat(details?.deficit || 0).toLocaleString()} more.`);
+      } else if (errorData?.error_code === 'INSUFFICIENT_BUDGET') {
         const deficit = parseFloat(errorData.details?.deficit || 0);
         setError(`Insufficient Budget: You need ₱${deficit.toLocaleString()} more.`);
       } else if (errorData?.message) {
-        // Show the specific error message from backend
         let errorMessage = errorData.message;
-        
-        // If there are debug details, add them
         if (errorData.debug) {
           errorMessage += ` (Debug: ${JSON.stringify(errorData.debug)})`;
         }
-        
         setError(errorMessage);
       } else {
         setError(err.message || 'Failed to publish event');
@@ -604,12 +618,43 @@ export default function DistributionPage() {
             beneficiary_id: b.id,
             status: 'pending',
             amount: parseFloat(eventData.amount_per_beneficiary),
+            retro_amount: 0,
+            retro_periods: 0,
             Beneficiary: b,
             is_preview: true // Mark as preview
           }));
         } catch (err) {
           console.warn('Could not load eligible beneficiaries for draft event:', err);
         }
+      }
+
+      // Fetch retroactive payment preview for both draft and published events
+      try {
+        const retroRes = await distributionApi.getRetroPreview(eventId);
+        if (retroRes.data?.success) {
+          eventData.retroPreview = retroRes.data.data;
+
+          // If draft, merge calculated retro values into preview transactions
+          if (eventData.status === 'draft' && eventData.Transactions && retroRes.data.data.retro_breakdown) {
+            const retroMap = new Map();
+            retroRes.data.data.retro_breakdown.forEach(r => retroMap.set(r.beneficiary_id, r));
+
+            eventData.Transactions = eventData.Transactions.map(txn => {
+              const r = retroMap.get(txn.beneficiary_id);
+              if (r) {
+                return {
+                  ...txn,
+                  retro_amount: r.retro_amount,
+                  retro_periods: r.retro_periods,
+                  retro_details: r.retro_details,
+                };
+              }
+              return txn;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load retro preview for event:', err);
       }
       
       setSelectedEvent(eventData);
@@ -668,7 +713,7 @@ export default function DistributionPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          {user?.role === 'admin' && (
+          {['admin','mswdo_admin'].includes(user?.role) && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95 text-sm whitespace-nowrap"
@@ -833,7 +878,7 @@ export default function DistributionPage() {
               <div className="p-8 text-center">
                 <Package className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                 <p className="text-sm text-slate-600">No distribution events found</p>
-                {user?.role === 'admin' && (
+                {['admin','mswdo_admin'].includes(user?.role) && (
                   <button
                     onClick={() => setShowCreateModal(true)}
                     className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors"
@@ -936,7 +981,7 @@ export default function DistributionPage() {
                             </button>
                             
                             {/* Draft Status Actions */}
-                            {event.status === 'draft' && user?.role === 'admin' && (
+                            {event.status === 'draft' && ['admin','mswdo_admin'].includes(user?.role) && (
                               <>
                                 <button
                                   onClick={() => handlePublishEvent(event.id)}
@@ -956,7 +1001,7 @@ export default function DistributionPage() {
                             )}
                             
                             {/* Scheduled Status Actions - START SESSION */}
-                            {event.status === 'scheduled' && (user?.role === 'admin' || user?.role === 'staff' || user?.role === 'barangay') && (
+                            {event.status === 'scheduled' && (['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff' || user?.role === 'barangay') && (
                               <button
                                 onClick={() => handleStartSession(event.id)}
                                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
@@ -968,7 +1013,7 @@ export default function DistributionPage() {
                             )}
                             
                             {/* Ongoing Status Actions - END SESSION */}
-                            {event.status === 'ongoing' && (user?.role === 'admin' || user?.role === 'staff' || user?.role === 'barangay') && (
+                            {event.status === 'ongoing' && (['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff' || user?.role === 'barangay') && (
                               <button
                                 onClick={() => handleEndSession(event.id)}
                                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
@@ -1159,38 +1204,6 @@ export default function DistributionPage() {
                 />
               </div>
 
-              {/* Venue */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Venue *
-                </label>
-                <input
-                  type="text"
-                  value={formData.venue}
-                  onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
-                  placeholder="e.g., Barangay Hall - Main Hall"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                  required
-                />
-              </div>
-
-              {/* Budget */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Total Budget (₱) *
-                </label>
-                <input
-                  type="number"
-                  value={formData.budget}
-                  onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
-                  placeholder="e.g., 150000"
-                  min="0"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                  required
-                />
-              </div>
-
               {/* Amount per Beneficiary */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
@@ -1199,21 +1212,36 @@ export default function DistributionPage() {
                 <input
                   type="number"
                   value={formData.amount_per_beneficiary}
-                  readOnly
-                  placeholder="Auto-calculated after preview"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-slate-700 cursor-not-allowed"
+                  onChange={(e) => setFormData({ ...formData, amount_per_beneficiary: e.target.value })}
+                  placeholder="e.g., 1000"
+                  min="1"
+                  step="0.01"
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-semibold text-slate-900"
                   required
                 />
-                {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 && (
-                  <p className="text-xs text-green-600 mt-1">
-                    ₱{parseFloat(formData.budget || 0).toLocaleString()} ÷ {eligibleMeta.qualified_count} beneficiaries = ₱{parseFloat(formData.amount_per_beneficiary).toLocaleString()} each
+                {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 ? (
+                  <p className="text-xs text-green-600 mt-1 font-medium">
+                    ₱{parseFloat(formData.amount_per_beneficiary || 0).toLocaleString()} × {eligibleMeta.qualified_count} qualified beneficiaries = ₱{(parseFloat(formData.amount_per_beneficiary || 0) * eligibleMeta.qualified_count).toLocaleString()} estimated total
                   </p>
-                )}
-                {!formData.amount_per_beneficiary && (
+                ) : (
                   <p className="text-xs text-slate-500 mt-1">
-                    Click "Preview Eligible Beneficiaries" to auto-calculate
+                    Manual: Ilagay ang halaga na matatanggap ng bawat benepisyaryo
                   </p>
                 )}
+              </div>
+
+              {/* Venue */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Venue <span className="text-slate-400 font-normal text-xs">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.venue}
+                  onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
+                  placeholder="e.g., Barangay Hall - Main Hall (Optional)"
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                />
               </div>
 
               {/* Assigned Staff */}
@@ -1461,6 +1489,51 @@ export default function DistributionPage() {
                 </div>
               )}
 
+              {/* Retroactive Payment Summary Alert */}
+              {selectedEvent.retroPreview?.beneficiaries_with_retro > 0 && (
+                <div className={`p-4 rounded-xl border ${selectedEvent.retroPreview.budget_sufficient ? 'bg-indigo-50/80 border-indigo-200' : 'bg-rose-50 border-rose-300'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 w-full">
+                      <span className="text-2xl flex-shrink-0">⚡</span>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            Retroactive Payment (Backpay) Applied
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                              {selectedEvent.retroPreview.beneficiaries_with_retro} Beneficiaries
+                            </span>
+                          </h4>
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${selectedEvent.retroPreview.budget_sufficient ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {selectedEvent.retroPreview.budget_sufficient ? '✓ Budget Sufficient' : `Deficit: ₱${parseFloat(selectedEvent.retroPreview.deficit || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-1">
+                          Beneficiaries who missed past completed distributions will receive retroactive backpay together with this period's payout.
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-xs">
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                            <span className="text-slate-500 block text-[11px]">Regular Payout</span>
+                            <span className="font-bold text-slate-900">₱{parseFloat(selectedEvent.retroPreview.regular_total || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                            <span className="text-indigo-600 font-medium block text-[11px]">Total Retro Pay</span>
+                            <span className="font-bold text-indigo-700">+₱{parseFloat(selectedEvent.retroPreview.retro_total || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                            <span className="text-slate-700 font-medium block text-[11px]">Grand Total Payout</span>
+                            <span className="font-bold text-green-700">₱{parseFloat(selectedEvent.retroPreview.grand_total || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                            <span className="text-slate-500 block text-[11px]">Event Budget</span>
+                            <span className="font-bold text-slate-900">₱{parseFloat(selectedEvent.budget || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Enrolled Beneficiaries List */}
               <div className="bg-white rounded-xl border border-slate-200">
                 <div className="p-4 border-b border-slate-200">
@@ -1510,7 +1583,9 @@ export default function DistributionPage() {
                           <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Beneficiary</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">ID</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Category</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Amount</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Regular</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Retro Pay</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Total Payout</th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase">Status</th>
                         </tr>
                       </thead>
@@ -1544,8 +1619,23 @@ export default function DistributionPage() {
                               </span>
                             </td>
                             <td className="px-4 py-3 text-right">
-                              <p className="font-bold text-green-600">
+                              <span className="text-slate-700 font-medium">
                                 ₱{parseFloat(txn.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {parseFloat(txn.retro_amount || 0) > 0 ? (
+                                <span className="inline-flex items-center gap-1 font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-xs border border-indigo-200">
+                                  ⚡ +₱{parseFloat(txn.retro_amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                  <span className="text-[10px] text-indigo-500 font-normal">({txn.retro_periods}p)</span>
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 text-xs">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <p className="font-bold text-green-700">
+                                ₱{(parseFloat(txn.amount || 0) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                               </p>
                             </td>
                             <td className="px-4 py-3 text-center">
@@ -1656,47 +1746,24 @@ export default function DistributionPage() {
                 </div>
               </div>
 
-              {/* Budget Calculation */}
+              {/* Estimated Payout Calculation */}
               {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 && (
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <p className="text-sm font-semibold text-purple-900 mb-3">Budget Calculation (Qualified Only):</p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+                  <p className="text-sm font-semibold text-purple-900 mb-3">Estimated Payout Calculation (Qualified Only):</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <p className="text-xs text-purple-600 mb-1">Qualified Count</p>
+                      <p className="text-xs text-purple-600 mb-1">Qualified Beneficiaries</p>
                       <p className="text-2xl font-bold text-purple-900">{eligibleMeta.qualified_count}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-purple-600 mb-1">Amount per Person</p>
+                      <p className="text-xs text-purple-600 mb-1">Amount per Beneficiary</p>
                       <p className="text-2xl font-bold text-purple-900">₱{parseFloat(formData.amount_per_beneficiary).toLocaleString()}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-purple-600 mb-1">Total Required</p>
+                      <p className="text-xs text-purple-600 mb-1">Estimated Total Budget Needed</p>
                       <p className="text-2xl font-bold text-purple-900">₱{(eligibleMeta.qualified_count * parseFloat(formData.amount_per_beneficiary || 0)).toLocaleString()}</p>
                     </div>
-                    <div>
-                      <p className="text-xs text-purple-600 mb-1">Available Budget</p>
-                      <p className="text-2xl font-bold text-purple-900">₱{parseFloat(formData.budget || 0).toLocaleString()}</p>
-                    </div>
                   </div>
-                  {formData.budget && (
-                    (eligibleMeta.qualified_count * parseFloat(formData.amount_per_beneficiary)) > parseFloat(formData.budget) ? (
-                      <div className="flex items-center gap-2 text-red-700 bg-red-50 border border-red-200 px-4 py-3 rounded-lg">
-                        <XCircle className="w-5 h-5 flex-shrink-0" />
-                        <div>
-                          <p className="text-sm font-bold">⚠️ Insufficient Budget!</p>
-                          <p className="text-xs mt-1">Need ₱{((eligibleMeta.qualified_count * parseFloat(formData.amount_per_beneficiary)) - parseFloat(formData.budget)).toLocaleString()} more</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 px-4 py-3 rounded-lg">
-                        <CheckCircle className="w-5 h-5 flex-shrink-0" />
-                        <div>
-                          <p className="text-sm font-bold">✓ Budget is Sufficient!</p>
-                          <p className="text-xs mt-1">Remaining: ₱{(parseFloat(formData.budget) - (eligibleMeta.qualified_count * parseFloat(formData.amount_per_beneficiary))).toLocaleString()}</p>
-                        </div>
-                      </div>
-                    )
-                  )}
                 </div>
               )}
 

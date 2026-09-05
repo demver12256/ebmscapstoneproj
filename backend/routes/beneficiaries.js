@@ -5,7 +5,8 @@ const multer = require('multer');
 const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
-const { Beneficiary, Barangay, User, BeneficiaryDocument, AuditLog, SMSNotification, Message } = require('../db');
+const { Beneficiary, Barangay, User, BeneficiaryDocument, AuditLog, SMSNotification, Message, AnnouncementRecipient, Announcement, Attendance } = require('../db');
+const { isMswdoRole, MSWDO_CATEGORY_FILTER, isMswdoCategory } = require('../utils/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -53,9 +54,14 @@ router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) 
       where.barangay_id = req.user.barangay_id;
       console.log(`[Beneficiaries] Fetching for ${req.user.role}: barangay_id=${req.user.barangay_id}`);
     } else {
-      console.log('[Beneficiaries] Fetching for admin: all barangays');
+      console.log(`[Beneficiaries] Fetching for ${req.user.role}: all barangays`);
     }
     where.status = 'Approved';
+    // MSWDO admin focuses on Senior Citizens & PWD, with full access to 4Ps beneficiaries
+    if (isMswdoRole(req.user.role)) {
+      where[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+      console.log('[Beneficiaries] MSWDO filter: Senior + PWD + 4Ps');
+    }
     const beneficiaries = await Beneficiary.findAll({ where, include: [Barangay, User] });
     console.log(`[Beneficiaries] Found ${beneficiaries.length} records`);
     res.json({ success: true, data: beneficiaries });
@@ -65,7 +71,7 @@ router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) 
 });
 
 // Admin Applications list: Return registrations (Pending Review, Under Review, Rejected, Approved)
-// Only Administrator can view applicant submissions queue
+// Only Administrator can view applicant submissions queue (MSWDO sees Senior/PWD only)
 router.get('/applications', authorize('admin'), async (req, res, next) => {
   try {
     const where = {
@@ -73,6 +79,11 @@ router.get('/applications', authorize('admin'), async (req, res, next) => {
         [Op.ne]: 'Pending Submission'
       }
     };
+    // MSWDO admin focuses on Senior Citizens & PWD, with full access to 4Ps beneficiaries
+    if (isMswdoRole(req.user.role)) {
+      where[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+      console.log('[Applications] MSWDO filter: Senior + PWD + 4Ps');
+    }
     const applications = await Beneficiary.findAll({
       where,
       include: [Barangay, User, { model: BeneficiaryDocument, as: 'Documents' }],
@@ -438,9 +449,18 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async
       include: [Barangay, User, { model: BeneficiaryDocument, as: 'Documents' }]
     });
 
+    if (!beneficiary) {
+      return res.status(404).json({ success: false, message: 'Beneficiary not found' });
+    }
+
     // Barangay verification scoping check
     if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
       return res.status(403).json({ success: false, message: 'Unauthorized: You can only view applications from your own Barangay' });
+    }
+
+    // MSWDO scope: Senior/PWD/4Ps
+    if (isMswdoRole(req.user.role) && !isMswdoCategory(beneficiary.category)) {
+      return res.status(403).json({ success: false, message: 'MSWDO access restricted to Senior Citizens, PWD, and 4Ps beneficiaries' });
     }
 
     res.json({ success: true, data: beneficiary });
@@ -449,12 +469,203 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async
   }
 });
 
-// Update application status to Under Review (Admin only)
+// ── GET /:id/attendance ── Beneficiary Meeting Attendance History & Summary Stats (Admin / Staff)
+router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_admin'), async (req, res, next) => {
+  try {
+    const beneficiary = await Beneficiary.findByPk(req.params.id, {
+      include: [
+        { model: Barangay, attributes: ['id', 'barangay_name'] },
+        { model: User, attributes: ['id', 'first_name', 'last_name', 'email', 'contact_number'] },
+      ],
+    });
+
+    if (!beneficiary) {
+      return res.status(404).json({ success: false, message: 'Beneficiary not found' });
+    }
+
+    // Barangay verification scoping check
+    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You can only view attendance for beneficiaries in your own Barangay' });
+    }
+
+    // Auto-link any published or completed announcements targeting this beneficiary
+    const publishedAnnouncements = await Announcement.findAll({
+      where: { status: { [Op.in]: ['published', 'completed'] } },
+    });
+
+    const benCategory = (beneficiary.category || '').toLowerCase();
+
+    for (const ann of publishedAnnouncements) {
+      let targetBarangays = [];
+      if (typeof ann.target_barangays === 'string') {
+        try { targetBarangays = JSON.parse(ann.target_barangays); } catch (e) { targetBarangays = [ann.target_barangays]; }
+      } else if (Array.isArray(ann.target_barangays)) {
+        targetBarangays = ann.target_barangays;
+      }
+      targetBarangays = targetBarangays.map(Number).filter(Boolean);
+
+      let targetPrograms = [];
+      if (typeof ann.target_programs === 'string') {
+        try { targetPrograms = JSON.parse(ann.target_programs); } catch (e) { targetPrograms = [ann.target_programs]; }
+      } else if (Array.isArray(ann.target_programs)) {
+        targetPrograms = ann.target_programs;
+      }
+
+      let matchesCategory = false;
+      if (targetPrograms.length === 0) {
+        matchesCategory = true;
+      } else {
+        matchesCategory = targetPrograms.some(cat => {
+          const normCat = String(cat).toLowerCase();
+          if (normCat.includes('4ps')) return benCategory.includes('4ps');
+          if (normCat.includes('senior')) return benCategory.includes('senior');
+          if (normCat.includes('pwd') || normCat.includes('disabil')) return benCategory.includes('pwd') || benCategory.includes('disabil');
+          return benCategory.includes(normCat);
+        });
+      }
+
+      const matchesBarangay =
+        targetBarangays.length === 0 ||
+        (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
+
+      if (matchesBarangay && matchesCategory) {
+        await AnnouncementRecipient.findOrCreate({
+          where: {
+            announcement_id: ann.id,
+            beneficiary_id: beneficiary.id,
+          },
+          defaults: {
+            announcement_id: ann.id,
+            beneficiary_id: beneficiary.id,
+            user_id: beneficiary.user_id,
+            is_read: false,
+            attendance_status: 'Pending',
+            notification_sent: true,
+          },
+        });
+      }
+    }
+
+    // Fetch all recipient links with announcement details and staff scanner info
+    const recipientLinks = await AnnouncementRecipient.findAll({
+      where: { beneficiary_id: beneficiary.id },
+      include: [
+        {
+          model: Announcement,
+          include: [
+            {
+              model: User,
+              as: 'CreatedBy',
+              attributes: ['id', 'first_name', 'last_name', 'email'],
+            },
+          ],
+        },
+        {
+          model: User,
+          as: 'ScannedByStaff',
+          attributes: ['id', 'first_name', 'last_name'],
+        },
+      ],
+      order: [['created_at', 'DESC']],
+    });
+
+    const records = [];
+    for (const r of recipientLinks) {
+      if (!r.Announcement || !['published', 'completed'].includes(r.Announcement.status)) continue;
+
+      let targetBarangays = [];
+      if (typeof r.Announcement.target_barangays === 'string') {
+        try { targetBarangays = JSON.parse(r.Announcement.target_barangays); } catch (e) { targetBarangays = [r.Announcement.target_barangays]; }
+      } else if (Array.isArray(r.Announcement.target_barangays)) {
+        targetBarangays = r.Announcement.target_barangays;
+      }
+      targetBarangays = targetBarangays.map(Number).filter(Boolean);
+
+      let targetPrograms = [];
+      if (typeof r.Announcement.target_programs === 'string') {
+        try { targetPrograms = JSON.parse(r.Announcement.target_programs); } catch (e) { targetPrograms = [r.Announcement.target_programs]; }
+      } else if (Array.isArray(r.Announcement.target_programs)) {
+        targetPrograms = r.Announcement.target_programs;
+      }
+
+      const matchesBarangay =
+        targetBarangays.length === 0 ||
+        (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
+
+      let matchesCategory = false;
+      if (targetPrograms.length === 0) {
+        matchesCategory = true;
+      } else {
+        matchesCategory = targetPrograms.some(cat => {
+          const normCat = String(cat).toLowerCase();
+          if (normCat.includes('4ps')) return benCategory.includes('4ps');
+          if (normCat.includes('senior')) return benCategory.includes('senior');
+          if (normCat.includes('pwd') || normCat.includes('disabil')) return benCategory.includes('pwd') || benCategory.includes('disabil');
+          return benCategory.includes(normCat);
+        });
+      }
+
+      if (matchesBarangay && matchesCategory) {
+        const item = r.Announcement.toJSON();
+        item.attendance_status = r.attendance_status; // 'Pending' | 'Present' | 'Absent'
+        item.scanned_at = r.scanned_at;
+        item.is_read = r.is_read;
+        item.read_at = r.read_at;
+        item.recipient_id = r.id;
+        item.ScannedByStaff = r.ScannedByStaff ? {
+          id: r.ScannedByStaff.id,
+          first_name: r.ScannedByStaff.first_name,
+          last_name: r.ScannedByStaff.last_name,
+        } : null;
+        records.push(item);
+      }
+    }
+
+    // Compute stats
+    const totalMeetings = records.length;
+    const presentCount = records.filter(rec => rec.attendance_status === 'Present').length;
+    const absentCount = records.filter(rec => rec.attendance_status === 'Absent').length;
+    const pendingCount = records.filter(rec => rec.attendance_status === 'Pending').length;
+    const concludedCount = presentCount + absentCount;
+    const complianceRate = concludedCount > 0 ? Math.round((presentCount / concludedCount) * 100) : 100;
+
+    res.json({
+      success: true,
+      data: {
+        beneficiary: {
+          id: beneficiary.id,
+          first_name: beneficiary.first_name,
+          last_name: beneficiary.last_name,
+          RFID_number: beneficiary.RFID_number,
+          beneficiary_id_code: beneficiary.beneficiary_id_code,
+          category: beneficiary.category,
+          status: beneficiary.status,
+          barangay: beneficiary.Barangay?.barangay_name || 'N/A',
+        },
+        stats: {
+          total_meetings: totalMeetings,
+          present_count: presentCount,
+          absent_count: absentCount,
+          pending_count: pendingCount,
+          compliance_rate: complianceRate,
+        },
+        records,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update application status to Under Review (Admin only) — MSWDO limited to Senior/PWD
 router.put('/applications/:id/review', authorize('admin'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+    if (isMswdoRole(req.user.role) && !isMswdoCategory(beneficiary.category)) {
+      return res.status(403).json({ success: false, message: 'MSWDO can only review Senior Citizens, PWD, and 4Ps applications' });
     }
 
     if (beneficiary.status === 'Pending Review') {
@@ -481,12 +692,15 @@ router.put('/applications/:id/review', authorize('admin'), async (req, res, next
   }
 });
 
-// Approve application (Admin only)
+// Approve application (Admin only) — MSWDO limited to Senior/PWD
 router.post('/applications/:id/approve', authorize('admin'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+    if (isMswdoRole(req.user.role) && !isMswdoCategory(beneficiary.category)) {
+      return res.status(403).json({ success: false, message: 'MSWDO can only approve Senior Citizens, PWD, and 4Ps applications' });
     }
 
     const currentYear = new Date().getFullYear();
@@ -530,12 +744,15 @@ router.post('/applications/:id/approve', authorize('admin'), async (req, res, ne
   }
 });
 
-// Reject application (Admin only)
+// Reject application (Admin only) — MSWDO limited to Senior/PWD
 router.post('/applications/:id/reject', authorize('admin'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+    if (isMswdoRole(req.user.role) && !isMswdoCategory(beneficiary.category)) {
+      return res.status(403).json({ success: false, message: 'MSWDO can only reject Senior Citizens, PWD, and 4Ps applications' });
     }
 
     const { rejection_reason, missing_documents } = req.body;
@@ -587,6 +804,10 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
     if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
       return res.status(403).json({ success: false, message: 'Unauthorized: You can only edit beneficiaries from your own Barangay' });
     }
+    // MSWDO scope: Senior/PWD/4Ps
+    if (isMswdoRole(req.user.role) && !isMswdoCategory(beneficiary.category)) {
+      return res.status(403).json({ success: false, message: 'MSWDO can only edit Senior Citizens, PWD, and 4Ps beneficiaries' });
+    }
 
     const { status, inactivation_reason, ...otherUpdates } = req.body;
 
@@ -608,7 +829,7 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
     }
 
     // Only Admin can register or update RFID numbers
-    if (otherUpdates.RFID_number !== undefined && req.user.role !== 'admin') {
+    if (otherUpdates.RFID_number !== undefined && !['admin','mswdo_admin'].includes(req.user.role)) {
       return res.status(403).json({ success: false, message: 'Unauthorized: Only administrators can register or update RFID numbers' });
     }
 
@@ -637,6 +858,10 @@ router.delete('/:id', authorize('admin', 'staff'), async (req, res, next) => {
     // Barangay verification scoping check
     if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
       return res.status(403).json({ success: false, message: 'Unauthorized: You can only delete beneficiaries from your own Barangay' });
+    }
+    // MSWDO scope: Senior/PWD/4Ps
+    if (isMswdoRole(req.user.role) && !isMswdoCategory(beneficiary.category)) {
+      return res.status(403).json({ success: false, message: 'MSWDO can only delete Senior Citizens, PWD, and 4Ps beneficiaries' });
     }
 
     const userId = beneficiary.user_id;

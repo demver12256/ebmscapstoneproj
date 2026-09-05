@@ -21,7 +21,7 @@ import MessagesPage from './pages/MessagesPage';
 import BeneficiaryProfilePage from './pages/BeneficiaryProfilePage';
 import MyApplicationsPage from './pages/MyApplicationsPage';
 import MyBenefitsPage from './pages/MyBenefitsPage';
-import MyDocumentsPage from './pages/MyDocumentsPage';
+import BeneficiaryAttendancePage from './pages/BeneficiaryAttendancePage';
 import AnnouncementManagementPage from './pages/AnnouncementManagementPage';
 import NotificationsPage from './pages/NotificationsPage';
 import RfidAnnouncementScannerPage from './pages/RfidAnnouncementScannerPage';
@@ -51,6 +51,15 @@ const DashboardRouter = () => {
   return <ModernDashboard />;
 };
 
+// Attendance Router Component - Beneficiaries see their meeting attendance history
+const AttendanceRouter = () => {
+  const { user } = useAuth();
+  if (user?.role === 'beneficiary') {
+    return <BeneficiaryAttendancePage />;
+  }
+  return <AttendancePage />;
+};
+
 const AppRoutes = () => (
   <Routes>
     <Route path="/" element={<LandingPage />} />
@@ -77,7 +86,8 @@ const AppRoutes = () => (
       <Route path="barangays" element={<BarangayListPage />} />
       <Route path="distributions" element={<DistributionPage />} />
       <Route path="announcements" element={<AnnouncementManagementPage />} />
-      <Route path="attendance" element={<AttendancePage />} />
+      <Route path="attendance" element={<AttendanceRouter />} />
+      <Route path="my-attendance" element={<BeneficiaryAttendancePage />} />
       <Route path="rfid-scanner" element={<RfidScannerPage />} />
       <Route path="rfid-attendance" element={<RfidAttendancePage />} />
       <Route path="announcement-scanner" element={<RfidAnnouncementScannerPage />} />
@@ -89,7 +99,7 @@ const AppRoutes = () => (
       <Route path="my-profile" element={<BeneficiaryProfilePage />} />
       <Route path="my-applications" element={<MyApplicationsPage />} />
       <Route path="my-benefits" element={<MyBenefitsPage />} />
-      <Route path="documents" element={<MyDocumentsPage />} />
+      <Route path="documents" element={<Navigate to="/dashboard/attendance" replace />} />
       <Route path="notifications" element={<NotificationsPage />} />
       <Route path="request-assistance" element={<RequestAssistancePage />} />
       <Route path="medical-assistance" element={<Navigate to="/dashboard/request-assistance" replace />} />

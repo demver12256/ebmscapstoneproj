@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { BenefitProgram, Enrollment, Beneficiary, Barangay, DistributionEvent, DistributionTransaction, AuditLog, Notification } = require('../db');
+const { isMswdoRole, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory } = require('../utils/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -23,13 +24,17 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (r
   try {
     const where = {};
 
-    if (req.user.role === 'admin') {
+    if (['admin','mswdo_admin'].includes(req.user.role)) {
       // Admin can optionally filter by barangay and/or status
       if (req.query.barangay_id) {
         where.barangay_id = req.query.barangay_id;
       }
       if (req.query.status) {
         where.status = req.query.status;
+      }
+      // MSWDO restricted to Senior Citizens and PWD programs only
+      if (isMswdoRole(req.user.role)) {
+        where[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
       }
     } else if (req.user.role === 'beneficiary') {
       // Beneficiary sees only programs in their barangay that they are enrolled in
@@ -83,10 +88,14 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async
     }
 
     // Enforce barangay access for non-admin users
-    if (req.user.role !== 'admin') {
+    if (!['admin','mswdo_admin'].includes(req.user.role)) {
       if (program.barangay_id !== req.user.barangay_id) {
         return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): This program is assigned to another barangay.' });
       }
+    }
+    // MSWDO can view Senior and PWD programs only (cannot access 4Ps)
+    if (isMswdoRole(req.user.role) && !isMswdoEligibility(program.eligibility_category)) {
+      return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): MSWDO cannot access 4Ps programs. Access is strictly restricted to Senior Citizens and PWD programs.' });
     }
 
     res.json({ success: true, data: program });
@@ -446,12 +455,19 @@ router.post('/:id/enroll', authorize('admin', 'staff'), async (req, res, next) =
   }
 });
 
-// ── POST / ── Create a new program (Admin only)
+// ── POST / ── Create a new program (Admin only) — MSWDO limited to Senior/PWD
 // Admin must provide barangay_id to assign the program to a specific barangay.
 router.post('/', authorize('admin'), async (req, res, next) => {
   try {
     if (!req.body.barangay_id) {
       return res.status(400).json({ success: false, message: 'barangay_id is required. Each program must be assigned to a specific barangay.' });
+    }
+    // MSWDO can only create Senior Citizens and PWD programs (4Ps is strictly for DSWD)
+    if (isMswdoRole(req.user.role)) {
+      const cat = req.body.eligibility_category || req.body.category;
+      if (!isMswdoEligibility(cat)) {
+        return res.status(403).json({ success: false, message: 'Access Denied: MSWDO cannot create 4Ps programs. MSWDO is restricted to Senior Citizens and PWD programs only.' });
+      }
     }
 
     const program = await BenefitProgram.create(mapProgramPayload(req.body));
@@ -547,6 +563,10 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
     const program = await BenefitProgram.findByPk(req.params.id);
     if (!program) {
       return res.status(404).json({ success: false, message: 'Program not found' });
+    }
+    // MSWDO cannot modify 4Ps programs
+    if (isMswdoRole(req.user.role) && !isMswdoEligibility(program.eligibility_category)) {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO cannot modify 4Ps programs. Only Senior Citizens and PWD programs are authorized.' });
     }
     await program.update(mapProgramPayload(req.body));
 

@@ -32,13 +32,17 @@ export default function NotificationsPage() {
     setError(null);
     try {
       const res = await announcementApi.list();
-      setAnnouncements(res.data?.data || []);
+      let list = res.data?.data || [];
+      if (user?.role === 'mswdo_admin') {
+        list = list.filter((a) => a.created_by_user_id === user.id || a.notify_mswdo);
+      }
+      setAnnouncements(list);
     } catch (err) {
       setError(err.message || 'Failed to load announcements');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -60,18 +64,28 @@ export default function NotificationsPage() {
       setAnnouncements((prev) =>
         prev.map((a) => (a.id === annId ? { ...a, is_read: true, read_at: new Date().toISOString() } : a))
       );
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.reference_id === annId && isAnnouncementItem(n) ? { ...n, is_read: true } : n
+        )
+      );
       window.dispatchEvent(new Event('notificationsUpdated'));
     } catch (err) {
       console.error('Failed to mark announcement as read:', err);
     }
   };
 
-  const handleMarkNotificationAsRead = async (notifId) => {
+  const handleMarkNotificationAsRead = async (notifId, refId = null) => {
     try {
       await notificationApi.markAsRead(notifId);
       setNotifications((prev) =>
         prev.map((n) => (n.id === notifId ? { ...n, is_read: true } : n))
       );
+      if (refId) {
+        setAnnouncements((prev) =>
+          prev.map((a) => (a.id === refId ? { ...a, is_read: true, read_at: new Date().toISOString() } : a))
+        );
+      }
       window.dispatchEvent(new Event('notificationsUpdated'));
     } catch (err) {
       console.error('Failed to mark notification as read:', err);
@@ -89,21 +103,70 @@ export default function NotificationsPage() {
     }
   };
 
+  // Helper to identify whether a notification belongs to Announcements vs System
+  const isAnnouncementItem = (item) => {
+    if (!item) return false;
+    const refType = String(item.reference_type || '').toLowerCase();
+    const type = String(item.type || '').toLowerCase();
+    const title = String(item.title || '').toLowerCase();
+    return (
+      refType.startsWith('announcement') ||
+      refType === 'event' ||
+      type === 'announcement' ||
+      title.includes('📢') ||
+      title.toLowerCase().startsWith('absent:')
+    );
+  };
+
+  // Pure system notifications (assistance, applications, distributions, profile/account notices)
+  const systemNotifications = notifications.filter((n) => !isAnnouncementItem(n));
+
+  // Announcement-related notifications (absence alerts, staff assignments, mswdo notices, etc.)
+  const announcementNotifs = notifications.filter((n) => isAnnouncementItem(n));
+
+  // Absence notices (attendance warning notifications)
+  const absenceNotifs = announcementNotifs.filter((n) => n.reference_type === 'announcement_absence');
+
+  // Other standalone announcement notices not already covered by a rich announcement
+  const otherAnnouncementNotifs = announcementNotifs.filter(
+    (n) => n.reference_type !== 'announcement_absence' && !announcements.some((a) => a.id === n.reference_id)
+  );
+
+  // Total Event Announcement items count & unread count
+  const totalEventItemsCount = announcements.length + absenceNotifs.length + otherAnnouncementNotifs.length;
+
+  const unreadAnnouncementsCount = announcements.filter((a) => !a.is_read).length;
+  const unreadAbsenceNotifsCount = absenceNotifs.filter((n) => !n.is_read).length;
+  const unreadOtherNotifsCount = otherAnnouncementNotifs.filter((n) => !n.is_read).length;
+  const unreadEventAnnouncementsCount = unreadAnnouncementsCount + unreadAbsenceNotifsCount + unreadOtherNotifsCount;
+
+  const unreadSystemNotificationCount = systemNotifications.filter((n) => !n.is_read).length;
+  const totalUnread = unreadEventAnnouncementsCount + unreadSystemNotificationCount;
+
+  // Filtered lists by activeTab ('all', 'unread', 'read')
   const filteredAnnouncements = announcements.filter((a) => {
     if (activeTab === 'unread') return !a.is_read;
     if (activeTab === 'read') return a.is_read;
     return true;
   });
 
-  const filteredNotifications = notifications.filter((n) => {
+  const filteredAbsenceNotifs = absenceNotifs.filter((n) => {
     if (activeTab === 'unread') return !n.is_read;
     if (activeTab === 'read') return n.is_read;
     return true;
   });
 
-  const unreadAnnouncementCount = announcements.filter((a) => !a.is_read).length;
-  const unreadNotificationCount = notifications.filter((n) => !n.is_read).length;
-  const totalUnread = unreadAnnouncementCount + unreadNotificationCount;
+  const filteredOtherNotifs = otherAnnouncementNotifs.filter((n) => {
+    if (activeTab === 'unread') return !n.is_read;
+    if (activeTab === 'read') return n.is_read;
+    return true;
+  });
+
+  const filteredSystemNotifications = systemNotifications.filter((n) => {
+    if (activeTab === 'unread') return !n.is_read;
+    if (activeTab === 'read') return n.is_read;
+    return true;
+  });
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
@@ -140,27 +203,27 @@ export default function NotificationsPage() {
       <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl p-2 shadow-sm">
         <button
           onClick={() => setViewMode('announcements')}
-          className={`flex-1 px-4 py-2 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
+          className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
             viewMode === 'announcements' ? 'bg-dswd-blue text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <span>📢 Event Announcements ({announcements.length})</span>
-          {unreadAnnouncementCount > 0 && (
+          <span>📢 Event Announcements ({totalEventItemsCount})</span>
+          {unreadEventAnnouncementsCount > 0 && (
             <span className="bg-red-500 text-white text-xs font-black px-2 py-0.5 rounded-full">
-              {unreadAnnouncementCount}
+              {unreadEventAnnouncementsCount}
             </span>
           )}
         </button>
         <button
           onClick={() => setViewMode('notifications')}
-          className={`flex-1 px-4 py-2 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
+          className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
             viewMode === 'notifications' ? 'bg-dswd-blue text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <span>🔔 System Notifications ({notifications.length})</span>
-          {unreadNotificationCount > 0 && (
+          <span>🔔 System Notifications ({systemNotifications.length})</span>
+          {unreadSystemNotificationCount > 0 && (
             <span className="ml-1 bg-red-500 text-white text-xs font-black px-2 py-0.5 rounded-full">
-              {unreadNotificationCount}
+              {unreadSystemNotificationCount}
             </span>
           )}
         </button>
@@ -175,7 +238,7 @@ export default function NotificationsPage() {
               activeTab === 'all' ? 'bg-dswd-blue text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            All ({viewMode === 'announcements' ? announcements.length : notifications.length})
+            All ({viewMode === 'announcements' ? totalEventItemsCount : systemNotifications.length})
           </button>
           <button
             onClick={() => setActiveTab('unread')}
@@ -183,7 +246,7 @@ export default function NotificationsPage() {
               activeTab === 'unread' ? 'bg-dswd-blue text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            Unread ({viewMode === 'announcements' ? unreadAnnouncementCount : unreadNotificationCount})
+            Unread ({viewMode === 'announcements' ? unreadEventAnnouncementsCount : unreadSystemNotificationCount})
           </button>
           <button
             onClick={() => setActiveTab('read')}
@@ -232,15 +295,15 @@ export default function NotificationsPage() {
         </div>
       ) : viewMode === 'notifications' ? (
         /* SYSTEM NOTIFICATIONS VIEW */
-        filteredNotifications.length === 0 ? (
+        filteredSystemNotifications.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500 shadow-sm">
             <Bell className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="font-bold text-slate-800 text-lg">No Notifications</p>
-            <p className="text-xs text-slate-500 mt-1">You're all caught up!</p>
+            <p className="font-bold text-slate-800 text-lg">No System Notifications</p>
+            <p className="text-xs text-slate-500 mt-1">You're all caught up! No system alerts at this time.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredNotifications.map((notif) => (
+            {filteredSystemNotifications.map((notif) => (
               <div
                 key={notif.id}
                 className={`bg-white border rounded-2xl p-5 transition shadow-sm ${
@@ -251,15 +314,13 @@ export default function NotificationsPage() {
               >
                 <div className="flex items-start gap-4">
                   <div className={`p-3 rounded-xl ${
-                    notif.reference_type === 'announcement_absence' 
-                      ? 'bg-red-100' 
-                      : notif.type === 'distribution' 
+                    notif.type === 'distribution' 
                       ? 'bg-emerald-100' 
+                      : notif.type === 'assistance'
+                      ? 'bg-purple-100'
                       : 'bg-blue-100'
                   }`}>
-                    {notif.reference_type === 'announcement_absence' ? (
-                      <XCircle className="w-6 h-6 text-red-600" />
-                    ) : notif.type === 'distribution' ? (
+                    {notif.type === 'distribution' ? (
                       <CheckCircle2 className="w-6 h-6 text-emerald-600" />
                     ) : (
                       <Bell className="w-6 h-6 text-blue-600" />
@@ -300,15 +361,136 @@ export default function NotificationsPage() {
           </div>
         )
       ) : (
-        /* ANNOUNCEMENTS VIEW */
-        filteredAnnouncements.length === 0 ? (
+        /* EVENT ANNOUNCEMENTS VIEW */
+        filteredAnnouncements.length === 0 && filteredAbsenceNotifs.length === 0 && filteredOtherNotifs.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500 shadow-sm">
-            <Bell className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+            <Megaphone className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <p className="font-bold text-slate-800 text-lg">No Announcements Here</p>
             <p className="text-xs text-slate-500 mt-1">You're all caught up! Check back later for official updates.</p>
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Absence Notices */}
+            {filteredAbsenceNotifs.map((notif) => (
+              <div
+                key={`absence-${notif.id}`}
+                className={`bg-white border rounded-2xl p-5 transition shadow-sm relative overflow-hidden ${
+                  !notif.is_read
+                    ? 'border-red-300 ring-2 ring-red-500/20 bg-gradient-to-r from-red-50/50 via-white to-white'
+                    : 'border-slate-200 opacity-90'
+                }`}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="p-3 rounded-xl bg-red-100 shrink-0">
+                    <XCircle className="w-6 h-6 text-red-600" />
+                  </div>
+
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="bg-red-100 text-red-800 font-extrabold px-2.5 py-0.5 rounded-md text-xs border border-red-300 flex items-center gap-1">
+                          <XCircle className="w-3.5 h-3.5 text-red-600" />
+                          RFID ATTENDANCE ABSENCE NOTICE
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          {new Date(notif.created_at || notif.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      </div>
+                      {!notif.is_read && (
+                        <span className="bg-red-500 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                          NEW
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="font-black text-slate-900 text-lg">{notif.title}</h3>
+                    <p className="text-sm text-slate-700 leading-relaxed">{notif.message}</p>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <span className="text-xs text-slate-400">
+                        {new Date(notif.created_at || notif.createdAt).toLocaleString()}
+                      </span>
+
+                      {!notif.is_read ? (
+                        <button
+                          onClick={() => handleMarkNotificationAsRead(notif.id, notif.reference_id)}
+                          className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1 rounded-lg text-xs transition"
+                        >
+                          <Check className="w-3 h-3" />
+                          Mark as Read
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200 text-xs">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Acknowledged</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Other Announcement Notices (e.g. Staff/MSWDO Notices) */}
+            {filteredOtherNotifs.map((notif) => (
+              <div
+                key={`other-ann-${notif.id}`}
+                className={`bg-white border rounded-2xl p-5 transition shadow-sm relative overflow-hidden ${
+                  !notif.is_read
+                    ? 'border-blue-300 ring-2 ring-blue-500/20 bg-gradient-to-r from-blue-50/50 via-white to-white'
+                    : 'border-slate-200 opacity-90'
+                }`}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="p-3 rounded-xl bg-blue-100 shrink-0">
+                    <Megaphone className="w-6 h-6 text-blue-600" />
+                  </div>
+
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="bg-blue-100 text-blue-800 font-extrabold px-2.5 py-0.5 rounded-md text-xs border border-blue-300 flex items-center gap-1">
+                          <Megaphone className="w-3.5 h-3.5 text-blue-600" />
+                          OFFICIAL ACTIVITY NOTICE
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          {new Date(notif.created_at || notif.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      </div>
+                      {!notif.is_read && (
+                        <span className="bg-blue-500 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                          NEW
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="font-black text-slate-900 text-lg">{notif.title}</h3>
+                    <p className="text-sm text-slate-700 leading-relaxed">{notif.message}</p>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <span className="text-xs text-slate-400">
+                        {new Date(notif.created_at || notif.createdAt).toLocaleString()}
+                      </span>
+
+                      {!notif.is_read ? (
+                        <button
+                          onClick={() => handleMarkNotificationAsRead(notif.id, notif.reference_id)}
+                          className="flex items-center gap-1.5 bg-dswd-blue hover:bg-blue-800 text-white font-bold px-3 py-1 rounded-lg text-xs transition"
+                        >
+                          <Check className="w-3 h-3" />
+                          Mark as Read
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200 text-xs">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Read</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
             {filteredAnnouncements.map((ann) => (
               <div
                 key={ann.id}

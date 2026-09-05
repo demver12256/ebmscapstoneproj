@@ -3,23 +3,35 @@ import { messageApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { 
   MessageSquare, Send, Search, Users, ArrowLeft, Circle, 
-  ShieldCheck, Building2, UserCheck, MessageCircle, Sparkles
+  ShieldCheck, Building2, UserCheck, MessageCircle, Sparkles,
+  Archive, Trash2, RotateCcw, Info, CheckCircle2, AlertTriangle
 } from 'lucide-react';
 
 export default function MessagesPage() {
   const { user } = useAuth();
   const [contacts, setContacts] = useState([]);
   const [conversations, setConversations] = useState([]);
+  const [archivedConversations, setArchivedConversations] = useState([]);
   const [messages, setMessages] = useState([]);
   const [selectedPartner, setSelectedPartner] = useState(null);
+  const [isArchivedView, setIsArchivedView] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [toast, setToast] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('conversations'); // 'conversations' | 'contacts'
+  const [activeTab, setActiveTab] = useState('conversations'); // 'conversations' | 'contacts' | 'archived'
   const [beneficiaryStatus, setBeneficiaryStatus] = useState(null);
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   // Check beneficiary approval status
   useEffect(() => {
@@ -47,12 +59,12 @@ export default function MessagesPage() {
   useEffect(() => {
     pollRef.current = setInterval(() => {
       if (selectedPartner) {
-        loadMessages(selectedPartner.id, true);
+        loadMessages(selectedPartner.id, true, isArchivedView);
       }
       loadConversations(true);
     }, 4000);
     return () => clearInterval(pollRef.current);
-  }, [selectedPartner]);
+  }, [selectedPartner, isArchivedView]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -61,11 +73,17 @@ export default function MessagesPage() {
 
   const loadConversations = async (silent = false) => {
     try {
-      const res = await messageApi.conversations();
-      const list = res.data.data || [];
+      const [activeRes, archivedRes] = await Promise.all([
+        messageApi.conversations(),
+        messageApi.conversations({ archived: true }),
+      ]);
+      const list = activeRes.data.data || [];
+      const archivedList = archivedRes.data.data || [];
       setConversations(list);
-      // If beneficiary has no conversations yet, default tab to contacts
-      if (user?.role === 'beneficiary' && list.length === 0 && !selectedPartner) {
+      setArchivedConversations(archivedList);
+
+      // If beneficiary has no conversations yet and not in archived view, default tab to contacts
+      if (user?.role === 'beneficiary' && list.length === 0 && !selectedPartner && activeTab !== 'archived') {
         setActiveTab('contacts');
       }
     } catch (err) {
@@ -82,10 +100,10 @@ export default function MessagesPage() {
     }
   };
 
-  const loadMessages = async (partnerId, silent = false) => {
+  const loadMessages = async (partnerId, silent = false, archived = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await messageApi.getMessages(partnerId);
+      const res = await messageApi.getMessages(partnerId, archived ? { archived: true } : {});
       setMessages(res.data.data || []);
       // Notify sidebar of read status update
       window.dispatchEvent(new Event('messagesUpdated'));
@@ -96,9 +114,61 @@ export default function MessagesPage() {
     }
   };
 
-  const selectPartner = (partner) => {
+  const selectPartner = (partner, archived = false) => {
     setSelectedPartner(partner);
-    loadMessages(partner.id);
+    setIsArchivedView(archived);
+    loadMessages(partner.id, false, archived);
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!selectedPartner) return;
+    setDeleting(true);
+    try {
+      await messageApi.archiveConversation(selectedPartner.id);
+      showToast(`Conversation with ${selectedPartner.first_name} has been safely archived.`);
+      setShowDeleteModal(false);
+      setSelectedPartner(null);
+      await loadConversations(true);
+      window.dispatchEvent(new Event('messagesUpdated'));
+    } catch (err) {
+      console.error('Failed to archive conversation:', err);
+      showToast('Failed to archive conversation. Please try again.', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleRestoreConversation = async (partnerId) => {
+    setRestoring(true);
+    try {
+      await messageApi.restoreConversation(partnerId);
+      showToast('Conversation restored to Recent Chats.');
+      setIsArchivedView(false);
+      setActiveTab('conversations');
+      await loadConversations(true);
+      if (selectedPartner && selectedPartner.id === partnerId) {
+        await loadMessages(partnerId, false, false);
+      }
+      window.dispatchEvent(new Event('messagesUpdated'));
+    } catch (err) {
+      console.error('Failed to restore conversation:', err);
+      showToast('Failed to restore conversation.', 'error');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const handleDeleteMessage = async (msgId) => {
+    try {
+      await messageApi.archiveMessage(msgId);
+      setMessages((prev) => prev.filter((m) => m.id !== msgId));
+      await loadConversations(true);
+      window.dispatchEvent(new Event('messagesUpdated'));
+      showToast('Message archived.', 'success');
+    } catch (err) {
+      console.error('Failed to archive message:', err);
+      showToast('Failed to archive message.', 'error');
+    }
   };
 
   const handleSend = async (e) => {
@@ -111,7 +181,11 @@ export default function MessagesPage() {
         content: newMessage.trim(),
       });
       setNewMessage('');
-      await loadMessages(selectedPartner.id, true);
+      if (isArchivedView) {
+        setIsArchivedView(false);
+        setActiveTab('conversations');
+      }
+      await loadMessages(selectedPartner.id, true, false);
       await loadConversations(true);
       window.dispatchEvent(new Event('messagesUpdated'));
     } catch (err) {
@@ -122,7 +196,7 @@ export default function MessagesPage() {
   };
 
   const getRoleBadge = (role, brgyName) => {
-    if (role === 'admin') {
+    if (['admin','mswdo_admin'].includes(role)) {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
           <ShieldCheck className="w-3 h-3 text-purple-600" />
@@ -180,8 +254,20 @@ export default function MessagesPage() {
     return name.includes(term) || role.includes(term) || brgy.includes(term) || email.includes(term);
   });
 
-  // Filter conversation list too
+  // Filter active conversation list
   const filteredConversations = conversations.filter((c) => {
+    if (!c?.partner) return false;
+    const name = `${c.partner.first_name || ''} ${c.partner.last_name || ''}`.toLowerCase();
+    const role = (c.partner.role || '').toLowerCase();
+    const brgy = (c.partner.Barangay?.barangay_name || '').toLowerCase();
+    const lastMsg = (c.lastMessage || '').toLowerCase();
+    const term = (searchTerm || '').trim().toLowerCase();
+    if (!term) return true;
+    return name.includes(term) || role.includes(term) || brgy.includes(term) || lastMsg.includes(term);
+  });
+
+  // Filter archived conversation list
+  const filteredArchivedConversations = archivedConversations.filter((c) => {
     if (!c?.partner) return false;
     const name = `${c.partner.first_name || ''} ${c.partner.last_name || ''}`.toLowerCase();
     const role = (c.partner.role || '').toLowerCase();
@@ -227,7 +313,70 @@ export default function MessagesPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-20 right-6 z-50 flex items-center gap-2.5 px-4 py-3 bg-slate-900 text-white rounded-xl shadow-2xl text-xs font-medium border border-slate-700 transition-all animate-bounce">
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Delete Chat Confirmation Modal */}
+      {showDeleteModal && selectedPartner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-bold text-slate-800">Burahin ang Pag-uusap (Archive)?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Sigurado ka bang nais mong burahin ang chat sa pagitan mo at ni <span className="font-bold text-slate-700">{selectedPartner.first_name} {selectedPartner.last_name}</span>?
+              </p>
+              
+              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-left flex items-start gap-2.5 mt-2">
+                <Info className="w-4 h-4 text-dswd-blue shrink-0 mt-0.5" />
+                <p className="text-[11px] text-blue-900 leading-relaxed">
+                  <strong>Safe Archive Guarantee:</strong> Ang mga mensahe ay <strong>HINDI mabubura sa database</strong>. Ililipat lamang ito sa <strong>Archived</strong> tab upang manatiling malinis ang iyong Recent Chats, at maaari mo itong tingnan o i-restore anumang oras.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+              >
+                Kanselahin
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConversation}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm shadow-rose-200 disabled:opacity-50"
+              >
+                {deleting ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete & Archive</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -241,7 +390,7 @@ export default function MessagesPage() {
             <p className="text-blue-100 text-xs sm:text-sm mt-2 max-w-2xl leading-relaxed">
               {user.role === 'beneficiary'
                 ? 'Direct communication line with your assigned Barangay Staff and System Administrator.'
-                : user.role === 'admin'
+                : ['admin','mswdo_admin'].includes(user.role)
                 ? 'Communicate with Barangay Staff and Beneficiaries in real time.'
                 : 'Communicate with the System Administrator, fellow Barangay Staff, and registered Beneficiaries.'}
             </p>
@@ -260,7 +409,7 @@ export default function MessagesPage() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden" style={{ height: 'calc(100vh - 210px)' }}>
         <div className="flex h-full">
 
-          {/* Left Panel - Conversations / Contacts */}
+          {/* Left Panel - Conversations / Contacts / Archived */}
           <div className={`w-full sm:w-84 md:w-96 border-r border-slate-200 flex flex-col shrink-0 bg-slate-50/50 ${selectedPartner ? 'hidden sm:flex' : 'flex'}`}>
             
             {/* Search & Tabs */}
@@ -269,43 +418,81 @@ export default function MessagesPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
-                  placeholder={activeTab === 'conversations' ? "Search conversations..." : "Search contacts..."}
+                  placeholder={
+                    activeTab === 'conversations'
+                      ? "Search recent chats..."
+                      : activeTab === 'contacts'
+                      ? "Search contacts..."
+                      : "Search archived chats..."
+                  }
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:bg-white focus:border-dswd-lightBlue focus:ring-2 focus:ring-blue-100 transition"
                 />
               </div>
 
-              {/* Navigation Tabs */}
+              {/* Navigation Tabs: Recent, Contacts, Archived */}
               <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
                 <button
-                  onClick={() => setActiveTab('conversations')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                  onClick={() => {
+                    setActiveTab('conversations');
+                    if (isArchivedView) {
+                      setIsArchivedView(false);
+                      setSelectedPartner(null);
+                    }
+                  }}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                     activeTab === 'conversations'
                       ? 'bg-white text-dswd-blue shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
-                  Recent Chats
+                  <span>Recent</span>
                   {conversations.some(c => c.unreadCount > 0) && (
-                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                    <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
                   )}
                 </button>
 
                 <button
-                  onClick={() => setActiveTab('contacts')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                  onClick={() => {
+                    setActiveTab('contacts');
+                    if (isArchivedView) {
+                      setIsArchivedView(false);
+                      setSelectedPartner(null);
+                    }
+                  }}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                     activeTab === 'contacts'
                       ? 'bg-white text-dswd-blue shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
                   <Users className="w-3.5 h-3.5" />
-                  {user.role === 'beneficiary' ? 'Staff & Admin' : 'Contacts'}
-                  <span className="text-[10px] bg-slate-200 px-1.5 py-0.2 rounded-full text-slate-600 font-semibold">
+                  <span>{user.role === 'beneficiary' ? 'Staff' : 'Contacts'}</span>
+                  <span className="text-[10px] bg-slate-200 px-1.5 py-0.2 rounded-full text-slate-600 font-semibold shrink-0">
                     {contacts.length}
                   </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('archived');
+                    setSelectedPartner(null);
+                  }}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    activeTab === 'archived'
+                      ? 'bg-white text-dswd-blue shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>Archived</span>
+                  {archivedConversations.length > 0 && (
+                    <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.2 rounded-full font-bold shrink-0">
+                      {archivedConversations.length}
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
@@ -326,17 +513,17 @@ export default function MessagesPage() {
                   </div>
                 ) : (
                   filteredContacts.map((contact) => {
-                    const isSelected = selectedPartner?.id === contact.id;
+                    const isSelected = selectedPartner?.id === contact.id && !isArchivedView;
                     return (
                       <button
                         key={contact.id}
-                        onClick={() => selectPartner(contact)}
+                        onClick={() => selectPartner(contact, false)}
                         className={`w-full text-left px-4 py-3.5 transition flex items-center gap-3.5 hover:bg-slate-100/80 ${
                           isSelected ? 'bg-blue-50/90 border-l-4 border-dswd-lightBlue' : 'bg-white'
                         }`}
                       >
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm ${
-                          contact.role === 'admin'
+                          ['admin','mswdo_admin'].includes(contact.role)
                             ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
                             : 'bg-gradient-to-br from-blue-500 to-cyan-600'
                         }`}>
@@ -357,8 +544,78 @@ export default function MessagesPage() {
                     );
                   })
                 )
+              ) : activeTab === 'archived' ? (
+                // ─── Archived Conversations List ───
+                filteredArchivedConversations.length === 0 ? (
+                  <div className="p-8 text-center space-y-3">
+                    <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
+                      <Archive className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-700">Walang Archived Chats</p>
+                      <p className="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">
+                        Kapag nag-delete ka ng chat, hindi ito mabubura sa database kundi ilalagay rito sa Archive para maaari mo pa ring balikan o i-restore.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  filteredArchivedConversations.map((conv) => {
+                    const isSelected = selectedPartner?.id === conv.partnerId && isArchivedView;
+                    return (
+                      <div
+                        key={conv.partnerId}
+                        onClick={() => selectPartner(conv.partner, true)}
+                        className={`w-full text-left px-4 py-3.5 transition flex items-center gap-3.5 hover:bg-slate-100/80 cursor-pointer ${
+                          isSelected ? 'bg-amber-50/90 border-l-4 border-amber-500' : 'bg-white'
+                        }`}
+                      >
+                        <div className="relative shrink-0">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm ${
+                            ['admin','mswdo_admin'].includes(conv.partner.role)
+                              ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
+                              : 'bg-gradient-to-br from-blue-500 to-cyan-600'
+                          }`}>
+                            {conv.partner.first_name[0]}{conv.partner.last_name[0]}
+                          </div>
+                          <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-500 text-white rounded-full flex items-center justify-center shadow-xs">
+                            <Archive className="w-2.5 h-2.5" />
+                          </span>
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-bold text-slate-800 truncate">
+                              {conv.partner.first_name} {conv.partner.last_name}
+                            </span>
+                            <span className="text-[10px] text-slate-400 shrink-0">{formatTime(conv.lastMessageAt)}</span>
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            {getRoleBadge(conv.partner.role, conv.partner.Barangay?.barangay_name)}
+                            <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded-md">
+                              Archived
+                            </span>
+                          </div>
+                          <p className="text-[11px] truncate mt-1 text-slate-400 italic">
+                            {conv.lastMessage}
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRestoreConversation(conv.partnerId);
+                          }}
+                          title="Ibalik sa Recent Chats (Restore)"
+                          className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition shrink-0"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )
               ) : (
-                // ─── Conversations List ───
+                // ─── Recent Active Conversations List ───
                 filteredConversations.length === 0 ? (
                   <div className="p-8 text-center space-y-3">
                     <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto text-dswd-blue">
@@ -380,18 +637,18 @@ export default function MessagesPage() {
                   </div>
                 ) : (
                   filteredConversations.map((conv) => {
-                    const isSelected = selectedPartner?.id === conv.partnerId;
+                    const isSelected = selectedPartner?.id === conv.partnerId && !isArchivedView;
                     return (
                       <button
                         key={conv.partnerId}
-                        onClick={() => selectPartner(conv.partner)}
+                        onClick={() => selectPartner(conv.partner, false)}
                         className={`w-full text-left px-4 py-3.5 transition flex items-center gap-3.5 hover:bg-slate-100/80 ${
                           isSelected ? 'bg-blue-50/90 border-l-4 border-dswd-lightBlue' : 'bg-white'
                         }`}
                       >
                         <div className="relative shrink-0">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm ${
-                            conv.partner.role === 'admin'
+                            ['admin','mswdo_admin'].includes(conv.partner.role)
                               ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
                               : 'bg-gradient-to-br from-blue-500 to-cyan-600'
                           }`}>
@@ -440,7 +697,7 @@ export default function MessagesPage() {
                       <ArrowLeft className="w-5 h-5" />
                     </button>
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm ${
-                      selectedPartner.role === 'admin'
+                      ['admin','mswdo_admin'].includes(selectedPartner.role)
                         ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
                         : 'bg-gradient-to-br from-blue-500 to-cyan-600'
                     }`}>
@@ -452,6 +709,12 @@ export default function MessagesPage() {
                           {selectedPartner.first_name} {selectedPartner.last_name}
                         </h3>
                         {getRoleBadge(selectedPartner.role, selectedPartner.Barangay?.barangay_name)}
+                        {isArchivedView && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                            <Archive className="w-3 h-3 text-amber-600" />
+                            Archived Chat
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <Circle className="w-2 h-2 fill-emerald-500 text-emerald-500" />
@@ -459,10 +722,53 @@ export default function MessagesPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Header Actions: Delete Chat (Archive) or Restore */}
+                  <div className="flex items-center gap-2">
+                    {isArchivedView ? (
+                      <button
+                        onClick={() => handleRestoreConversation(selectedPartner.id)}
+                        disabled={restoring}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold transition shadow-xs disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{restoring ? 'Restoring...' : 'Restore Chat'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowDeleteModal(true)}
+                        title="Delete chat (Archive)"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-slate-600 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-xs font-semibold transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                        <span className="hidden sm:inline">Delete Chat</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Message Stream */}
                 <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3.5 bg-slate-50/70">
+                  {/* Archived Notice Banner */}
+                  {isArchivedView && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-amber-900 shadow-xs">
+                      <div className="flex items-center gap-2">
+                        <Archive className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>
+                          <strong>Archived Conversation:</strong> Ang pag-uusap na ito ay naka-archive. Hindi ito lilitaw sa Recent Chats hangga't hindi naire-restore o nagpapadala ng bagong mensahe.
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleRestoreConversation(selectedPartner.id)}
+                        disabled={restoring}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition shrink-0 flex items-center gap-1 shadow-xs disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Restore
+                      </button>
+                    </div>
+                  )}
+
                   {loading ? (
                     <div className="flex justify-center py-12">
                       <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-dswd-blue"></div>
@@ -481,7 +787,18 @@ export default function MessagesPage() {
                     messages.map((msg) => {
                       const isMine = msg.sender_id === user.id;
                       return (
-                        <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                        <div key={msg.id} className={`flex group items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                          {/* Left-side action for own messages */}
+                          {isMine && !isArchivedView && (
+                            <button
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              title="Archive this message"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
                           <div className={`max-w-[80%] sm:max-w-[70%] px-4 py-2.5 rounded-2xl text-xs sm:text-sm shadow-xs ${
                             isMine
                               ? 'bg-dswd-blue text-white rounded-br-xs'
@@ -492,6 +809,17 @@ export default function MessagesPage() {
                               {formatTime(msg.created_at || msg.createdAt)}
                             </p>
                           </div>
+
+                          {/* Right-side action for received messages */}
+                          {!isMine && !isArchivedView && (
+                            <button
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              title="Archive this message"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       );
                     })
@@ -505,7 +833,11 @@ export default function MessagesPage() {
                     type="text"
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder={`Type a message to ${selectedPartner.first_name}...`}
+                    placeholder={
+                      isArchivedView
+                        ? `Magpadala ng mensahe para ma-restore at ituloy ang chat kay ${selectedPartner.first_name}...`
+                        : `Type a message to ${selectedPartner.first_name}...`
+                    }
                     className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm outline-none focus:bg-white focus:border-dswd-lightBlue focus:ring-2 focus:ring-blue-100 transition"
                     disabled={sending}
                   />
@@ -545,12 +877,12 @@ export default function MessagesPage() {
                         {contacts.slice(0, 4).map((c) => (
                           <button
                             key={c.id}
-                            onClick={() => selectPartner(c)}
+                            onClick={() => selectPartner(c, false)}
                             className="p-3 bg-white border border-slate-200 rounded-xl hover:border-dswd-lightBlue hover:shadow-md transition flex items-center justify-between gap-3 group"
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 ${
-                                c.role === 'admin'
+                                ['admin','mswdo_admin'].includes(c.role)
                                   ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
                                   : 'bg-gradient-to-br from-blue-500 to-cyan-600'
                               }`}>

@@ -35,6 +35,8 @@ export default function ModernDashboard() {
   const [applications, setApplications] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [dateRange, setDateRange] = useState('today');
+  const isMswdoAdmin = user?.role === 'mswdo_admin';
+  const isSystemAdmin = user?.role === 'admin';
 
   useEffect(() => {
     loadDashboard();
@@ -48,14 +50,14 @@ export default function ModernDashboard() {
         dashboardApi.monthlyDistribution(),
         announcementApi.list(),
       ];
-      if (user?.role === 'admin') {
+      if (['admin','mswdo_admin'].includes(user?.role)) {
         promises.push(beneficiaryApi.listApplications());
       }
       const results = await Promise.all(promises);
       const summaryData = results[0].data?.data || results[0].data || {};
       const monthlyData = results[1].data?.data || results[1].data || [];
       const annData = results[2].data?.data || results[2].data || [];
-      const appsData = (user?.role === 'admin' && results[3]) ? (results[3].data?.data || results[3].data || []) : [];
+      const appsData = (['admin','mswdo_admin'].includes(user?.role) && results[3]) ? (results[3].data?.data || results[3].data || []) : [];
 
       setSummary(summaryData);
       setMonthly(Array.isArray(monthlyData) ? monthlyData : []);
@@ -96,7 +98,9 @@ export default function ModernDashboard() {
     parseFloat(previousMonthData.total || 0)
   );
 
-  const totalBeneficiaries = summary ? ((summary.fourPsCount || 0) + (summary.seniorCitizensCount || 0) + (summary.pwdCount || 0) || summary.totalBeneficiaries || 0) : 0;
+  const totalBeneficiaries = summary
+    ? ((summary.fourPsCount || 0) + (summary.seniorCitizensCount || 0) + (summary.pwdCount || 0) || summary.totalBeneficiaries || 0)
+    : 0;
   const totalDistributedFunds = summary?.totalDistributedFunds || 0;
 
   const pendingApplicationsList = applications.filter(a =>
@@ -110,7 +114,64 @@ export default function ModernDashboard() {
     ? summary.pendingApplications
     : pendingApplicationsList.length;
 
-  const stats = [
+  // MSWDO stats: primary focus on Senior & PWD, with 4Ps included
+  const stats = isMswdoAdmin ? [
+    {
+      title: 'Senior Citizens',
+      value: summary?.seniorCitizensCount || 0,
+      change: `${summary?.seniorCitizensCount || 0} approved`,
+      trend: 'up',
+      icon: Users,
+      gradient: 'from-blue-500 to-blue-600',
+      iconBg: 'bg-blue-100',
+      iconColor: 'text-blue-600',
+      onClick: () => navigate('/dashboard/beneficiaries')
+    },
+    {
+      title: 'PWD Beneficiaries',
+      value: summary?.pwdCount || 0,
+      change: `${summary?.pwdCount || 0} approved`,
+      trend: 'up',
+      icon: HandHeart,
+      gradient: 'from-purple-500 to-purple-600',
+      iconBg: 'bg-purple-100',
+      iconColor: 'text-purple-600',
+      onClick: () => navigate('/dashboard/beneficiaries')
+    },
+    {
+      title: '4Ps Beneficiaries',
+      value: summary?.fourPsCount || 0,
+      change: `${summary?.fourPsCount || 0} approved`,
+      trend: 'up',
+      icon: Target,
+      gradient: 'from-sky-500 to-blue-600',
+      iconBg: 'bg-sky-100',
+      iconColor: 'text-sky-600',
+      onClick: () => navigate('/dashboard/beneficiaries')
+    },
+    {
+      title: 'Total Beneficiaries',
+      value: totalBeneficiaries,
+      change: `${totalBeneficiaries} total`,
+      trend: 'up',
+      icon: Users,
+      gradient: 'from-emerald-500 to-emerald-600',
+      iconBg: 'bg-emerald-100',
+      iconColor: 'text-emerald-600',
+      onClick: () => navigate('/dashboard/beneficiaries')
+    },
+    {
+      title: 'Pending Approvals',
+      value: pendingCount,
+      change: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
+      trend: 'neutral',
+      icon: Clock,
+      gradient: 'from-amber-500 to-amber-600',
+      iconBg: 'bg-amber-100',
+      iconColor: 'text-amber-600',
+      onClick: () => navigate('/dashboard/beneficiaries?pending=true', { state: { openPending: true } })
+    }
+  ] : [
     {
       title: 'Total Beneficiaries',
       value: totalBeneficiaries,
@@ -144,7 +205,7 @@ export default function ModernDashboard() {
       iconColor: 'text-green-600',
       onClick: () => navigate('/dashboard/distributions')
     },
-    ...(user?.role === 'admin' ? [{
+    ...(['admin','mswdo_admin'].includes(user?.role) ? [{
       title: 'Pending Beneficiaries',
       value: pendingCount,
       change: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
@@ -167,7 +228,11 @@ export default function ModernDashboard() {
     }])
   ];
 
-  const categoryData = [
+  const categoryData = isMswdoAdmin ? [
+    { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E30613' },
+    { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#FFD100' },
+    { name: '4Ps Program', value: summary?.fourPsCount || 0, color: '#00338D' }
+  ] : [
     { name: '4Ps Program', value: summary?.fourPsCount || 0, color: '#00338D' },
     { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E30613' },
     { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#FFD100' }
@@ -254,15 +319,15 @@ export default function ModernDashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-50 text-[#00338D] border border-blue-100">
-              {user?.role === 'admin' ? '👑 Admin Console' : '🏢 Staff Portal'}
+            <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${isMswdoAdmin ? 'bg-purple-50 text-purple-700 border-purple-200' : ['admin','mswdo_admin'].includes(user?.role) ? 'bg-blue-50 text-[#00338D] border-blue-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100'}`}>
+              {isMswdoAdmin ? '🏥 MSWDO — Senior & PWD Focus' : ['admin','mswdo_admin'].includes(user?.role) ? '👑 Admin Console' : '🏢 Staff Portal'}
             </span>
             <span className="text-xs text-slate-400 font-medium">• Bongabong, Or. Mindoro</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Welcome back, <span className="text-[#00338D]">{user?.first_name || 'User'}</span>
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">Here is the real-time summary of beneficiaries, programs, and payouts.</p>
+          <p className="text-sm text-slate-500 mt-0.5">{isMswdoAdmin ? 'MSWDO focus: Senior Citizens and Persons with Disabilities (PWD) welfare.' : 'Here is the real-time summary of beneficiaries, programs, and payouts.'}</p>
         </div>
         <div className="flex items-center gap-3">
           <button 
@@ -283,7 +348,7 @@ export default function ModernDashboard() {
       </div>
 
       {/* UPCOMING ANNOUNCEMENTS & ACTIVITY FACILITATION WIDGET */}
-      {user?.role !== 'admin' && announcements.filter(a => a.status === 'published').length > 0 && (
+      {!['admin','mswdo_admin'].includes(user?.role) && announcements.filter(a => a.status === 'published').length > 0 && (
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-dswd-blue text-white rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -338,13 +403,22 @@ export default function ModernDashboard() {
                     )}
                   </div>
 
-                  <button
-                    onClick={() => navigate(`/dashboard/announcement-scanner?id=${ann.id}`)}
-                    className="bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black px-3.5 py-1.5 rounded-lg text-xs shadow transition flex items-center gap-1.5 transform active:scale-95"
-                  >
-                    <Smartphone className="w-3.5 h-3.5 stroke-[2.5]" />
-                    Start Attendance
-                  </button>
+                  {(user?.role === 'staff' || user?.role === 'barangay') ? (
+                    <button
+                      onClick={() => navigate(`/dashboard/announcement-scanner?id=${ann.id}`)}
+                      className="bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black px-3.5 py-1.5 rounded-lg text-xs shadow transition flex items-center gap-1.5 transform active:scale-95"
+                    >
+                      <Smartphone className="w-3.5 h-3.5 stroke-[2.5]" />
+                      Start Attendance
+                    </button>
+                  ) : (
+                    <Link
+                      to="/dashboard/announcements"
+                      className="bg-white/15 hover:bg-white/25 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs transition flex items-center gap-1.5"
+                    >
+                      View Details
+                    </Link>
+                  )}
                 </div>
               </div>
             ))}
@@ -353,7 +427,7 @@ export default function ModernDashboard() {
       )}
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className={`grid grid-cols-1 md:grid-cols-2 ${isMswdoAdmin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-6`}>
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
@@ -542,7 +616,7 @@ export default function ModernDashboard() {
           <div className="space-y-2.5">
             {[
               { label: 'New Distribution Event', icon: PesoIcon, path: '/dashboard/distributions' },
-              ...(user?.role === 'admin' ? [
+              ...(['admin','mswdo_admin'].includes(user?.role) ? [
                 { label: 'Review Applications', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' }
               ] : [
                 { label: 'Distribution Scanner', icon: Smartphone, path: '/dashboard/rfid-scanner' }
@@ -565,7 +639,7 @@ export default function ModernDashboard() {
             })}
           </div>
 
-          {user?.role === 'admin' && (
+          {['admin','mswdo_admin'].includes(user?.role) && (
             <div className="mt-6 p-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10">
               <div className="flex items-center gap-2 mb-2">
                 <Award className="w-4 h-4 text-[#FFD100]" />

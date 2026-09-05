@@ -57,6 +57,12 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: [],
         comment: 'Array of barangay IDs e.g. [3, 5]',
       },
+      notify_mswdo: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: 'If true, also sends notification notice to MSWDO Admin',
+      },
       created_by_user_id: {
         type: DataTypes.INTEGER,
         allowNull: false,

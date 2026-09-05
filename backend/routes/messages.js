@@ -25,7 +25,7 @@ router.get('/contacts', async (req, res, next) => {
     const currentUser = req.user;
     let whereClause = { status: 'active' };
 
-    if (currentUser.role === 'admin') {
+    if (['admin','mswdo_admin'].includes(currentUser.role)) {
       // Admin can message all staff/barangay users and only APPROVED beneficiaries
       const approvedBeneficiaryUserIds = (await Beneficiary.findAll({
         where: { status: 'Approved' },
@@ -34,7 +34,7 @@ router.get('/contacts', async (req, res, next) => {
       })).map((b) => b.user_id).filter(Boolean);
 
       whereClause[Op.or] = [
-        { role: { [Op.in]: ['staff', 'barangay'] } },
+        { role: { [Op.in]: ['staff','barangay'] } },
         { 
           role: 'beneficiary',
           id: { [Op.in]: approvedBeneficiaryUserIds }
@@ -64,10 +64,10 @@ router.get('/contacts', async (req, res, next) => {
 
       whereClause[Op.or] = [
         // Admin (any barangay)
-        { role: 'admin' },
+        { role: { [Op.in]: ['admin','mswdo_admin'] } },
         // Staff from the SAME barangay only
         { 
-          role: { [Op.in]: ['staff', 'barangay'] },
+          role: { [Op.in]: ['staff','barangay'] },
           barangay_id: userBarangayId
         },
         // Only APPROVED beneficiaries from the SAME barangay
@@ -88,16 +88,16 @@ router.get('/contacts', async (req, res, next) => {
       if (beneficiaryBarangayId) {
         whereClause[Op.or] = [
           // System Administrator
-          { role: 'admin' },
+          { role: { [Op.in]: ['admin','mswdo_admin'] } },
           // Staff from their registered barangay
           { 
-            role: { [Op.in]: ['staff', 'barangay'] },
+            role: { [Op.in]: ['staff','barangay'] },
             barangay_id: beneficiaryBarangayId
           }
         ];
       } else {
         // If no barangay assigned yet, they can still contact System Admin
-        whereClause.role = 'admin';
+        whereClause.role = { [Op.in]: ['admin','mswdo_admin'] };
       }
     } else {
       return res.json({ success: true, data: [] });
@@ -126,16 +126,98 @@ router.get('/contacts', async (req, res, next) => {
 });
 
 // Get conversations (list of unique users messaged with + last message)
+// Supports ?archived=true to retrieve archived conversations
 router.get('/conversations', async (req, res, next) => {
   try {
     const userId = req.user.id;
+    const isArchivedView = req.query.archived === 'true';
 
-    // Get all messages involving this user
+    if (isArchivedView) {
+      // Get all messages where current user archived them
+      const archivedMessages = await Message.findAll({
+        where: {
+          [Op.or]: [
+            { sender_id: userId, archived_by_sender: true },
+            { receiver_id: userId, archived_by_receiver: true },
+          ],
+        },
+        order: [['created_at', 'DESC']],
+        raw: true,
+      });
+
+      // Also find partnerIds with active messages
+      const activeMessages = await Message.findAll({
+        where: {
+          [Op.or]: [
+            { sender_id: userId, archived_by_sender: false },
+            { receiver_id: userId, archived_by_receiver: false },
+          ],
+        },
+        attributes: ['sender_id', 'receiver_id'],
+        raw: true,
+      });
+      const activePartnerIds = new Set(
+        activeMessages.map((m) => (m.sender_id === userId ? m.receiver_id : m.sender_id))
+      );
+
+      // Group by partnerId - only include partners whose entire conversation is currently archived (no active unarchived messages)
+      // or if they have archived messages
+      const conversationMap = {};
+      for (const msg of archivedMessages) {
+        const partnerId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
+        // If the user already has an active conversation with this partner due to new messages,
+        // we can still list or distinguish it
+        if (!conversationMap[partnerId]) {
+          conversationMap[partnerId] = {
+            partnerId,
+            lastMessage: msg.content,
+            lastMessageAt: msg.created_at,
+            unreadCount: 0,
+            isArchived: true,
+            hasActiveMessages: activePartnerIds.has(partnerId),
+          };
+        }
+      }
+
+      const partnerIds = Object.keys(conversationMap).map(Number);
+      if (partnerIds.length === 0) {
+        return res.json({ success: true, data: [] });
+      }
+
+      const partners = await User.findAll({
+        where: { id: { [Op.in]: partnerIds } },
+        attributes: ['id', 'first_name', 'last_name', 'email', 'role', 'barangay_id'],
+        include: [
+          {
+            model: Barangay,
+            attributes: ['id', 'barangay_name'],
+            required: false,
+          },
+        ],
+      });
+
+      const partnerMap = {};
+      for (const p of partners) {
+        partnerMap[p.id] = p.toJSON ? p.toJSON() : p;
+      }
+
+      const conversations = partnerIds
+        .map((pid) => ({
+          ...conversationMap[pid],
+          partner: partnerMap[pid] || null,
+        }))
+        .filter((c) => c.partner)
+        .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+
+      return res.json({ success: true, data: conversations });
+    }
+
+    // Active (non-archived) conversations
     const messages = await Message.findAll({
       where: {
         [Op.or]: [
-          { sender_id: userId },
-          { receiver_id: userId },
+          { sender_id: userId, archived_by_sender: false },
+          { receiver_id: userId, archived_by_receiver: false },
         ],
       },
       order: [['created_at', 'DESC']],
@@ -152,9 +234,10 @@ router.get('/conversations', async (req, res, next) => {
           lastMessage: msg.content,
           lastMessageAt: msg.created_at,
           unreadCount: 0,
+          isArchived: false,
         };
       }
-      if (msg.receiver_id === userId && !msg.is_read) {
+      if (msg.receiver_id === userId && !msg.is_read && !msg.archived_by_receiver) {
         conversationMap[partnerId].unreadCount += 1;
       }
     }
@@ -173,7 +256,7 @@ router.get('/conversations', async (req, res, next) => {
           model: Barangay,
           attributes: ['id', 'barangay_name'],
           required: false,
-        }
+        },
       ],
     });
 
@@ -203,6 +286,7 @@ router.get('/unread/count', async (req, res, next) => {
       where: {
         receiver_id: req.user.id,
         is_read: false,
+        archived_by_receiver: false,
       },
     });
     res.json({ success: true, data: { count } });
@@ -211,33 +295,198 @@ router.get('/unread/count', async (req, res, next) => {
   }
 });
 
-// Get messages with a specific user
-router.get('/:partnerId', async (req, res, next) => {
+// Archive (delete) entire conversation with partner for current user
+router.delete('/conversations/:partnerId', async (req, res, next) => {
   try {
     const userId = req.user.id;
     const partnerId = parseInt(req.params.partnerId, 10);
 
-    const messages = await Message.findAll({
-      where: {
-        [Op.or]: [
-          { sender_id: userId, receiver_id: partnerId },
-          { sender_id: partnerId, receiver_id: userId },
-        ],
-      },
-      order: [['created_at', 'ASC']],
-    });
+    if (!partnerId) {
+      return res.status(400).json({ success: false, message: 'Invalid partner id' });
+    }
 
-    // Mark messages from partner as read
+    // Archive messages where user is sender
     await Message.update(
-      { is_read: true },
+      { archived_by_sender: true },
+      {
+        where: {
+          sender_id: userId,
+          receiver_id: partnerId,
+        },
+      }
+    );
+
+    // Archive messages where user is receiver
+    await Message.update(
+      { archived_by_receiver: true },
       {
         where: {
           sender_id: partnerId,
           receiver_id: userId,
-          is_read: false,
         },
       }
     );
+
+    res.json({
+      success: true,
+      message: 'Conversation has been archived successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Restore (unarchive) entire conversation with partner for current user
+router.post('/conversations/:partnerId/restore', async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const partnerId = parseInt(req.params.partnerId, 10);
+
+    if (!partnerId) {
+      return res.status(400).json({ success: false, message: 'Invalid partner id' });
+    }
+
+    // Unarchive messages where user is sender
+    await Message.update(
+      { archived_by_sender: false },
+      {
+        where: {
+          sender_id: userId,
+          receiver_id: partnerId,
+        },
+      }
+    );
+
+    // Unarchive messages where user is receiver
+    await Message.update(
+      { archived_by_receiver: false },
+      {
+        where: {
+          sender_id: partnerId,
+          receiver_id: userId,
+        },
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Conversation restored successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Archive (delete) a single message for current user
+router.delete('/:messageId', async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const messageId = parseInt(req.params.messageId, 10);
+
+    const msg = await Message.findByPk(messageId);
+    if (!msg) {
+      return res.status(404).json({ success: false, message: 'Message not found' });
+    }
+
+    if (msg.sender_id !== userId && msg.receiver_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Not authorized to archive this message' });
+    }
+
+    if (msg.sender_id === userId) {
+      msg.archived_by_sender = true;
+    }
+    if (msg.receiver_id === userId) {
+      msg.archived_by_receiver = true;
+    }
+    await msg.save();
+
+    res.json({
+      success: true,
+      message: 'Message archived successfully',
+      data: msg,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Restore (unarchive) a single message for current user
+router.post('/:messageId/restore', async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const messageId = parseInt(req.params.messageId, 10);
+
+    const msg = await Message.findByPk(messageId);
+    if (!msg) {
+      return res.status(404).json({ success: false, message: 'Message not found' });
+    }
+
+    if (msg.sender_id !== userId && msg.receiver_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    if (msg.sender_id === userId) {
+      msg.archived_by_sender = false;
+    }
+    if (msg.receiver_id === userId) {
+      msg.archived_by_receiver = false;
+    }
+    await msg.save();
+
+    res.json({
+      success: true,
+      message: 'Message restored successfully',
+      data: msg,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get messages with a specific user
+// Supports ?archived=true to view archived messages
+router.get('/:partnerId', async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const partnerId = parseInt(req.params.partnerId, 10);
+    const viewArchived = req.query.archived === 'true';
+
+    let whereClause;
+    if (viewArchived) {
+      whereClause = {
+        [Op.or]: [
+          { sender_id: userId, receiver_id: partnerId, archived_by_sender: true },
+          { sender_id: partnerId, receiver_id: userId, archived_by_receiver: true },
+        ],
+      };
+    } else {
+      whereClause = {
+        [Op.or]: [
+          { sender_id: userId, receiver_id: partnerId, archived_by_sender: false },
+          { sender_id: partnerId, receiver_id: userId, archived_by_receiver: false },
+        ],
+      };
+    }
+
+    const messages = await Message.findAll({
+      where: whereClause,
+      order: [['created_at', 'ASC']],
+    });
+
+    // Mark messages from partner as read (only if viewing active messages)
+    if (!viewArchived) {
+      await Message.update(
+        { is_read: true },
+        {
+          where: {
+            sender_id: partnerId,
+            receiver_id: userId,
+            is_read: false,
+            archived_by_receiver: false,
+          },
+        }
+      );
+    }
 
     res.json({ success: true, data: messages });
   } catch (error) {
@@ -265,7 +514,7 @@ router.post('/', async (req, res, next) => {
     const receiverRole = receiver.role;
 
     // 1. Admin can message staff, barangay, and beneficiaries
-    if (currentRole === 'admin') {
+    if (['admin','mswdo_admin'].includes(currentRole)) {
       if (!['staff', 'barangay', 'beneficiary'].includes(receiverRole)) {
         return res.status(403).json({ success: false, message: 'Admin can only message staff, barangay, and beneficiary users' });
       }
@@ -284,7 +533,7 @@ router.post('/', async (req, res, next) => {
         });
       }
 
-      if (receiverRole === 'admin') {
+      if (['admin','mswdo_admin'].includes(receiverRole)) {
         // Allowed
       } else if (receiverRole === 'staff' || receiverRole === 'barangay') {
         const receiverBarangayId = await getUserBarangayId(receiver);
@@ -321,7 +570,7 @@ router.post('/', async (req, res, next) => {
 
       const beneficiaryBarangayId = ben.barangay_id || req.user.barangay_id;
 
-      if (receiverRole === 'admin') {
+      if (['admin','mswdo_admin'].includes(receiverRole)) {
         // Allowed to message System Administrator
       } else if (receiverRole === 'staff' || receiverRole === 'barangay') {
         if (!beneficiaryBarangayId) {

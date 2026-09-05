@@ -91,6 +91,7 @@ export const beneficiaryApi = {
   reviewApplication: (id) => apiClient.put(`/beneficiaries/applications/${id}/review`),
   approveApplication: (id) => apiClient.post(`/beneficiaries/applications/${id}/approve`),
   rejectApplication: (id, data) => apiClient.post(`/beneficiaries/applications/${id}/reject`, data),
+  getAttendance: (id) => apiClient.get(`/beneficiaries/${id}/attendance`),
 };
 
 export const programApi = {
@@ -118,6 +119,7 @@ export const distributionApi = {
   updateEvent: (id, data) => apiClient.put(`/distributions/events/${id}`, data),
   deleteEvent: (id) => apiClient.delete(`/distributions/events/${id}`),
   publishEvent: (id) => apiClient.post(`/distributions/events/${id}/publish`),
+  getRetroPreview: (id) => apiClient.get(`/distributions/events/${id}/retro-preview`),
   getEligibleBeneficiaries: (id, params) => apiClient.get(`/distributions/events/${id}/eligible-beneficiaries`, { params }),
   getEligibleCount: (id) => apiClient.get(`/distributions/events/${id}/count-eligible`),
   
@@ -160,10 +162,14 @@ export const seedApi = {
 
 export const messageApi = {
   contacts: () => apiClient.get('/messages/contacts'),
-  conversations: () => apiClient.get('/messages/conversations'),
-  getMessages: (partnerId) => apiClient.get(`/messages/${partnerId}`),
+  conversations: (params) => apiClient.get('/messages/conversations', { params }),
+  getMessages: (partnerId, params) => apiClient.get(`/messages/${partnerId}`, { params }),
   send: (data) => apiClient.post('/messages', data),
   unreadCount: () => apiClient.get('/messages/unread/count'),
+  archiveConversation: (partnerId) => apiClient.delete(`/messages/conversations/${partnerId}`),
+  restoreConversation: (partnerId) => apiClient.post(`/messages/conversations/${partnerId}/restore`),
+  archiveMessage: (messageId) => apiClient.delete(`/messages/${messageId}`),
+  restoreMessage: (messageId) => apiClient.post(`/messages/${messageId}/restore`),
 };
 
 export const announcementApi = {
@@ -179,6 +185,7 @@ export const announcementApi = {
   getAttendanceStats: (id) => apiClient.get(`/announcements/${id}/attendance-stats`),
   exportAttendanceReport: (id) => apiClient.get(`/announcements/${id}/export`),
   completeActivity: (id) => apiClient.post(`/announcements/${id}/complete`),
+  myAttendance: () => apiClient.get('/announcements/my-attendance'),
 };
 
 export const notificationApi = {

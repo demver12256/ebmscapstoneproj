@@ -117,12 +117,14 @@ export default function RfidScannerPage() {
         ['========================================================================================'],
         ['1. CLAIMED BENEFICIARIES (NAKA-CLAIM)'],
         ['========================================================================================'],
-        ['#', 'Transaction #', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Claim Date & Time', 'Amount Released (₱)', 'Released By Staff', 'Status']
+        ['#', 'Transaction #', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Claim Date & Time', 'Regular Amount (₱)', 'Retro Amount (₱)', 'Retro Periods', 'Total Released (₱)', 'Released By Staff', 'Status']
       ];
 
       claimedTxns.forEach((txn, index) => {
         const ben = txn.Beneficiary || {};
         const staff = txn.ReleasedByStaff ? `${txn.ReleasedByStaff.first_name || ''} ${txn.ReleasedByStaff.last_name || ''}`.trim() : 'N/A';
+        const regAmt = parseFloat(txn.amount || 0);
+        const retroAmt = parseFloat(txn.retro_amount || 0);
         worksheetData.push([
           index + 1,
           txn.transaction_number || 'N/A',
@@ -132,7 +134,10 @@ export default function RfidScannerPage() {
           ben.Barangay?.barangay_name || selectedEventData?.Barangay?.barangay_name || 'N/A',
           ben.category || 'N/A',
           txn.released_at ? new Date(txn.released_at).toLocaleString() : 'N/A',
-          parseFloat(txn.amount || 0),
+          regAmt,
+          retroAmt,
+          txn.retro_periods || 0,
+          regAmt + retroAmt,
           staff,
           'Claimed'
         ]);
@@ -142,10 +147,12 @@ export default function RfidScannerPage() {
       worksheetData.push(['========================================================================================']);
       worksheetData.push(['2. UNCLAIMED BENEFICIARIES (HINDI NAKA-CLAIM)']);
       worksheetData.push(['========================================================================================']);
-      worksheetData.push(['#', 'Transaction #', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Contact Number', 'Allocated Amount (₱)', 'Status']);
+      worksheetData.push(['#', 'Transaction #', 'RFID Number', 'Beneficiary Name', 'ID Code', 'Barangay', 'Category', 'Contact Number', 'Regular Amount (₱)', 'Retro Amount (₱)', 'Total Allocated (₱)', 'Status']);
 
       unclaimedTxns.forEach((txn, index) => {
         const ben = txn.Beneficiary || {};
+        const regAmt = parseFloat(txn.amount || 0);
+        const retroAmt = parseFloat(txn.retro_amount || 0);
         worksheetData.push([
           index + 1,
           txn.transaction_number || 'N/A',
@@ -155,7 +162,9 @@ export default function RfidScannerPage() {
           ben.Barangay?.barangay_name || selectedEventData?.Barangay?.barangay_name || 'N/A',
           ben.category || 'N/A',
           ben.contact_number || 'N/A',
-          parseFloat(txn.amount || 0),
+          regAmt,
+          retroAmt,
+          regAmt + retroAmt,
           'Unclaimed'
         ]);
       });
@@ -266,7 +275,16 @@ export default function RfidScannerPage() {
         notes: `Released via RFID scan at ${releaseTime}`
       });
 
-      setSuccess(`✅ ${beneficiary.first_name} ${beneficiary.last_name} - Benefit released! Amount: ₱${parseFloat(transaction.amount).toLocaleString()}`);
+      const regularAmt = parseFloat(transaction.amount || 0);
+      const retroAmt = parseFloat(transaction.retro_amount || 0);
+      const totalPayout = regularAmt + retroAmt;
+      const retroPeriods = transaction.retro_periods || 0;
+
+      const successMsg = retroPeriods > 0
+        ? `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Benefit released! Total: ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })} (Regular: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} + Retro: ₱${retroAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} for ${retroPeriods} period(s))`
+        : `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Benefit released! Amount: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
+
+      setSuccess(successMsg);
       setScannedRecords([
         {
           id: Date.now(),
@@ -274,7 +292,10 @@ export default function RfidScannerPage() {
           name: `${beneficiary.first_name} ${beneficiary.last_name}`,
           beneficiary_id_code: beneficiary.beneficiary_id_code,
           category: beneficiary.category,
-          amount: transaction.amount,
+          amount: totalPayout,
+          regular_amount: regularAmt,
+          retro_amount: retroAmt,
+          retro_periods: retroPeriods,
           time: releaseTime,
           date: distributionDate,
           status: 'released'
@@ -531,14 +552,23 @@ export default function RfidScannerPage() {
                   <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
                   <div className="min-w-0">
                     <p className="font-medium text-slate-900 truncate">{record.name}</p>
-                    <p className="text-xs text-slate-600 font-mono">{record.rfid}</p>
+                    <p className="text-xs text-slate-600 font-mono">{record.rfid} • {record.category}</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm text-slate-700 font-medium">{record.time}</p>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
-                    Recorded
-                  </span>
+                  <p className="text-sm font-bold text-green-700">
+                    ₱{parseFloat(record.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                  </p>
+                  <div className="flex items-center justify-end gap-1 mt-0.5">
+                    {record.retro_periods > 0 && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                        ⚡ +₱{parseFloat(record.retro_amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })} ({record.retro_periods}p)
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-500 font-medium">
+                      {record.time}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))}

@@ -118,7 +118,7 @@ export default function UserListPage() {
     { header: 'Email', accessor: 'email', cell: (row) => row.email || '—' },
     { header: 'Role', accessor: 'role', cell: (row) => (
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-        row.role === 'admin' ? 'bg-purple-100 text-purple-800' :
+        ['admin','mswdo_admin'].includes(row.role) ? 'bg-purple-100 text-purple-800' :
         row.role === 'staff' ? 'bg-blue-100 text-blue-800' :
         row.role === 'barangay' ? 'bg-green-100 text-green-800' :
         'bg-slate-100 text-slate-700'
@@ -134,7 +134,7 @@ export default function UserListPage() {
         row.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
       }`}>{row.status}</span>
     )},
-    { header: 'Actions', accessor: 'id', cell: (row) => row.role !== 'admin' ? (
+    { header: 'Actions', accessor: 'id', cell: (row) => !['admin','mswdo_admin'].includes(row.role) ? (
       <button
         onClick={() => handleDelete(row.id)}
         className="rounded-lg px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 transition"
@@ -254,7 +254,7 @@ export default function UserListPage() {
               <Input label="Password" name="password" type="password" value={form.password} onChange={handleChange} required autoComplete="new-password" />
               <Input label="Contact Number" name="contact_number" value={form.contact_number} onChange={handleChange} autoComplete="off" />
               
-              {currentUser?.role === 'admin' && (
+              {['admin','mswdo_admin'].includes(currentUser?.role) && (
                 <>
                   <label className="block text-sm font-semibold text-slate-700">
                     Barangay
