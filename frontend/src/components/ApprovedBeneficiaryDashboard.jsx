@@ -1,8 +1,9 @@
-import { Calendar, MapPin, Copy, Bell, FileText, CheckCircle2, Clock, Users, AlertTriangle, Megaphone, Check, X, Award, Gift } from 'lucide-react';
+import { Calendar, MapPin, Copy, Bell, FileText, CheckCircle2, Clock, Users, AlertTriangle, Megaphone, Check, X, Award, Gift, Zap, RefreshCw, CreditCard, Edit3, ShieldCheck, XCircle, Plus, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { announcementApi, notificationApi } from '../services/api';
+import { announcementApi, notificationApi, distributionApi, beneficiaryApi } from '../services/api';
 import { Link } from 'react-router-dom';
+import { isNonCashProgram, getNonCashDetails } from '../utils/nonCashPrograms';
 
 const PesoIcon = ({ className = "w-4 h-4" }) => (
   <svg
@@ -21,6 +22,46 @@ const PesoIcon = ({ className = "w-4 h-4" }) => (
   </svg>
 );
 
+// Helper to check if an announcement is incoming / upcoming
+const isAnnouncementUpcoming = (ann) => {
+  if (!ann) return false;
+  if (ann.status !== 'published') return false;
+
+  const now = new Date();
+  if (ann.event_date) {
+    const timeToCheck = ann.end_time || ann.event_time || '23:59';
+    let hours = 23;
+    let minutes = 59;
+    if (timeToCheck) {
+      const match = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const ampm = match[3] ? match[3].toUpperCase() : null;
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+    const [y, m, d] = String(ann.event_date).split('-').map(Number);
+    if (y && m && d) {
+      const eventEndTime = new Date(y, m - 1, d, hours, minutes, 59);
+      if (now > eventEndTime) return false;
+    }
+  }
+
+  if (ann.expiration_date) {
+    const [y, m, d] = String(ann.expiration_date).split('-').map(Number);
+    if (y && m && d) {
+      const expirationTime = new Date(y, m - 1, d, 23, 59, 59);
+      if (now > expirationTime) return false;
+    }
+  }
+
+  return true;
+};
+
 export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const [copied, setCopied] = useState(false);
   const { user } = useAuth();
@@ -28,6 +69,141 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const [modalItems, setModalItems] = useState([]);
   const [showPopupModal, setShowPopupModal] = useState(false);
   const [currentPopupIndex, setCurrentPopupIndex] = useState(0);
+
+  // Digital payout account registration/update state
+  const [currentBeneficiary, setCurrentBeneficiary] = useState(beneficiary);
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
+  const [payoutForm, setPayoutForm] = useState({
+    payout_preference: beneficiary?.payout_preference || 'digital',
+    payout_provider: beneficiary?.payout_provider || 'GCash',
+    payout_account_number: beneficiary?.payout_account_number || '',
+    payout_account_name: beneficiary?.payout_account_name || `${beneficiary?.first_name || ''} ${beneficiary?.last_name || ''}`.trim(),
+  });
+  const [payoutSaving, setPayoutSaving] = useState(false);
+  const [payoutError, setPayoutError] = useState(null);
+  const [payoutSuccessMsg, setPayoutSuccessMsg] = useState(null);
+
+  useEffect(() => {
+    if (beneficiary) {
+      setCurrentBeneficiary(beneficiary);
+      setPayoutForm({
+        payout_preference: beneficiary.payout_preference || 'digital',
+        payout_provider: beneficiary.payout_provider || 'GCash',
+        payout_account_number: beneficiary.payout_account_number || '',
+        payout_account_name: beneficiary.payout_account_name || `${beneficiary.first_name || ''} ${beneficiary.last_name || ''}`.trim(),
+      });
+    }
+  }, [beneficiary]);
+
+  const handleSavePayoutAccount = async (e) => {
+    e.preventDefault();
+    setPayoutSaving(true);
+    setPayoutError(null);
+    try {
+      const res = await beneficiaryApi.updateMyPayoutAccount(payoutForm);
+      if (res.data?.success) {
+        setCurrentBeneficiary(res.data.data);
+        setPayoutSuccessMsg(res.data.message || 'Matagumpay na naisumite ang iyong payout account!');
+        setShowPayoutModal(false);
+        setTimeout(() => setPayoutSuccessMsg(null), 7000);
+      }
+    } catch (err) {
+      setPayoutError(err.response?.data?.message || err.message || 'Hindi ma-save ang payout account.');
+    } finally {
+      setPayoutSaving(false);
+    }
+  };
+
+  // Extra/Secondary Payout Accounts state
+  const [showAddExtraModal, setShowAddExtraModal] = useState(false);
+  const [extraPayoutForm, setExtraPayoutForm] = useState({
+    provider: 'Landbank',
+    account_number: '',
+    account_name: beneficiary?.payout_account_name || `${beneficiary?.first_name || ''} ${beneficiary?.last_name || ''}`.trim(),
+  });
+  const [extraSaving, setExtraSaving] = useState(false);
+  const [extraError, setExtraError] = useState(null);
+  const [deletingExtraIdx, setDeletingExtraIdx] = useState(null);
+
+  const handleAddExtraPayoutAccount = async (e) => {
+    e.preventDefault();
+    setExtraSaving(true);
+    setExtraError(null);
+    try {
+      const res = await beneficiaryApi.addExtraPayoutAccount(extraPayoutForm);
+      if (res.data?.success) {
+        setCurrentBeneficiary(res.data.data);
+        setPayoutSuccessMsg(res.data.message || 'Naidagdag ang bagong payout account!');
+        setShowAddExtraModal(false);
+        setExtraPayoutForm({
+          provider: 'Landbank',
+          account_number: '',
+          account_name: `${currentBeneficiary?.first_name || ''} ${currentBeneficiary?.last_name || ''}`.trim(),
+        });
+        setTimeout(() => setPayoutSuccessMsg(null), 7000);
+      }
+    } catch (err) {
+      setExtraError(err.response?.data?.message || err.message || 'Hindi ma-add ang secondary payout account.');
+    } finally {
+      setExtraSaving(false);
+    }
+  };
+
+  const handleRemoveExtraPayoutAccount = async (index) => {
+    if (!window.confirm('Sigurado ka ba na nais mong tanggalin ang secondary payout account na ito?')) {
+      return;
+    }
+    setDeletingExtraIdx(index);
+    try {
+      const res = await beneficiaryApi.removeExtraPayoutAccount(index);
+      if (res.data?.success) {
+        setCurrentBeneficiary(res.data.data);
+        setPayoutSuccessMsg('Natanggal ang secondary payout account.');
+        setTimeout(() => setPayoutSuccessMsg(null), 5000);
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Hindi ma-delete ang account.');
+    } finally {
+      setDeletingExtraIdx(null);
+    }
+  };
+
+
+  // Digital payout acknowledgment
+  const [acknowledgingId, setAcknowledgingId] = useState(null);
+  const [acknowledgeSuccess, setAcknowledgeSuccess] = useState(null);
+  const [acknowledgedIds, setAcknowledgedIds] = useState(new Set());
+
+  const transactions = currentBeneficiary?.DistributionTransactions || beneficiary?.DistributionTransactions || [];
+  const unacknowledgedDigitalPayouts = transactions.filter(
+    (t) => t.status === 'released' &&
+    (t.disbursement_type === 'digital' || t.payout_reference_number) &&
+    !t.beneficiary_acknowledged_at &&
+    !acknowledgedIds.has(t.id)
+  );
+  const allDigitalPayouts = transactions.filter(
+    (t) => t.disbursement_type === 'digital' || t.payout_reference_number
+  );
+
+  const handleAcknowledgeReceipt = async (transactionId) => {
+    if (!window.confirm('Sigurado ka ba na natanggap mo na ang digital payout sa iyong account?\n\nAng pagkumpirma na ito ay magsisilbing opisyal na digital resibo at makikita ng DSWD Admin.')) {
+      return;
+    }
+
+    setAcknowledgingId(transactionId);
+    try {
+      const res = await distributionApi.acknowledgePayout(transactionId);
+      if (res.data?.success) {
+        setAcknowledgeSuccess('✅ Maraming salamat! Matagumpay mong nakumpirma ang pagtanggap ng iyong digital payout.');
+        setAcknowledgedIds(prev => new Set(prev).add(transactionId));
+        setTimeout(() => setAcknowledgeSuccess(null), 6000);
+      }
+    } catch (err) {
+      alert(`Error sa pagkumpirma: ${err.response?.data?.message || err.message}`);
+    } finally {
+      setAcknowledgingId(null);
+    }
+  };
 
   // Track IDs already dismissed/shown so we don't re-popup them on each poll
   const [shownIds, setShownIds] = useState(new Set());
@@ -45,11 +221,11 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
         setAnnouncements(annList);
 
         const unreadAnn = annList
-          .filter(a => !a.is_read && a.status === 'published')
+          .filter(a => !a.is_read && isAnnouncementUpcoming(a))
           .map(a => ({ ...a, popupType: 'announcement' }));
 
-        // Exclude announcement-type notifications — they are already shown via unreadAnn above.
-        // Also exclude old "Upcoming" notifications if an "Unclaimed Benefit Notice" exists for the same event or if event ended.
+        // Exclude regular announcement notifications — they are already shown via unreadAnn above.
+        // BUT keep announcement_absence notifications so absence notices always pop up!
         const unclaimedReferenceIds = new Set(
           notifList
             .filter(n => n.title?.toLowerCase().includes('unclaimed'))
@@ -60,7 +236,10 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
         const unreadNotif = notifList
           .filter(n => {
             if (n.is_read) return false;
-            if (n.type === 'announcement' || n.reference_type === 'announcement') return false;
+            // Exclude regular upcoming announcement notices if already processed via unreadAnn
+            if ((n.type === 'announcement' || n.reference_type === 'announcement') && n.reference_type !== 'announcement_absence') {
+              return false;
+            }
 
             const isUpcoming = n.title?.toLowerCase().includes('upcoming') || n.message?.toLowerCase().includes('you are scheduled');
             if (isUpcoming && n.reference_id && unclaimedReferenceIds.has(n.reference_id)) {
@@ -93,8 +272,8 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
     // Run immediately on mount
     loadPopups();
 
-    // Poll every 30 seconds to catch new enrollment/distribution notifications
-    const pollInterval = setInterval(loadPopups, 30000);
+    // Poll every 10 seconds to catch new enrollment/distribution/payout notifications
+    const pollInterval = setInterval(loadPopups, 10000);
 
     // Also re-check when another part of the app marks notifications updated
     const handleNotifUpdate = () => loadPopups();
@@ -109,25 +288,30 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
 
   const handleMarkAsRead = async (item) => {
     try {
-      const key = `${item.popupType}-${item.id}`;
+      const itemObj = typeof item === 'object' && item !== null ? item : { id: item, popupType: 'announcement' };
+      const key = `${itemObj.popupType}-${itemObj.id}`;
       // Add to shownIds so polling won't re-show this item
       setShownIds(prev => new Set([...prev, key]));
 
-      if (item.popupType === 'announcement') {
-        await announcementApi.markAsRead(item.id);
-        setAnnouncements(prev => prev.map(a => a.id === item.id ? { ...a, is_read: true } : a));
+      if (itemObj.popupType === 'announcement') {
+        await announcementApi.markAsRead(itemObj.id);
+        setAnnouncements(prev => prev.map(a => a.id === itemObj.id ? { ...a, is_read: true } : a));
       } else {
-        await notificationApi.markAsRead(item.id);
+        await notificationApi.markAsRead(itemObj.id);
       }
-      setModalItems(prev => prev.filter(i => !(i.id === item.id && i.popupType === item.popupType)));
+      setModalItems(prev => prev.filter(i => !(i.id === itemObj.id && i.popupType === itemObj.popupType)));
       window.dispatchEvent(new Event('notificationsUpdated'));
     } catch (err) {
       console.error('Failed to mark read:', err);
     }
   };
 
+  const upcomingAnnouncements = announcements.filter(isAnnouncementUpcoming);
+  const unreadUpcomingAnnouncements = upcomingAnnouncements.filter((a) => !a.is_read);
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(beneficiary?.beneficiary_id_code || '');
+    const textToCopy = beneficiary?.household_id_number || beneficiary?.beneficiary_id_code || '';
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -229,29 +413,103 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
         </div>
       )}
 
-      {/* TARGETED ANNOUNCEMENTS BANNER / WIDGET */}
-      {announcements.length > 0 && (
+      {/* ── Success Toast Alert ── */}
+      {acknowledgeSuccess && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl font-semibold text-sm flex items-center gap-3 shadow-xs">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+          <span>{acknowledgeSuccess}</span>
+        </div>
+      )}
+
+      {/* ── Digital Ayuda Payout Alert Banner ── */}
+      {unacknowledgedDigitalPayouts.length > 0 && (
+        <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 text-white rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-yellow-300 shadow-inner">
+              <Zap className="w-6 h-6 fill-current" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-black tracking-tight flex items-center gap-2">
+                ⚡ May Pumasok na Digital Ayuda sa Iyong Account!
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-yellow-400 text-slate-900 font-bold">
+                  {unacknowledgedDigitalPayouts.length} Action Needed
+                </span>
+              </h3>
+              <p className="text-purple-100 text-xs sm:text-sm mt-0.5">
+                Paki-kumpirma kung natanggap mo na ang cash sa iyong e-wallet / bank account para sa opisyal na resibo ng DSWD.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {unacknowledgedDigitalPayouts.map((txn) => (
+              <div key={txn.id} className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-400 text-slate-900">
+                      {txn.payout_provider || 'GCash / Bank'}
+                    </span>
+                    <h4 className="text-xl font-black mt-1">
+                      ₱{(parseFloat(txn.amount || 0) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                    </h4>
+                    <p className="text-xs text-purple-200 mt-0.5">
+                      {txn.Event?.title || 'Community Assistance Grant'}
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono bg-black/20 px-2 py-1 rounded text-purple-100">
+                    {txn.payout_reference_number || 'N/A'}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => handleAcknowledgeReceipt(txn.id)}
+                  disabled={acknowledgingId === txn.id}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-yellow-400 hover:bg-yellow-300 disabled:opacity-50 text-slate-900 font-bold text-xs shadow-md transition-all cursor-pointer"
+                >
+                  {acknowledgingId === txn.id ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Kinukumpirma...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      ✓ I-confirm na Natanggap Ko Na
+                    </>
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TARGETED ANNOUNCEMENTS BANNER / WIDGET - ONLY UPCOMING / INCOMING ANNOUNCEMENTS */}
+      {upcomingAnnouncements.length > 0 && (
         <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-6 shadow-lg space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="relative">
                 <Megaphone className="w-6 h-6 text-yellow-400" />
-                {unreadAnnouncements.length > 0 && (
+                {unreadUpcomingAnnouncements.length > 0 && (
                   <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping" />
                 )}
               </div>
-              <h2 className="text-lg font-black tracking-tight">Official Municipal Announcements</h2>
+              <div>
+                <h2 className="text-lg font-black tracking-tight">Official Municipal Announcements</h2>
+                <p className="text-xs text-blue-200">Mga Paparating na Gawain at Oryentasyon</p>
+              </div>
             </div>
             <Link
               to="/dashboard/notifications"
               className="text-xs font-bold text-yellow-300 hover:text-yellow-200 underline flex items-center gap-1"
             >
-              View All ({announcements.length})
+              View All / Nakaraang Anunsyo ({announcements.length})
             </Link>
           </div>
 
           <div className="space-y-3">
-            {announcements.slice(0, 2).map((ann) => (
+            {upcomingAnnouncements.slice(0, 2).map((ann) => (
               <div
                 key={ann.id}
                 className={`bg-white/10 backdrop-blur-md border rounded-xl p-4 transition ${
@@ -281,8 +539,8 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
 
                   {!ann.is_read && (
                     <button
-                      onClick={() => handleMarkAsRead(ann.id)}
-                      className="shrink-0 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-extrabold text-xs px-3 py-1.5 rounded-lg transition shadow flex items-center gap-1"
+                      onClick={() => handleMarkAsRead({ ...ann, popupType: 'announcement' })}
+                      className="shrink-0 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-extrabold text-xs px-3 py-1.5 rounded-lg transition shadow flex items-center gap-1 cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
                       Mark Read
@@ -333,9 +591,13 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
           </div>
           <div className="flex items-center gap-2 mb-3">
             <FileText className="w-5 h-5 text-dswd-lightBlue" />
-            <p className="text-sm font-semibold text-slate-700">Beneficiary ID</p>
+            <p className="text-sm font-semibold text-slate-700">
+              {beneficiary?.category?.toLowerCase().includes('4ps') ? '4Ps Household Number' : 'Beneficiary ID'}
+            </p>
           </div>
-          <h3 className="text-xl font-black text-slate-900">{beneficiary?.beneficiary_id_code}</h3>
+          <h3 className="text-xl font-black text-slate-900 font-mono">
+            {beneficiary?.household_id_number || beneficiary?.beneficiary_id_code || '—'}
+          </h3>
           <button
             onClick={handleCopy}
             className="mt-3 flex items-center gap-2 text-xs font-semibold text-dswd-lightBlue hover:text-dswd-blue transition"
@@ -387,6 +649,297 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - 2/3 width */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Digital Payout Account Settings Card */}
+          <div className="bg-gradient-to-br from-purple-50 via-white to-indigo-50/40 rounded-2xl border border-purple-200 p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-md shadow-purple-200 shrink-0">
+                  <CreditCard className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-bold text-slate-900">Digital Ayuda Account</h3>
+                    {currentBeneficiary?.payout_preference === 'digital' ? (
+                      currentBeneficiary?.account_verification_status === 'verified' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Verified
+                        </span>
+                      ) : currentBeneficiary?.account_verification_status === 'rejected' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+                          <X className="w-3.5 h-3.5" /> Rejected
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 animate-pulse">
+                          <Clock className="w-3.5 h-3.5" /> For Verification
+                        </span>
+                      )
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        🏢 Cash OTC / RFID
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Tumatanggap ng ayuda sa pamamagitan ng GCash, Maya, o Bank Account nang walang pila.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setPayoutError(null);
+                  setShowPayoutModal(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-sm transition hover:shadow-md cursor-pointer shrink-0"
+              >
+                <Edit3 className="w-4 h-4" />
+                {currentBeneficiary?.payout_preference === 'digital' && currentBeneficiary?.payout_account_number
+                  ? 'I-update ang Account'
+                  : 'I-setup ang E-Wallet / Bank'}
+              </button>
+            </div>
+
+            {/* Account Details Box */}
+            {currentBeneficiary?.payout_preference === 'digital' && currentBeneficiary?.payout_account_number ? (
+              <div className="bg-white rounded-xl border border-purple-100 p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Provider</span>
+                  <span className="font-bold text-purple-900 text-sm flex items-center gap-1.5 mt-0.5">
+                    {['Landbank', 'Other'].includes(currentBeneficiary.payout_provider)
+                      ? <span className="text-base">🏦</span>
+                      : <Zap className="w-3.5 h-3.5 text-purple-600 fill-current" />}
+                    {currentBeneficiary.payout_provider || 'GCash'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Account Number</span>
+                  <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
+                    {currentBeneficiary.payout_account_number}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Account Name</span>
+                  <span className="font-bold text-slate-800 text-sm mt-0.5 block truncate">
+                    {currentBeneficiary.payout_account_name || '—'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white/80 rounded-xl border border-dashed border-purple-200 p-4 text-center text-xs text-slate-600">
+                <p className="font-semibold text-slate-700">Wala ka pang naka-link na digital account.</p>
+                <p className="text-slate-500 mt-0.5">
+                  Maaari mong ilagay ang iyong GCash, Maya, o Landbank account number upang maging kwalipikado sa mabilisang digital disbursement.
+                </p>
+              </div>
+            )}
+
+            {/* Verification Status Notice Alert */}
+            {currentBeneficiary?.payout_preference === 'digital' && (
+              currentBeneficiary?.account_verification_status === 'verified' ? (
+                <div className="rounded-xl bg-green-50 border border-green-200 p-3 flex items-center gap-2.5 text-xs text-green-800">
+                  <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                  <span>
+                    <strong>Beripikado na ang iyong primary account!</strong> Handa ka nang makatanggap ng digital grants at ayuda direkta sa iyong account.
+                  </span>
+                </div>
+              ) : currentBeneficiary?.account_verification_status === 'rejected' ? (
+                <div className="rounded-xl bg-red-50 border border-red-200 p-3 flex items-center gap-2.5 text-xs text-red-800">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>
+                    <strong>Hindi na-verify ang iyong account.</strong> Posibleng hindi nagtutugma ang pangalan sa iyong account laban sa iyong DSWD record. Pindutin ang "I-update ang Account" upang itama.
+                  </span>
+                </div>
+              ) : (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 flex items-center gap-2.5 text-xs text-amber-800">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    <strong>Nakahain para sa Beripikasyon ng Admin.</strong> Tinitingnan ng DSWD/MSWDO admin ang iyong impormasyon para sa beripikasyon bago magpadala ng pondo.
+                  </span>
+                </div>
+              )
+            )}
+
+            {/* Secondary / Extra Payout Accounts Section */}
+            <div className="pt-3 border-t border-purple-100">
+              <div className="flex items-center justify-between mb-2.5">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>Secondary Payout Accounts (Landbank / Karagdagang E-Wallet)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Maaari kang mag-rehistro ng iba pang account o Landbank ATM/Account bilang alternatibo kapag may problema sa primary wallet.
+                  </p>
+                </div>
+                {(!currentBeneficiary?.extra_payout_accounts || currentBeneficiary?.extra_payout_accounts?.length < 3) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExtraError(null);
+                      setExtraPayoutForm({
+                        provider: 'Landbank',
+                        account_number: '',
+                        account_name: `${currentBeneficiary?.first_name || ''} ${currentBeneficiary?.last_name || ''}`.trim(),
+                      });
+                      setShowAddExtraModal(true);
+                    }}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-bold rounded-lg transition shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Mag-add ng Account
+                  </button>
+                )}
+              </div>
+
+              {Array.isArray(currentBeneficiary?.extra_payout_accounts) && currentBeneficiary.extra_payout_accounts.length > 0 ? (
+                <div className="space-y-2 mt-2">
+                  {currentBeneficiary.extra_payout_accounts.map((extra, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between gap-3 text-xs shadow-xs"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
+                          {extra.provider === 'Landbank' ? '🏦' : '⚡'}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900">{extra.provider}</span>
+                            <span className="font-mono text-slate-700 font-semibold">{extra.account_number}</span>
+                            {extra.verification_status === 'verified' ? (
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
+                                <CheckCircle2 className="w-3 h-3" /> Verified
+                              </span>
+                            ) : extra.verification_status === 'rejected' ? (
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                                <X className="w-3 h-3" /> Rejected
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                                <Clock className="w-3 h-3" /> For Verification
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                            Pangalan: <span className="font-medium text-slate-700">{extra.account_name}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveExtraPayoutAccount(idx)}
+                        disabled={deletingExtraIdx === idx}
+                        title="Tanggalin ang account na ito"
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition disabled:opacity-50 cursor-pointer shrink-0"
+                      >
+                        {deletingExtraIdx === idx ? (
+                          <RefreshCw className="w-4 h-4 animate-spin text-red-500" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-400 italic bg-white/50 p-2.5 rounded-lg border border-dashed border-slate-200 text-center">
+                  Walang karagdagang secondary account. Maaari kang mag-add ng Landbank o ibang e-wallet (hanggang 3 accounts).
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Digital Ayuda & E-Wallet Payouts Card */}
+          {allDigitalPayouts.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-700 font-bold">
+                    <Zap className="w-5 h-5 fill-current" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Digital Ayuda & E-Wallet Disbursed</h3>
+                    <p className="text-xs text-slate-500">Mabilis at ligtas na ayuda diretso sa iyong rehistradong e-wallet o bangko.</p>
+                  </div>
+                </div>
+                <Link
+                  to="/dashboard/my-benefits"
+                  className="text-xs font-bold text-purple-600 hover:text-purple-700 underline flex items-center gap-1"
+                >
+                  View Full History
+                </Link>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-600 uppercase">Provider / Channel</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-600 uppercase">Reference #</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-600 uppercase">Event / Title</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-600 uppercase">Amount</th>
+                      <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-600 uppercase">Receipt Confirmation</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {allDigitalPayouts.map((txn) => {
+                      const isConfirmed = txn.beneficiary_acknowledged_at || acknowledgedIds.has(txn.id);
+                      return (
+                        <tr key={txn.id} className="hover:bg-slate-50 transition">
+                          <td className="px-3 py-3 font-semibold text-slate-900">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-xs font-bold">
+                              ⚡ {txn.payout_provider || 'GCash / Bank'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 font-mono text-xs text-slate-600">
+                            {txn.payout_reference_number || 'Pending Reference'}
+                          </td>
+                          <td className="px-3 py-3 text-slate-800">
+                            {txn.Event?.title || 'Community Assistance Ayuda'}
+                          </td>
+                          <td className="px-3 py-3 text-right font-black text-emerald-600">
+                            ₱{(parseFloat(txn.amount || 0) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            {isConfirmed ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold border border-emerald-300 shadow-2xs">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                ✓ Confirmed Received!
+                              </span>
+                            ) : txn.status === 'released' ? (
+                              <button
+                                onClick={() => handleAcknowledgeReceipt(txn.id)}
+                                disabled={acknowledgingId === txn.id}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-yellow-400 hover:bg-yellow-300 disabled:opacity-50 text-slate-950 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+                              >
+                                {acknowledgingId === txn.id ? (
+                                  <>
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                    Kinukumpirma...
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-slate-950" />
+                                    ✓ I-confirm na Natanggap Ko Na
+                                  </>
+                                )}
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold">
+                                <Clock className="w-3.5 h-3.5" />
+                                Pending DSWD Release
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Upcoming Distribution */}
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
@@ -432,13 +985,23 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                         <span>Venue:</span>
                         <span className="font-semibold">{upcomingDistribution.Event?.venue || 'TBA'}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <PesoIcon className="w-4 h-4" />
-                        <span>Amount:</span>
-                        <span className="font-semibold text-green-600">
-                          ₱{parseFloat(upcomingDistribution.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
+                      {isNonCashProgram(upcomingDistribution.Event?.Program?.name || upcomingDistribution.Event?.title, upcomingDistribution.Event?.benefit_type) || upcomingDistribution.item_name ? (
+                        <div className="flex items-center gap-2">
+                          <Gift className="w-4 h-4 text-purple-600" />
+                          <span>Assistance:</span>
+                          <span className="font-bold text-purple-700">
+                            {upcomingDistribution.item_name || upcomingDistribution.Event?.item_name || getNonCashDetails(upcomingDistribution.Event?.Program?.name || upcomingDistribution.Event?.title)?.default_item || 'In-Kind Assistance'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <PesoIcon className="w-4 h-4" />
+                          <span>Amount:</span>
+                          <span className="font-semibold text-green-600">
+                            ₱{parseFloat(upcomingDistribution.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <button className="mt-4 px-4 py-2 bg-dswd-lightBlue text-white text-sm font-semibold rounded-lg hover:bg-dswd-blue transition">
                       View Details
@@ -477,9 +1040,15 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-md">
-                        ₱{parseFloat(txn.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                      </span>
+                      {isNonCashProgram(txn.Event?.Program?.name || txn.Event?.title, txn.Event?.benefit_type) || txn.item_name ? (
+                        <span className="font-extrabold text-purple-800 bg-purple-100 px-2.5 py-1 rounded-md border border-purple-200">
+                          {txn.item_name || txn.Event?.item_name || getNonCashDetails(txn.Event?.Program?.name || txn.Event?.title)?.badge || 'In-Kind Assistance'}
+                        </span>
+                      ) : (
+                        <span className="font-extrabold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-md">
+                          ₱{parseFloat(txn.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
                       <span className="bg-red-100 text-red-700 font-black px-2.5 py-1 rounded-md border border-red-200">
                         NOT CLAIMED
                       </span>
@@ -627,29 +1196,49 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
         // popupType is stamped at load time: 'announcement' for announcementApi items, 'notification' for notificationApi items.
         // ALWAYS use popupType first to avoid old/misclassified DB records polluting the display.
         const isAnnouncement = currentItem?.popupType === 'announcement';
-        const isProgram = !isAnnouncement && (currentItem?.type === 'program' || currentItem?.reference_type === 'BenefitProgram');
-        const isDistribution = !isAnnouncement && (currentItem?.type === 'distribution' || currentItem?.reference_type === 'DistributionEvent');
-        const isUnclaimed = currentItem?.title?.toLowerCase().includes('unclaimed');
+        const isAbsence = !isAnnouncement && (
+          currentItem?.reference_type === 'announcement_absence' ||
+          currentItem?.type === 'announcement_absence' ||
+          currentItem?.title?.toLowerCase().includes('absent') ||
+          currentItem?.title?.toLowerCase().includes('hindi naka-attend')
+        );
+        const isProgram = !isAnnouncement && !isAbsence && (currentItem?.type === 'program' || currentItem?.reference_type === 'BenefitProgram');
+        const isDistribution = !isAnnouncement && !isAbsence && (currentItem?.type === 'distribution' || currentItem?.reference_type === 'DistributionEvent');
+        const isUnclaimed = !isAbsence && currentItem?.title?.toLowerCase().includes('unclaimed');
+        const isPayoutVerified = !isAnnouncement && (currentItem?.reference_type === 'payout_verified' || currentItem?.title?.toLowerCase().includes('na-aprubahan ang iyong digital payout'));
+        const isPayoutRejected = !isAnnouncement && (currentItem?.reference_type === 'payout_rejected' || currentItem?.title?.toLowerCase().includes('may puna sa iyong payout') || currentItem?.title?.toLowerCase().includes('hindi na-aprubahan'));
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
             <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-xl w-full overflow-hidden relative space-y-0">
               {/* Header Banner */}
               <div className={`p-6 relative text-white ${
-                isUnclaimed 
+                isAbsence
+                  ? 'bg-gradient-to-r from-red-800 via-rose-900 to-slate-950'
+                  : isPayoutVerified
+                  ? 'bg-gradient-to-r from-emerald-800 via-teal-900 to-slate-900'
+                  : isPayoutRejected
+                  ? 'bg-gradient-to-r from-rose-800 via-red-900 to-slate-900'
+                  : isUnclaimed 
                   ? 'bg-gradient-to-r from-amber-700 via-orange-800 to-red-900'
                   : 'bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900'
               }`}>
                 <button
                   onClick={() => setShowPopupModal(false)}
-                  className="absolute top-4 right-4 p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition"
+                  className="absolute top-4 right-4 p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition cursor-pointer"
                   title="Close"
                 >
                   <X className="w-5 h-5" />
                 </button>
                 <div className="flex items-center gap-3">
                   <div className={`p-3 rounded-2xl shadow-md ${
-                    isUnclaimed
+                    isAbsence
+                      ? 'bg-rose-500 text-white shadow-lg'
+                      : isPayoutVerified
+                      ? 'bg-emerald-400 text-slate-950'
+                      : isPayoutRejected
+                      ? 'bg-rose-400 text-white'
+                      : isUnclaimed
                       ? 'bg-amber-400 text-slate-950'
                       : isProgram
                       ? 'bg-purple-400 text-slate-950'
@@ -657,7 +1246,13 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                       ? 'bg-emerald-400 text-slate-950'
                       : 'bg-yellow-400 text-slate-950'
                   }`}>
-                    {isUnclaimed ? (
+                    {isAbsence ? (
+                      <AlertTriangle className="w-6 h-6 animate-bounce text-white" />
+                    ) : isPayoutVerified ? (
+                      <ShieldCheck className="w-6 h-6 animate-bounce text-slate-950" />
+                    ) : isPayoutRejected ? (
+                      <AlertTriangle className="w-6 h-6 animate-bounce text-white" />
+                    ) : isUnclaimed ? (
                       <AlertTriangle className="w-6 h-6 animate-bounce" />
                     ) : isProgram ? (
                       <Award className="w-6 h-6 animate-bounce" />
@@ -669,7 +1264,13 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                   </div>
                   <div>
                     <span className="text-yellow-300 text-xs font-extrabold uppercase tracking-wider block">
-                      {isUnclaimed
+                      {isAbsence
+                        ? '⚠️ Paunawa sa Hindi Pagdalo / Notice of Absence'
+                        : isPayoutVerified
+                        ? '✅ Digital Payout Verified & Active'
+                        : isPayoutRejected
+                        ? '⚠️ Payout Account Review Required'
+                        : isUnclaimed
                         ? 'Notice of Unclaimed Benefit'
                         : isProgram
                         ? 'Program Enrollment Notification'
@@ -687,7 +1288,19 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
               {/* Content Body */}
               <div className="p-6 space-y-4">
                 <div className="flex items-center gap-2 flex-wrap text-xs">
-                  {isUnclaimed ? (
+                  {isAbsence ? (
+                    <span className="bg-red-100 text-red-950 font-black px-2.5 py-0.5 rounded-md border border-red-300">
+                      ❌ ABSENT / HINDI NAKADALO
+                    </span>
+                  ) : isPayoutVerified ? (
+                    <span className="bg-emerald-100 text-emerald-900 font-black px-2.5 py-0.5 rounded-md border border-emerald-300">
+                      ✅ PAYOUT APPROVED & VERIFIED
+                    </span>
+                  ) : isPayoutRejected ? (
+                    <span className="bg-red-100 text-red-900 font-black px-2.5 py-0.5 rounded-md border border-red-300">
+                      ❌ ACTION REQUIRED: UPDATE ACCOUNT
+                    </span>
+                  ) : isUnclaimed ? (
                     <span className="bg-amber-100 text-amber-900 font-black px-2.5 py-0.5 rounded-md border border-amber-300">
                       ⚠️ UNCLAIMED BENEFIT
                     </span>
@@ -725,6 +1338,19 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-slate-800 text-sm leading-relaxed max-h-48 overflow-y-auto whitespace-pre-line font-medium">
                   {currentItem?.message}
                 </div>
+
+                {/* Compliance Guidance Notice for Absent Beneficiaries */}
+                {isAbsence && (
+                  <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 space-y-2 text-xs">
+                    <div className="flex items-center gap-2 text-rose-900 font-extrabold">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>Paalala ukol sa Attendance at Compliance:</span>
+                    </div>
+                    <p className="text-rose-800 leading-relaxed font-medium">
+                      Ang hindi pagdalo sa mga itinakdang opisyal na aktibidad o oryentasyon ng munisipyo ay naitala sa inyong record bilang <strong>Absent</strong>. Kung ikaw ay may balidong dahilan (tulad ng emerhensiya o medikal), mangyaring makipag-ugnayan agad sa inyong Barangay Staff o sa Tanggapan ng DSWD/MSWDO.
+                    </p>
+                  </div>
+                )}
 
                 {/* Schedule & Venue Details for Announcement or Distribution */}
                 {(currentItem?.event_date || currentItem?.venue || isAnnouncement) && (
@@ -767,14 +1393,14 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                       <button
                         disabled={currentPopupIndex === 0}
                         onClick={() => setCurrentPopupIndex((prev) => Math.max(0, prev - 1))}
-                        className="px-2.5 py-1 bg-slate-100 rounded-lg disabled:opacity-40 font-bold text-slate-700 hover:bg-slate-200 transition"
+                        className="px-2.5 py-1 bg-slate-100 rounded-lg disabled:opacity-40 font-bold text-slate-700 hover:bg-slate-200 transition cursor-pointer"
                       >
                         Prev
                       </button>
                       <button
                         disabled={currentPopupIndex === modalItems.length - 1}
                         onClick={() => setCurrentPopupIndex((prev) => Math.min(modalItems.length - 1, prev + 1))}
-                        className="px-2.5 py-1 bg-slate-100 rounded-lg disabled:opacity-40 font-bold text-slate-700 hover:bg-slate-200 transition"
+                        className="px-2.5 py-1 bg-slate-100 rounded-lg disabled:opacity-40 font-bold text-slate-700 hover:bg-slate-200 transition cursor-pointer"
                       >
                         Next
                       </button>
@@ -784,7 +1410,19 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
               </div>
 
               {/* Footer Buttons */}
-              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 flex-wrap">
+                {isPayoutRejected && (
+                  <button
+                    onClick={() => {
+                      setShowPopupModal(false);
+                      setShowPayoutModal(true);
+                    }}
+                    className="px-4 py-2.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>I-update ang Payout Account</span>
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     // Mark all currently shown items as "seen this session" so they don't re-popup on next poll
@@ -795,7 +1433,7 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                     });
                     setShowPopupModal(false);
                   }}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition cursor-pointer"
                 >
                   Close for Now
                 </button>
@@ -804,6 +1442,12 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                     const itemToMark = modalItems[currentPopupIndex] || modalItems[0];
                     if (itemToMark) {
                       await handleMarkAsRead(itemToMark);
+                      if (itemToMark.reference_type?.includes('payout')) {
+                        try {
+                          const res = await beneficiaryApi.getMe();
+                          if (res.data?.data) setCurrentBeneficiary(res.data.data);
+                        } catch (e) {}
+                      }
                     }
                     if (modalItems.length <= 1) {
                       setShowPopupModal(false);
@@ -811,16 +1455,293 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                       setCurrentPopupIndex(0);
                     }
                   }}
-                  className="px-5 py-2.5 text-xs font-extrabold bg-dswd-blue hover:bg-blue-800 text-white rounded-xl shadow-md transition flex items-center gap-2"
+                  className={`px-5 py-2.5 text-xs font-extrabold rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer ${
+                    isAbsence
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                      : 'bg-dswd-blue hover:bg-blue-800 text-white'
+                  }`}
                 >
                   <Check className="w-4 h-4" />
-                  <span>Mark as Read & Continue</span>
+                  <span>{isAbsence ? 'Naintindihan Ko / Nabasa Ko Na' : 'Salamat / Nabasa Ko Na'}</span>
                 </button>
               </div>
             </div>
           </div>
         );
       })()}
+
+      {/* ── MODAL: Setup / Update Digital Payout Account ── */}
+      {showPayoutModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="p-6 bg-gradient-to-r from-purple-700 to-indigo-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shadow-inner">
+                  <CreditCard className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg leading-tight">Digital Payout Account</h3>
+                  <p className="text-xs text-purple-200 mt-0.5">I-rehistro ang iyong GCash, Maya, o Landbank Account</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPayoutModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSavePayoutAccount} className="p-6 space-y-4">
+              {payoutError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{payoutError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                  Paraan ng Pagtanggap (Payout Preference)
+                </label>
+                <select
+                  value={payoutForm.payout_preference}
+                  onChange={(e) => setPayoutForm({ ...payoutForm, payout_preference: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none bg-white"
+                >
+                  <option value="digital">⚡ Digital (E-Wallet / Bank Account)</option>
+                  <option value="cash_otc">🏢 Cash OTC / Physical Claiming (RFID)</option>
+                </select>
+              </div>
+
+              {payoutForm.payout_preference === 'digital' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                      Pumili ng Provider / Bangko <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={payoutForm.payout_provider}
+                      onChange={(e) => setPayoutForm({ ...payoutForm, payout_provider: e.target.value })}
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none bg-white"
+                      required
+                    >
+                      <option value="GCash">GCash</option>
+                      <option value="Maya">Maya (PayMaya)</option>
+                      <option value="Landbank">Landbank ATM / Account</option>
+                      <option value="Other">Iba Pa (Other Bank)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                      Account / Mobile Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={payoutForm.payout_account_number}
+                      onChange={(e) => setPayoutForm({ ...payoutForm, payout_account_number: e.target.value })}
+                      placeholder={
+                        payoutForm.payout_provider === 'GCash' ? '09XXXXXXXXX (GCash number)'
+                        : payoutForm.payout_provider === 'Maya' ? '09XXXXXXXXX (Maya number)'
+                        : payoutForm.payout_provider === 'Landbank' ? 'Landbank account number (e.g. 0000-0000-00)'
+                        : 'Bank account number'
+                      }
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                      required
+                    />
+                    <span className="text-[11px] text-slate-400 mt-1 block">
+                      {payoutForm.payout_provider === 'Landbank'
+                        ? 'Ilagay ang iyong Landbank account number (hindi ATM card number).'
+                        : 'Siguraduhing tama at aktibo ang mobile number o bank account.'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                      Pangalan ng May-ari ng Account (Account Holder Name) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={payoutForm.payout_account_name}
+                      onChange={(e) => setPayoutForm({ ...payoutForm, payout_account_name: e.target.value })}
+                      placeholder={
+                        payoutForm.payout_provider === 'Landbank'
+                          ? 'Buong pangalan tulad ng nasa Landbank passbook/card'
+                          : 'Buong pangalan tulad ng nasa GCash/Maya/ID'
+                      }
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                      required
+                    />
+                    <span className="text-[11px] text-purple-600 mt-1 block font-medium">
+                    💡 Paalala: Dapat tugma ang pangalan sa iyong DSWD/MSWDO beneficiary record upang mabilis na ma-verify ng Admin.
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs space-y-1">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" /> Administrative Verification Policy:
+                    </p>
+                    <p className="text-[11px] leading-relaxed">
+                      Kapag isinumite mo ang bagong account number, awtomatiko itong mamarkahan bilang <strong>"For Verification"</strong>. Ive-verify ito ng Admin bago mag-disburse ng ayuda upang maiwasan ang maling pagpapadala ng pondo.
+                    </p>
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPayoutModal(false)}
+                  className="flex-1 py-2.5 border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-sm transition"
+                >
+                  Kanselahin
+                </button>
+                <button
+                  type="submit"
+                  disabled={payoutSaving}
+                  className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {payoutSaving ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Sine-save...
+                    </>
+                  ) : (
+                    'I-submit para sa Beripikasyon'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Extra/Secondary Payout Account Modal */}
+      {showAddExtraModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+            <div className="bg-gradient-to-r from-indigo-700 to-purple-700 px-6 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <CreditCard className="w-5 h-5" />
+                <h3 className="font-bold text-base">Magdagdag ng Secondary Payout Account</h3>
+              </div>
+              <button
+                onClick={() => setShowAddExtraModal(false)}
+                className="p-1 rounded-lg hover:bg-white/20 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddExtraPayoutAccount} className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Maaari kang magdagdag ng Landbank account/card o karagdagang e-wallet (GCash/Maya) bilang pangalawang pagpipilian sa digital payout ng ayuda.
+              </p>
+
+              {extraError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{extraError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                  Provider o Bangko <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={extraPayoutForm.provider}
+                  onChange={(e) => setExtraPayoutForm({ ...extraPayoutForm, provider: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white"
+                  required
+                >
+                  <option value="Landbank">Landbank ATM / Account</option>
+                  <option value="GCash">GCash</option>
+                  <option value="Maya">Maya (PayMaya)</option>
+                  <option value="Other">Iba Pa (Other Bank)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                  Account / Mobile Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={extraPayoutForm.account_number}
+                  onChange={(e) => setExtraPayoutForm({ ...extraPayoutForm, account_number: e.target.value })}
+                  placeholder={
+                    extraPayoutForm.provider === 'Landbank' ? 'Landbank account number (e.g. 0000-0000-00)'
+                    : extraPayoutForm.provider === 'GCash' ? '09XXXXXXXXX (GCash number)'
+                    : extraPayoutForm.provider === 'Maya' ? '09XXXXXXXXX (Maya number)'
+                    : 'Account number'
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                  required
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  {extraPayoutForm.provider === 'Landbank'
+                    ? 'Ilagay ang iyong Landbank account number.'
+                    : 'Siguraduhing tama at aktibo ang account o mobile number.'}
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                  Pangalan sa Account (Account Holder Name) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={extraPayoutForm.account_name}
+                  onChange={(e) => setExtraPayoutForm({ ...extraPayoutForm, account_name: e.target.value })}
+                  placeholder="Buong pangalan tulad ng nasa ID o passbook"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                  required
+                />
+                <span className="text-[11px] text-indigo-600 mt-1 block font-medium">
+                  💡 Paalala: Dapat tugma ang pangalan sa iyong DSWD record para sa mabilisang verification ng Admin.
+                </span>
+              </div>
+
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs space-y-1">
+                <p className="font-bold flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" /> Admin Verification:
+                </p>
+                <p className="text-[11px] leading-relaxed">
+                  Ang secondary account na ito ay susuriin at ive-verify ng Admin bago magamit bilang opsyon sa payout.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddExtraModal(false)}
+                  className="flex-1 py-2.5 border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-sm transition"
+                >
+                  Kanselahin
+                </button>
+                <button
+                  type="submit"
+                  disabled={extraSaving}
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {extraSaving ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Nag-aadd...
+                    </>
+                  ) : (
+                    'I-save ang Secondary Account'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

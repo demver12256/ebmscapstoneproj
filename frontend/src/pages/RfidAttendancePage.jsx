@@ -1,7 +1,48 @@
 import { useState, useEffect, useRef } from 'react';
-import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users } from 'lucide-react';
+import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users, XCircle, Ban } from 'lucide-react';
 import { announcementApi } from '../services/api';
 import * as XLSX from 'xlsx';
+
+// Helper to determine if announcement is active for attendance recording
+const isAnnouncementActiveForAttendance = (ann) => {
+  if (!ann) return false;
+  if (ann.status === 'completed' || ann.status === 'archived') return false;
+  if (ann.status !== 'published') return false;
+
+  const now = new Date();
+  if (ann.event_date) {
+    const timeToCheck = ann.end_time || ann.event_time || '23:59';
+    let hours = 23;
+    let minutes = 59;
+    if (timeToCheck) {
+      const match = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const ampm = match[3] ? match[3].toUpperCase() : null;
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+    const [y, m, d] = String(ann.event_date).split('-').map(Number);
+    if (y && m && d) {
+      const eventEndTime = new Date(y, m - 1, d, hours, minutes, 59);
+      if (now > eventEndTime) return false;
+    }
+  }
+
+  if (ann.expiration_date) {
+    const [y, m, d] = String(ann.expiration_date).split('-').map(Number);
+    if (y && m && d) {
+      const expirationTime = new Date(y, m - 1, d, 23, 59, 59);
+      if (now > expirationTime) return false;
+    }
+  }
+
+  return true;
+};
 
 export default function RfidAttendancePage() {
   const [announcements, setAnnouncements] = useState([]);
@@ -95,9 +136,19 @@ export default function RfidAttendancePage() {
     XLSX.writeFile(workbook, fileName);
   };
 
+  const selectedAnnouncementData = announcements.find((a) => a.id === Number(selectedAnnouncement));
+  const isSelectedEnded = selectedAnnouncementData && !isAnnouncementActiveForAttendance(selectedAnnouncementData);
+  const activeAnnouncements = announcements.filter(isAnnouncementActiveForAttendance);
+  const endedAnnouncements = announcements.filter((a) => !isAnnouncementActiveForAttendance(a));
+
   const handleScan = async () => {
     if (!selectedAnnouncement) {
       setError('Please select an announcement first');
+      return;
+    }
+
+    if (isSelectedEnded) {
+      setError('BAWAL NA ANG ATTENDANCE: Ang aktibidad na ito ay tapos na. Hindi na maaaring magtala ng attendance ang staff.');
       return;
     }
 
@@ -222,6 +273,18 @@ export default function RfidAttendancePage() {
           </div>
         )}
 
+        {isSelectedEnded && (
+          <div className="rounded-lg bg-red-100 border-2 border-red-300 p-4 flex items-start gap-3 animate-fadeIn">
+            <Ban className="w-6 h-6 text-red-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-red-900">
+              <p className="font-black uppercase tracking-wide">⛔ ISINARA NA ANG ATTENDANCE (Tapos na ang Aktibidad)</p>
+              <p className="mt-1 font-medium text-red-800">
+                Ang aktibidad na <strong>"{selectedAnnouncementData?.title}"</strong> ay opisyal nang tapos o lumipas na ang itinakdang schedule. <strong>Hindi na pinapayagan ang mga kawani (Staff) na mag-record ng attendance</strong> para rito.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Announcement Selection */}
           <div>
@@ -230,15 +293,34 @@ export default function RfidAttendancePage() {
             </label>
             <select
               value={selectedAnnouncement}
-              onChange={(e) => setSelectedAnnouncement(e.target.value)}
-              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              onChange={(e) => {
+                setSelectedAnnouncement(e.target.value);
+                setError(null);
+                setSuccess(null);
+              }}
+              className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:border-transparent text-sm ${
+                isSelectedEnded ? 'border-red-400 bg-red-50 text-red-950 font-bold' : 'border-slate-300 focus:ring-blue-500'
+              }`}
             >
-              <option value="">-- Choose an event --</option>
-              {announcements.map((announcement) => (
-                <option key={announcement.id} value={announcement.id}>
-                  {announcement.title} {announcement.event_date && `(${new Date(announcement.event_date).toLocaleDateString()})`}
-                </option>
-              ))}
+              <option value="">-- Pumili ng Aktibong Anunsyo / Event --</option>
+              {activeAnnouncements.length > 0 && (
+                <optgroup label="🟢 Aktibong mga Anunsyo (Bukás para sa Attendance)">
+                  {activeAnnouncements.map((announcement) => (
+                    <option key={announcement.id} value={announcement.id}>
+                      {announcement.title} {announcement.event_date && `(${new Date(announcement.event_date).toLocaleDateString()})`}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {endedAnnouncements.length > 0 && (
+                <optgroup label="⛔ Mga Tapos Nang Anunsyo (Sarado na ang Attendance)">
+                  {endedAnnouncements.map((announcement) => (
+                    <option key={announcement.id} value={announcement.id} disabled className="text-slate-400 bg-slate-100 italic">
+                      {announcement.title} {announcement.event_date && `(${new Date(announcement.event_date).toLocaleDateString()})`} — [TAPOS NA / SARADO]
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
@@ -249,10 +331,12 @@ export default function RfidAttendancePage() {
             </label>
             <input
               type="text"
-              value={eventName}
+              value={isSelectedEnded ? `[TAPOS NA] ${eventName}` : eventName}
               readOnly
               placeholder="Select an event first"
-              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg bg-slate-50 text-slate-700 text-sm cursor-not-allowed"
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm cursor-not-allowed ${
+                isSelectedEnded ? 'border-red-300 bg-red-50 text-red-800 font-bold' : 'border-slate-300 bg-slate-50 text-slate-700'
+              }`}
             />
           </div>
         </div>
@@ -260,22 +344,30 @@ export default function RfidAttendancePage() {
 
       {/* RFID Scanner Input */}
       <div className={`bg-white rounded-lg shadow-sm border-2 p-6 transition ${
-        selectedAnnouncement ? 'border-green-300 bg-green-50' : 'border-slate-200'
+        isSelectedEnded
+          ? 'border-red-300 bg-red-50/50'
+          : selectedAnnouncement
+          ? 'border-green-300 bg-green-50'
+          : 'border-slate-200'
       }`}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-slate-900">RFID Scanner Ready</h2>
+          <h2 className={`text-lg font-semibold ${isSelectedEnded ? 'text-red-900' : 'text-slate-900'}`}>
+            {isSelectedEnded ? 'Attendance Closed (Sarado Na)' : 'RFID Scanner Ready'}
+          </h2>
           <div className={`flex items-center gap-2 text-sm ${
-            selectedAnnouncement ? 'text-green-600' : 'text-slate-400'
+            isSelectedEnded ? 'text-red-600 font-bold' : selectedAnnouncement ? 'text-green-600' : 'text-slate-400'
           }`}>
             <div className={`w-3 h-3 rounded-full ${
-              selectedAnnouncement ? 'bg-green-500 animate-pulse' : 'bg-slate-300'
+              isSelectedEnded ? 'bg-red-500' : selectedAnnouncement ? 'bg-green-500 animate-pulse' : 'bg-slate-300'
             }`} />
-            {selectedAnnouncement ? 'Ready to scan' : 'Not ready'}
+            {isSelectedEnded ? 'Sarado / Bawal Mag-scan' : selectedAnnouncement ? 'Ready to scan' : 'Not ready'}
           </div>
         </div>
 
         <p className="text-sm text-slate-600 mb-4">
-          Tap cards here to record attendance
+          {isSelectedEnded
+            ? 'Isinara na ang pagtanggap ng RFID attendance para sa natapos nang event na ito.'
+            : 'Tap cards here to record attendance'}
         </p>
 
         <input
@@ -289,17 +381,21 @@ export default function RfidAttendancePage() {
               handleScan();
             }
           }}
-          placeholder="Tap RFID card here..."
-          disabled={!selectedAnnouncement || loading}
+          placeholder={isSelectedEnded ? 'Sarado na ang attendance para sa event na ito...' : 'Tap RFID card here...'}
+          disabled={!selectedAnnouncement || isSelectedEnded || loading}
           className="w-full px-4 py-3 text-center text-lg border-2 border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed"
         />
 
         <button
           onClick={handleScan}
-          disabled={!selectedAnnouncement || !rfidInput.trim() || loading}
-          className="w-full mt-3 px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition"
+          disabled={!selectedAnnouncement || isSelectedEnded || !rfidInput.trim() || loading}
+          className={`w-full mt-3 px-4 py-3 text-white font-semibold rounded-lg transition ${
+            isSelectedEnded
+              ? 'bg-slate-400 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed'
+          }`}
         >
-          {loading ? 'Processing...' : 'Tap card or press Enter'}
+          {isSelectedEnded ? '⛔ Sarado na ang Attendance' : loading ? 'Processing...' : 'Tap card or press Enter'}
         </button>
 
         {!selectedAnnouncement && (

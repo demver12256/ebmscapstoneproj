@@ -16,6 +16,7 @@ const {
 } = require('../db');
 const { isMswdoRole } = require('../utils/roles');
 const { calculateRetroForBeneficiary, calculateRetroPreview } = require('../utils/retroCalculator');
+const { isNonCashProgram, getNonCashDetails } = require('../utils/nonCashPrograms');
 
 const router = express.Router();
 router.use(authenticate);
@@ -23,41 +24,41 @@ router.use(authenticate);
 // ── Middleware: Ensure staff can only access their assigned barangay ──
 const restrictToAssignedBarangay = async (req, res, next) => {
   console.log('[RESTRICT_BARANGAY] Checking access for user:', req.user.role, req.user.id);
-  
-  if (['admin','mswdo_admin'].includes(req.user.role)) {
+
+  if (['admin', 'mswdo_admin'].includes(req.user.role)) {
     console.log('[RESTRICT_BARANGAY] Admin - access granted');
     return next(); // Admins have full access
   }
-  
+
   if (req.user.role === 'staff' || req.user.role === 'barangay') {
     const eventId = req.params.id;
     if (!eventId) {
       console.log('[RESTRICT_BARANGAY] No event ID - skipping check');
       return next();
     }
-    
+
     console.log('[RESTRICT_BARANGAY] Checking event:', eventId);
     const event = await DistributionEvent.findByPk(eventId);
     if (!event) {
       console.error('[RESTRICT_BARANGAY] Event not found:', eventId);
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
-    
+
     console.log('[RESTRICT_BARANGAY] Event barangay:', event.barangay_id, 'Assigned staff:', event.assigned_staff_id);
     console.log('[RESTRICT_BARANGAY] User barangay:', req.user.barangay_id, 'User ID:', req.user.id);
-    
+
     // Staff can only access events in their barangay OR assigned to them
     if (req.user.barangay_id !== event.barangay_id && req.user.id !== event.assigned_staff_id) {
       console.error('[RESTRICT_BARANGAY] Access denied - barangay mismatch and not assigned');
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Access denied. You can only access distribution events assigned to your barangay.' 
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only access distribution events assigned to your barangay.'
       });
     }
-    
+
     console.log('[RESTRICT_BARANGAY] Access granted');
   }
-  
+
   next();
 };
 
@@ -82,9 +83,9 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
     if (req.user.role === 'staff' || req.user.role === 'barangay') {
       // STRICT: Staff sees ONLY events in their assigned barangay
       if (!req.user.barangay_id) {
-        return res.status(403).json({ 
-          success: false, 
-          message: 'Your account is not assigned to any barangay. Please contact the administrator.' 
+        return res.status(403).json({
+          success: false,
+          message: 'Your account is not assigned to any barangay. Please contact the administrator.'
         });
       }
       where.barangay_id = req.user.barangay_id;
@@ -107,16 +108,17 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
     }
 
     // Apply barangay filter if provided (admin only)
-    if (req.query.barangay_id && req.query.barangay_id !== 'all' && ['admin','mswdo_admin'].includes(req.user.role)) {
+    if (req.query.barangay_id && req.query.barangay_id !== 'all' && ['admin', 'mswdo_admin'].includes(req.user.role)) {
       where.barangay_id = parseInt(req.query.barangay_id);
     }
 
-    // MSWDO: restrict to Senior Citizens, PWD, and 4Ps program distributions
-    if (isMswdoRole(req.user.role)) {
-      where.program_id = {
-        [Op.in]: sequelize.literal(`(SELECT id FROM benefit_programs WHERE eligibility_category LIKE '%Senior%' OR eligibility_category LIKE '%PWD%' OR eligibility_category LIKE '%Disabilit%' OR eligibility_category LIKE '%4Ps%' OR eligibility_category LIKE '%Pantawid%')`)
-      };
+    // Agency-level scoping: MSWDO sees ONLY MSWDO distribution events; DSWD Admin sees ONLY DSWD events
+    if (req.user.role === 'mswdo_admin') {
+      where.agency = 'MSWDO';
+    } else if (req.user.role === 'admin') {
+      where.agency = 'DSWD';
     }
+    // Staff & Barangay see events for their assigned barangay regardless of agency (both DSWD and MSWDO)
 
     const events = await DistributionEvent.findAll({
       where,
@@ -154,7 +156,14 @@ router.get('/events/:id', authorize('admin', 'staff', 'barangay', 'beneficiary')
     if (!event) {
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
-    
+
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): MSWDO Admin cannot view or access DSWD distribution events.' });
+    }
+    if (req.user.role === 'admin' && event.agency === 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): DSWD Admin cannot view or access MSWDO distribution events.' });
+    }
+
     // Calculate real-time statistics
     const stats = {
       total_beneficiaries: event.total_beneficiaries,
@@ -163,11 +172,11 @@ router.get('/events/:id', authorize('admin', 'staff', 'barangay', 'beneficiary')
       total_amount_allocated: parseFloat(event.budget),
       total_amount_released: parseFloat(event.total_amount_released),
       total_amount_remaining: parseFloat(event.budget) - parseFloat(event.total_amount_released),
-      release_percentage: event.total_beneficiaries > 0 
-        ? ((event.total_released / event.total_beneficiaries) * 100).toFixed(2) 
+      release_percentage: event.total_beneficiaries > 0
+        ? ((event.total_released / event.total_beneficiaries) * 100).toFixed(2)
         : 0,
     };
-    
+
     res.json({ success: true, data: { ...event.toJSON(), stats } });
   } catch (error) {
     next(error);
@@ -177,20 +186,49 @@ router.get('/events/:id', authorize('admin', 'staff', 'barangay', 'beneficiary')
 // ── GET /events/:id/eligible-beneficiaries ── Load beneficiaries for a barangay with eligibility info
 router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const { program_id, barangay_id, target_category } = req.query;
-    if (!program_id || !barangay_id) {
+    let programId = req.query.program_id;
+    let barangayId = req.query.barangay_id;
+    let target_category = req.query.target_category;
+
+    if (req.params.id && req.params.id !== 'new') {
+      const ev = await DistributionEvent.findByPk(req.params.id);
+      if (!ev) {
+        return res.status(404).json({ success: false, message: 'Distribution event not found' });
+      }
+      if (req.user.role === 'mswdo_admin' && ev.agency !== 'MSWDO') {
+        return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot access DSWD distribution events.' });
+      }
+      if (req.user.role === 'admin' && ev.agency === 'MSWDO') {
+        return res.status(403).json({ success: false, message: 'Access Denied: DSWD Admin cannot access MSWDO distribution events.' });
+      }
+      if (!programId) programId = ev.program_id;
+      if (!barangayId) barangayId = ev.barangay_id;
+      if (!target_category) target_category = ev.target_category;
+    }
+
+    if (!programId || !barangayId) {
       return res.status(400).json({ success: false, message: 'program_id and barangay_id are required' });
     }
 
-    const program = await BenefitProgram.findByPk(program_id);
+    const program = await BenefitProgram.findByPk(programId);
     if (!program) {
       return res.status(404).json({ success: false, message: 'Program not found' });
+    }
+
+    // MSWDO Admin cannot access beneficiaries for DSWD programs/events
+    if (req.user.role === 'mswdo_admin') {
+      if (program.agency !== 'MSWDO') {
+        return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot access eligible beneficiaries for DSWD programs.' });
+      }
+    }
+    if (req.user.role === 'admin' && program.agency === 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: DSWD Admin cannot access eligible beneficiaries for MSWDO programs.' });
     }
 
     // Step 1: Fetch ALL approved beneficiaries in the selected barangay
     // Optionally filtered by target_category if provided
     const beneficiaryWhere = {
-      barangay_id,
+      barangay_id: barangayId,
       status: 'Approved',
     };
 
@@ -206,10 +244,10 @@ router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'ba
 
     // Step 2: Get all active enrollments for this program in this barangay
     const enrollments = await Enrollment.findAll({
-      where: { program_id, status: 'active' },
+      where: { program_id: programId, status: 'active' },
       include: [{
         model: Beneficiary,
-        where: { barangay_id },
+        where: { barangay_id: barangayId },
         attributes: ['id'],
       }],
     });
@@ -248,8 +286,8 @@ router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'ba
         disqualify_reason: !isEnrolled
           ? 'Not enrolled in this program'
           : (!categoryMatch || !programCategoryMatch)
-          ? 'Category does not match'
-          : null,
+            ? 'Category does not match'
+            : null,
       };
     });
 
@@ -277,6 +315,10 @@ router.get('/events/:id/count-eligible', authorize('admin', 'staff', 'barangay')
 
     if (!event) {
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    }
+
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot access DSWD distribution events.' });
     }
 
     const program = event.Program;
@@ -330,74 +372,101 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
   try {
     console.log('[CREATE EVENT] Request body:', req.body);
     console.log('[CREATE EVENT] User:', req.user.role, req.user.id);
-    
-    // Validate required fields (budget and venue are now optional; amount_per_beneficiary is manual and required)
-    const { title, program_id, barangay_id, distribution_date, amount_per_beneficiary, budget, venue } = req.body;
-    
+
+    const {
+      title,
+      program_id,
+      barangay_id,
+      distribution_date,
+      amount_per_beneficiary,
+      budget,
+      venue,
+      benefit_type: reqBenefitType,
+      item_name: reqItemName,
+      item_quantity: reqItemQuantity,
+      item_unit: reqItemUnit,
+    } = req.body;
+
     const missingFields = [];
     if (!title) missingFields.push('title');
     if (!program_id) missingFields.push('program_id');
     if (!barangay_id) missingFields.push('barangay_id');
     if (!distribution_date) missingFields.push('distribution_date');
-    if (!amount_per_beneficiary) missingFields.push('amount_per_beneficiary');
-    
-    if (missingFields.length > 0) {
-      console.error('[CREATE EVENT] Missing required fields:', missingFields);
-      return res.status(400).json({ 
-        success: false, 
-        message: `Missing required fields: ${missingFields.join(', ')}`,
-        missing_fields: missingFields,
-      });
-    }
-    
+
     // Validate that program exists
     const program = await BenefitProgram.findByPk(program_id);
     if (!program) {
       console.error('[CREATE EVENT] Program not found:', program_id);
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         message: `Program with ID ${program_id} not found`,
       });
     }
-    
+
+    // MSWDO Admin can ONLY create distribution events for MSWDO programs (cannot create for DSWD programs)
+    if (req.user.role === 'mswdo_admin' && program.agency !== 'MSWDO') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access Denied (403 Forbidden): MSWDO Admin cannot create distribution events for DSWD programs. Only MSWDO municipal programs are permitted.',
+      });
+    }
+
+    // Determine if this program is non-cash / in-kind
+    const isNonCash = isNonCashProgram(program.name, reqBenefitType || program.benefit_type);
+    const nonCashDetails = isNonCash ? getNonCashDetails(program.name) : null;
+
+    // Only cash programs strictly require amount_per_beneficiary > 0
+    if (!isNonCash && (!amount_per_beneficiary || isNaN(parseFloat(amount_per_beneficiary)) || parseFloat(amount_per_beneficiary) <= 0)) {
+      missingFields.push('amount_per_beneficiary');
+    }
+
+    if (missingFields.length > 0) {
+      console.error('[CREATE EVENT] Missing required fields:', missingFields);
+      return res.status(400).json({
+        success: false,
+        message: `Missing required fields: ${missingFields.join(', ')}`,
+        missing_fields: missingFields,
+      });
+    }
+
     // Validate that barangay exists
     const barangay = await Barangay.findByPk(barangay_id);
     if (!barangay) {
       console.error('[CREATE EVENT] Barangay not found:', barangay_id);
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         message: `Barangay with ID ${barangay_id} not found`,
       });
     }
-    
-    // Validate numeric field for amount_per_beneficiary
-    if (isNaN(parseFloat(amount_per_beneficiary)) || parseFloat(amount_per_beneficiary) <= 0) {
-      console.error('[CREATE EVENT] Invalid amount_per_beneficiary:', amount_per_beneficiary);
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Amount per beneficiary must be a positive number',
-      });
-    }
 
-    let finalBudget = parseFloat(budget || 0);
+    let finalAmount = isNonCash ? 0 : parseFloat(amount_per_beneficiary);
+    let finalBudget = isNonCash ? 0 : parseFloat(budget || 0);
     if (isNaN(finalBudget) || finalBudget < 0) {
       finalBudget = 0;
     }
-    
+
     // Validate date
     const distDate = new Date(distribution_date);
     if (isNaN(distDate.getTime())) {
       console.error('[CREATE EVENT] Invalid date:', distribution_date);
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         message: 'Invalid distribution date format',
       });
     }
-    
-    console.log('[CREATE EVENT] Validation passed, creating event...');
-    
+
+    console.log('[CREATE EVENT] Validation passed, creating event (isNonCash:', isNonCash, ')...');
+
+    const agency = req.user.role === 'mswdo_admin' ? 'MSWDO' : 'DSWD';
     const event = await DistributionEvent.create({
       ...req.body,
+      agency,
+      created_by: req.user.id,
+      benefit_type: isNonCash ? (reqBenefitType || nonCashDetails?.type || 'In-Kind') : 'Cash',
+      item_name: isNonCash ? (reqItemName || nonCashDetails?.default_item || nonCashDetails?.assistance_type || 'In-Kind Package') : null,
+      item_quantity: isNonCash ? (parseInt(reqItemQuantity, 10) || 1) : 1,
+      item_unit: isNonCash ? (reqItemUnit || 'package') : null,
+      amount_per_beneficiary: finalAmount,
       venue: venue && venue.trim() ? venue.trim() : null,
       budget: finalBudget,
       status: 'draft',
@@ -428,8 +497,8 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
     console.error('[CREATE EVENT] Error:', error.message);
     console.error('[CREATE EVENT] Error stack:', error.stack);
     if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         message: 'Validation error: ' + error.message,
         errors: error.errors?.map(e => ({ field: e.path, message: e.message })),
       });
@@ -444,6 +513,9 @@ router.put('/events/:id', authorize('admin'), async (req, res, next) => {
     const event = await DistributionEvent.findByPk(req.params.id);
     if (!event) {
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    }
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): MSWDO Admin cannot edit DSWD distribution events.' });
     }
     if (event.status !== 'draft') {
       return res.status(400).json({ success: false, message: 'Only draft events can be edited' });
@@ -468,22 +540,27 @@ router.put('/events/:id', authorize('admin'), async (req, res, next) => {
 // Validates budget, generates transactions, notifies staff & beneficiaries
 router.post('/events/:id/publish', authorize('admin'), async (req, res, next) => {
   const transaction = await sequelize.transaction();
-  
+
   try {
     console.log('[PUBLISH EVENT] Request for event ID:', req.params.id);
     console.log('[PUBLISH EVENT] User:', req.user.role, req.user.id);
-    
+
     const event = await DistributionEvent.findByPk(req.params.id, {
       include: [{ model: BenefitProgram, as: 'Program' }],
       transaction,
     });
-    
+
     if (!event) {
       console.error('[PUBLISH EVENT] Event not found:', req.params.id);
       await transaction.rollback();
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
-    
+
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      await transaction.rollback();
+      return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): MSWDO Admin cannot publish DSWD distribution events.' });
+    }
+
     console.log('[PUBLISH EVENT] Event found:', {
       id: event.id,
       title: event.title,
@@ -495,7 +572,7 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       amount_per_beneficiary: event.amount_per_beneficiary,
       target_category: event.target_category,
     });
-    
+
     if (event.status !== 'draft') {
       console.error('[PUBLISH EVENT] Event is not draft, current status:', event.status);
       await transaction.rollback();
@@ -506,9 +583,9 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     if (!event.assigned_staff_id) {
       console.error('[PUBLISH EVENT] No staff assigned');
       await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Please assign a Barangay Staff member before publishing this distribution event.' 
+      return res.status(400).json({
+        success: false,
+        message: 'Please assign a Barangay Staff member before publishing this distribution event.'
       });
     }
 
@@ -521,13 +598,13 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       name: program?.name,
       eligibility_category: program?.eligibility_category,
     });
-    
+
     const enrollmentWhere = { program_id: event.program_id, status: 'active' };
     const beneficiaryWhere = {
       barangay_id: event.barangay_id,
       status: 'Approved',
     };
-    
+
     // Apply category filtering:
     // 1. If event has target_category, use it (distribution-specific filter)
     // 2. Otherwise, if program has eligibility_category, use that (program-wide filter)
@@ -555,8 +632,8 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     if (enrollments.length === 0) {
       console.error('[PUBLISH EVENT] No eligible beneficiaries found');
       await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         message: 'No eligible beneficiaries found for this event. Please check program enrollment and beneficiary approval status.',
         debug: {
           program_id: event.program_id,
@@ -587,7 +664,12 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       sufficient: totalRequired <= availableBudget,
     });
 
-    // Generate transactions WITH retroactive payment calculation
+    // Determine if this program is non-cash / in-kind
+    const isNonCash = isNonCashProgram(program.name, event.benefit_type);
+    const nonCashDetails = isNonCash ? getNonCashDetails(program.name) : null;
+    const itemDisplayName = event.item_name || nonCashDetails?.default_item || 'In-Kind Goods / Service';
+
+    // Generate transactions WITH retroactive payment calculation (for cash only)
     const models = { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay };
     const transactions = [];
     let totalRetroAmount = 0;
@@ -595,39 +677,56 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     for (let i = 0; i < enrollments.length; i++) {
       const enrollment = enrollments[i];
       const beneficiaryId = enrollment.Beneficiary.id;
+      const beneficiary = enrollment.Beneficiary;
 
-      // Calculate retroactive payment for this beneficiary
-      const retro = await calculateRetroForBeneficiary({
-        beneficiaryId,
-        programId: event.program_id,
-        currentEventId: event.id,
-        amountPerBeneficiary: parseFloat(event.amount_per_beneficiary),
-        models,
-        transaction,
-      });
+      let retro = { retro_amount: 0, retro_periods: 0, retro_details: [] };
+      if (!isNonCash) {
+        // Calculate retroactive payment for this beneficiary
+        retro = await calculateRetroForBeneficiary({
+          beneficiaryId,
+          programId: event.program_id,
+          currentEventId: event.id,
+          amountPerBeneficiary: parseFloat(event.amount_per_beneficiary),
+          models,
+          transaction,
+        });
+        totalRetroAmount += retro.retro_amount;
+      }
 
-      totalRetroAmount += retro.retro_amount;
+      // Determine disbursement type based on beneficiary's payout preference and verification
+      const isDigitalReady = !isNonCash
+        && beneficiary.payout_preference === 'digital'
+        && beneficiary.account_verification_status === 'verified'
+        && beneficiary.payout_provider
+        && beneficiary.payout_account_number;
 
       transactions.push({
         transaction_number: generateTransactionNumber(event.id, i + 1),
         distribution_event_id: event.id,
         beneficiary_id: beneficiaryId,
-        amount: event.amount_per_beneficiary,
+        amount: isNonCash ? 0 : event.amount_per_beneficiary,
+        item_name: isNonCash ? itemDisplayName : null,
+        item_quantity: isNonCash ? (event.item_quantity || 1) : 1,
         retro_amount: retro.retro_amount,
         retro_periods: retro.retro_periods,
         retro_details: retro.retro_details.length > 0 ? JSON.stringify(retro.retro_details) : null,
         status: 'pending',
+        disbursement_type: isNonCash ? 'in_kind' : (isDigitalReady ? 'digital' : 'cash_otc'),
+        payout_provider: isDigitalReady ? beneficiary.payout_provider : null,
       });
     }
 
     // Calculate total including retro amounts
-    const totalWithRetro = totalRequired + totalRetroAmount;
+    const totalWithRetro = isNonCash ? 0 : (totalRequired + totalRetroAmount);
     // Auto-set availableBudget to match totalWithRetro so manual budget constraint is not required
-    if (parseFloat(event.budget || 0) <= 0 || availableBudget < totalWithRetro) {
+    if (isNonCash) {
+      availableBudget = 0;
+    } else if (parseFloat(event.budget || 0) <= 0 || availableBudget < totalWithRetro) {
       availableBudget = totalWithRetro;
     }
 
     console.log('[PUBLISH EVENT] Retro summary:', {
+      isNonCash,
       totalRetroAmount,
       beneficiariesWithRetro: transactions.filter(t => t.retro_periods > 0).length,
       totalWithRetro,
@@ -669,10 +768,15 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
           ? ` (Includes ₱${retroAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} retroactive pay for ${txn.retro_periods} missed period(s))`
           : '';
 
+        const notifTitle = isNonCash ? 'Upcoming In-Kind Distribution / Service' : 'Upcoming Benefit Distribution';
+        const notifMessage = isNonCash
+          ? `You are scheduled to receive ${itemDisplayName} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`
+          : `You are scheduled to receive ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`;
+
         return Notification.create({
           user_id: enrollment.Beneficiary.user_id,
-          title: 'Upcoming Benefit Distribution',
-          message: `You are scheduled to receive ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`,
+          title: notifTitle,
+          message: notifMessage,
           type: 'distribution',
           reference_id: event.id,
           reference_type: 'DistributionEvent',
@@ -680,13 +784,15 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
         }, { transaction });
       }
     });
-    
+
     await Promise.all(notificationPromises);
 
     // Create audit log
     await AuditLog.create({
       user_id: req.user.id,
-      action: `Published distribution event: ${event.title} with ${eligibleCount} beneficiaries (₱${totalWithRetro.toLocaleString('en-PH', { minimumFractionDigits: 2 })} total with retro)`,
+      action: isNonCash
+        ? `Published in-kind distribution event: ${event.title} with ${eligibleCount} beneficiaries (${itemDisplayName})`
+        : `Published distribution event: ${event.title} with ${eligibleCount} beneficiaries (₱${totalWithRetro.toLocaleString('en-PH', { minimumFractionDigits: 2 })} total with retro)`,
       module: 'distributions',
       details: JSON.stringify({
         event_id: event.id,
@@ -700,7 +806,7 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     }, { transaction });
 
     await transaction.commit();
-    
+
     console.log('[PUBLISH EVENT] Transaction committed successfully');
 
     // Reload event with associations
@@ -719,9 +825,9 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       total_beneficiaries: result.total_beneficiaries,
     });
 
-    res.json({ 
-      success: true, 
-      data: result, 
+    res.json({
+      success: true,
+      data: result,
       message: `Distribution event published successfully! ${eligibleCount} beneficiaries will be notified.`,
       summary: {
         total_beneficiaries: eligibleCount,
@@ -752,6 +858,10 @@ router.get('/events/:id/retro-preview', authorize('admin', 'staff', 'barangay'),
 
     if (!event) {
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    }
+
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot preview DSWD distribution events.' });
     }
 
     const models = { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay };
@@ -870,6 +980,10 @@ router.patch('/events/:id/status', authorize('admin', 'staff', 'barangay'), rest
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot update DSWD distribution events.' });
+    }
+
     const { status } = req.body;
     const validTransitions = {
       draft: ['scheduled'],
@@ -916,26 +1030,95 @@ router.post('/events/:id/start-session', authorize('admin', 'staff', 'barangay')
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot start session for DSWD distribution events.' });
+    }
+
     if (event.status === 'completed') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'This distribution session has been ended and cannot be restarted.' 
+      return res.status(400).json({
+        success: false,
+        message: 'This distribution session has been ended and cannot be restarted.'
       });
     }
 
     if (event.status !== 'scheduled' && event.status !== 'ongoing') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Only scheduled events can start a distribution session' 
+      return res.status(400).json({
+        success: false,
+        message: 'Only scheduled events can start a distribution session'
       });
     }
 
     // Transition to ongoing if scheduled
     if (event.status === 'scheduled') {
-      await event.update({ 
+      await event.update({
         status: 'ongoing',
         started_at: new Date(),
       });
+    }
+
+    // Auto-disburse pending digital payouts upon starting session so digital beneficiaries are credited immediately
+    try {
+      const pendingDigitalTxns = await DistributionTransaction.findAll({
+        where: {
+          distribution_event_id: event.id,
+          disbursement_type: 'digital',
+          status: 'pending',
+        },
+        include: [{ model: Beneficiary }],
+      });
+
+      if (pendingDigitalTxns.length > 0) {
+        console.log(`[START SESSION] Auto-disbursing ${pendingDigitalTxns.length} digital payouts for event ${event.id}...`);
+        for (let i = 0; i < pendingDigitalTxns.length; i++) {
+          const txn = pendingDigitalTxns[i];
+          const beneficiary = txn.Beneficiary;
+          const provider = txn.payout_provider || beneficiary?.payout_provider || 'GCash';
+          const date = new Date();
+          const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+          const providerCode = (provider || 'PAY').toUpperCase().replace(/\s+/g, '');
+          const random = String(Math.floor(Math.random() * 99999)).padStart(5, '0');
+          const refNumber = `${providerCode}-REF-${dateStr}-${String(event.id).padStart(4, '0')}-${random}`;
+
+          await txn.update({
+            status: 'released',
+            released_at: new Date(),
+            released_by_staff_id: req.user.id,
+            payout_reference_number: refNumber,
+            payout_provider: provider,
+            verification_method: 'digital_payout',
+          });
+
+          if (beneficiary?.user_id) {
+            const regularAmount = parseFloat(txn.amount || 0);
+            const retroAmount = parseFloat(txn.retro_amount || 0);
+            const totalPayout = regularAmount + retroAmount;
+            const retroText = retroAmount > 0 ? ` (kasama ang ₱${retroAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} backpay)` : '';
+            await Notification.create({
+              user_id: beneficiary.user_id,
+              title: '💰 Digital Payout Credited',
+              message: `Magandang araw ${beneficiary.first_name}! Ang iyong ayuda na ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroText} ay matagumpay nang naipasok sa iyong ${provider} account (Ref: ${refNumber}). Paki-confirm sa iyong EBMS portal.`,
+              type: 'distribution',
+              reference_id: event.id,
+            });
+          }
+        }
+
+        const releasedCount = await DistributionTransaction.count({
+          where: { distribution_event_id: event.id, status: 'released' },
+        });
+        const regularSum = (await DistributionTransaction.sum('amount', {
+          where: { distribution_event_id: event.id, status: 'released' },
+        })) || 0;
+        const retroSum = (await DistributionTransaction.sum('retro_amount', {
+          where: { distribution_event_id: event.id, status: 'released' },
+        })) || 0;
+        await event.update({
+          total_released: releasedCount,
+          total_amount_released: parseFloat(regularSum) + parseFloat(retroSum),
+        });
+      }
+    } catch (autoDisburseErr) {
+      console.error('[START SESSION] Error auto-disbursing digital payouts:', autoDisburseErr);
     }
 
     await AuditLog.create({
@@ -948,8 +1131,8 @@ router.post('/events/:id/start-session', authorize('admin', 'staff', 'barangay')
     // Reload event to ensure we return the updated status
     await event.reload();
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: event,
       message: 'Distribution session started. You can now begin verifying and releasing benefits.',
     });
@@ -966,10 +1149,14 @@ router.post('/events/:id/end-session', authorize('admin', 'staff', 'barangay'), 
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot end session for DSWD distribution events.' });
+    }
+
     if (event.status !== 'ongoing') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Only ongoing distribution sessions can be ended' 
+      return res.status(400).json({
+        success: false,
+        message: 'Only ongoing distribution sessions can be ended'
       });
     }
 
@@ -986,7 +1173,7 @@ router.post('/events/:id/end-session', authorize('admin', 'staff', 'barangay'), 
     });
 
     // Once a distribution session ends, set status to completed permanently
-    await event.update({ 
+    await event.update({
       status: 'completed',
       completed_at: new Date(),
     });
@@ -1030,11 +1217,11 @@ router.post('/events/:id/end-session', authorize('admin', 'staff', 'barangay'), 
       details: JSON.stringify({ event_id: event.id, released: releasedCount, pending: pendingCount, notifications_sent: notifiedCount }),
     });
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: event,
-      message: pendingCount === 0 
-        ? 'Distribution session completed. All benefits have been released!' 
+      message: pendingCount === 0
+        ? 'Distribution session completed. All benefits have been released!'
         : `Distribution session ended and locked. ${pendingCount} beneficiary(ies) did not claim and have been notified.`,
       summary: {
         released: releasedCount,
@@ -1055,6 +1242,15 @@ router.post('/events/:id/end-session', authorize('admin', 'staff', 'barangay'), 
 // ── GET /events/:id/transactions ── List transactions for an event
 router.get('/events/:id/transactions', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (req, res, next) => {
   try {
+    const event = await DistributionEvent.findByPk(req.params.id);
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    }
+
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot view transactions for DSWD distribution events.' });
+    }
+
     const where = { distribution_event_id: req.params.id };
 
     // Beneficiaries can only see their own transactions
@@ -1093,20 +1289,20 @@ router.post('/events/:id/transactions/:txnId/verify', authorize('admin', 'staff'
           model: Beneficiary,
           include: [{ model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] }],
         },
-        { 
-          model: DistributionEvent, 
-          as: 'Event', 
+        {
+          model: DistributionEvent,
+          as: 'Event',
           include: [
             { model: BenefitProgram, as: 'Program' },
             { model: Barangay, attributes: ['id', 'barangay_name'] }
-          ] 
+          ]
         },
       ],
     });
 
     if (!txn) {
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         message: 'Transaction not found in this distribution event',
         verified: false,
       });
@@ -1204,13 +1400,13 @@ router.post('/events/:id/transactions/:txnId/verify', authorize('admin', 'staff'
 });
 
 // ── POST /events/:id/transactions/:txnId/release ── Release benefit
-router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff', 'barangay'), restrictToAssignedBarangay, async (req, res, next) => {
+router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff', 'barangay', 'mswdo_admin'), restrictToAssignedBarangay, async (req, res, next) => {
   const dbTransaction = await sequelize.transaction();
-  
+
   try {
     console.log('[RELEASE BENEFIT] Request from user:', req.user.role, req.user.id);
     console.log('[RELEASE BENEFIT] Event ID:', req.params.id, 'Transaction ID:', req.params.txnId);
-    
+
     const txn = await DistributionTransaction.findOne({
       where: { id: req.params.txnId, distribution_event_id: req.params.id },
       include: [
@@ -1238,8 +1434,8 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
     if (txn.status === 'released') {
       console.error('[RELEASE BENEFIT] Already released');
       await dbTransaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         message: 'Benefit already released for this transaction',
         error_code: 'ALREADY_RELEASED',
         details: {
@@ -1253,8 +1449,8 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
     if (txn.Event.status !== 'ongoing') {
       console.error('[RELEASE BENEFIT] Event not ongoing, status:', txn.Event.status);
       await dbTransaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         message: 'Distribution session is not active. Please start the session first.',
         error_code: 'SESSION_NOT_ACTIVE',
       });
@@ -1272,9 +1468,9 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
     if (!signature_data && !photo_proof) {
       console.error('[RELEASE BENEFIT] No signature or photo proof provided');
       await dbTransaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Please provide either a digital signature or photo proof of receipt' 
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide either a digital signature or photo proof of receipt'
       });
     }
 
@@ -1358,7 +1554,7 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
         status: 'completed',
         completed_at: new Date(),
       }, { transaction: dbTransaction });
-      
+
       console.log('[RELEASE BENEFIT] Event auto-completed:', {
         event_id: event.id,
         title: event.title,
@@ -1407,8 +1603,12 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
       }
     }
 
+    // Determine if non-cash
+    const isNonCashTxn = isNonCashProgram(event.Program?.name || event.title, event.benefit_type) || !!txn.item_name;
+    const itemDesc = txn.item_name || event.item_name || 'In-Kind Goods / Service';
+
     // Total payout amount (regular + retro)
-    const regularPayout = parseFloat(txn.amount);
+    const regularPayout = parseFloat(txn.amount || 0);
     const retroPayout = parseFloat(txn.retro_amount || 0);
     const totalPayout = regularPayout + retroPayout;
     const retroText = txn.retro_periods > 0
@@ -1420,8 +1620,10 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
     if (beneficiary?.user_id) {
       await Notification.create({
         user_id: beneficiary.user_id,
-        title: 'Benefit Successfully Released',
-        message: `Your benefit of ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroText} has been successfully released. Transaction Number: ${txn.transaction_number}. You can now view and download your receipt.`,
+        title: isNonCashTxn ? 'Assistance Successfully Released' : 'Benefit Successfully Released',
+        message: isNonCashTxn
+          ? `Your in-kind assistance (${itemDesc}) has been successfully released/received. Transaction Number: ${txn.transaction_number}. You can now view your release receipt.`
+          : `Your benefit of ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroText} has been successfully released. Transaction Number: ${txn.transaction_number}. You can now view and download your receipt.`,
         type: 'distribution',
         reference_id: txn.id,
         reference_type: 'DistributionTransaction',
@@ -1432,11 +1634,15 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
     // Create audit log
     await AuditLog.create({
       user_id: req.user.id,
-      action: `Released benefit ₱${totalPayout.toFixed(2)} (Regular: ₱${regularPayout.toFixed(2)}, Retro: ₱${retroPayout.toFixed(2)}) to ${beneficiary.first_name} ${beneficiary.last_name} (TXN: ${txn.transaction_number})`,
+      action: isNonCashTxn
+        ? `Released in-kind assistance (${itemDesc}) to ${beneficiary.first_name} ${beneficiary.last_name} (TXN: ${txn.transaction_number})`
+        : `Released benefit ₱${totalPayout.toFixed(2)} (Regular: ₱${regularPayout.toFixed(2)}, Retro: ₱${retroPayout.toFixed(2)}) to ${beneficiary.first_name} ${beneficiary.last_name} (TXN: ${txn.transaction_number})`,
       module: 'distributions',
       details: JSON.stringify({
         transaction_id: txn.id,
         beneficiary_id: beneficiary.id,
+        is_non_cash: isNonCashTxn,
+        item_name: txn.item_name || event.item_name,
         amount: regularPayout,
         retro_amount: retroPayout,
         total_payout: totalPayout,
@@ -1457,9 +1663,9 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
       ],
     });
 
-    res.json({ 
-      success: true, 
-      data: result, 
+    res.json({
+      success: true,
+      data: result,
       message: 'Benefit released successfully! Receipt can now be generated.',
       receipt_available: true,
     });
@@ -1495,12 +1701,16 @@ router.get('/events/:id/receipt/:txnId', authorize('admin', 'staff', 'barangay',
       return res.status(404).json({ success: false, message: 'Transaction not found' });
     }
 
+    if (req.user.role === 'mswdo_admin' && txn.Event?.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot view receipts for DSWD distribution events.' });
+    }
+
     // Beneficiaries can only view their own receipts
     if (req.user.role === 'beneficiary') {
       if (txn.Beneficiary.user_id !== req.user.id) {
-        return res.status(403).json({ 
-          success: false, 
-          message: 'You can only view your own receipts' 
+        return res.status(403).json({
+          success: false,
+          message: 'You can only view your own receipts'
         });
       }
     }
@@ -1522,7 +1732,7 @@ router.get('/events/:id/receipt/:txnId', authorize('admin', 'staff', 'barangay',
         status: txn.status,
         released_at: txn.released_at,
         verification_method: txn.verification_method,
-        
+
         // Beneficiary Details
         beneficiary_id: txn.Beneficiary.id,
         beneficiary_name: `${txn.Beneficiary.first_name} ${txn.Beneficiary.middle_name || ''} ${txn.Beneficiary.last_name}`.trim(),
@@ -1530,7 +1740,7 @@ router.get('/events/:id/receipt/:txnId', authorize('admin', 'staff', 'barangay',
         beneficiary_barangay: txn.Beneficiary.Barangay?.barangay_name,
         beneficiary_address: txn.Beneficiary.address,
         beneficiary_contact: txn.Beneficiary.contact_number,
-        
+
         // Program & Event Details
         program_name: txn.Event?.Program?.name,
         program_code: txn.Event?.Program?.code,
@@ -1538,7 +1748,7 @@ router.get('/events/:id/receipt/:txnId', authorize('admin', 'staff', 'barangay',
         event_barangay: txn.Event?.Barangay?.barangay_name,
         distribution_date: txn.Event?.distribution_date,
         venue: txn.Event?.venue,
-        
+
         // Amount Details
         regular_amount: parseFloat(txn.amount),
         retro_amount: parseFloat(txn.retro_amount || 0),
@@ -1551,15 +1761,15 @@ router.get('/events/:id/receipt/:txnId', authorize('admin', 'staff', 'barangay',
         amount: parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0),
         formatted_amount: `₱${(parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
         amount_in_words: numberToWords(parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0)),
-        
+
         // Staff Details
         released_by: txn.ReleasedByStaff ? `${txn.ReleasedByStaff.first_name} ${txn.ReleasedByStaff.last_name}` : 'N/A',
         released_by_email: txn.ReleasedByStaff?.email,
-        
+
         // Proof Details
         signature_available: !!txn.signature_data,
         photo_proof_available: !!txn.photo_proof,
-        
+
         // Receipt Metadata
         receipt_generated_at: new Date().toISOString(),
         receipt_type: 'Official Distribution Receipt',
@@ -1633,15 +1843,22 @@ function numberToWords(num) {
 router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     console.log('[DASHBOARD STATS] Request from user:', req.user.role, req.user.id);
-    
+
     const where = {};
 
-    // Staff can only see stats for their barangay
+    // Staff can only see stats for their assigned barangay
     if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id) {
       where.barangay_id = req.user.barangay_id;
       console.log('[DASHBOARD STATS] Filtering by barangay:', req.user.barangay_id);
-    } else {
-      console.log('[DASHBOARD STATS] Admin - showing all barangays');
+    } else if (req.query.barangay_id && req.query.barangay_id !== 'all') {
+      where.barangay_id = parseInt(req.query.barangay_id, 10);
+    }
+
+    // Agency-level scoping: MSWDO Admin strictly sees ONLY MSWDO events and stats; DSWD sees DSWD
+    if (req.user.role === 'mswdo_admin') {
+      where.agency = 'MSWDO';
+    } else if (req.user.role === 'admin') {
+      where.agency = req.query.agency || 'DSWD';
     }
 
     // Total events by status
@@ -1651,13 +1868,13 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
     const ongoingEvents = await DistributionEvent.count({ where: { ...where, status: 'ongoing' } });
     const completedEvents = await DistributionEvent.count({ where: { ...where, status: 'completed' } });
 
-    console.log('[DASHBOARD STATS] Event counts:', { totalEvents, draftEvents, scheduledEvents, ongoingEvents, completedEvents });
+    console.log('[DASHBOARD STATS] Event counts for role', req.user.role, ':', { totalEvents, draftEvents, scheduledEvents, ongoingEvents, completedEvents });
 
     // Get event IDs for this user's scope
     const events = await DistributionEvent.findAll({ where, attributes: ['id'] });
     const eventIds = events.map(e => e.id);
 
-    console.log('[DASHBOARD STATS] Found', eventIds.length, 'events');
+    console.log('[DASHBOARD STATS] Found', eventIds.length, 'events for agency filter');
 
     let transactionStats = {
       total_transactions: 0,
@@ -1681,22 +1898,28 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
         where: { distribution_event_id: eventIds, status: 'released' },
       });
 
-      transactionStats.total_amount_allocated = await DistributionTransaction.sum('amount', {
+      const regularAllocated = await DistributionTransaction.sum('amount', {
         where: { distribution_event_id: eventIds },
       }) || 0;
 
-      transactionStats.total_amount_released = await DistributionTransaction.sum('amount', {
+      const regularReleased = await DistributionTransaction.sum('amount', {
         where: { distribution_event_id: eventIds, status: 'released' },
       }) || 0;
 
-      transactionStats.total_amount_pending = transactionStats.total_amount_allocated - transactionStats.total_amount_released;
-      
+      const retroReleased = await DistributionTransaction.sum('retro_amount', {
+        where: { distribution_event_id: eventIds, status: 'released' },
+      }) || 0;
+
+      transactionStats.total_amount_allocated = parseFloat(regularAllocated);
+      transactionStats.total_amount_released = parseFloat(regularReleased) + parseFloat(retroReleased);
+      transactionStats.total_amount_pending = Math.max(0, transactionStats.total_amount_allocated - parseFloat(regularReleased));
+
       console.log('[DASHBOARD STATS] Transaction stats:', transactionStats);
     }
 
     // Release percentage
     const releasePercentage = transactionStats.total_transactions > 0
-      ? ((transactionStats.released_transactions / transactionStats.total_transactions) * 100).toFixed(2)
+      ? ((transactionStats.released_transactions / transactionStats.total_transactions) * 100).toFixed(0)
       : 0;
 
     console.log('[DASHBOARD STATS] Success - sending response');
@@ -1718,7 +1941,7 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
           total_amount_pending: parseFloat(transactionStats.total_amount_pending).toFixed(2),
           release_percentage: parseFloat(releasePercentage),
         },
-        scope: ['admin','mswdo_admin'].includes(req.user.role) ? 'all_barangays' : 'assigned_barangay',
+        scope: ['admin', 'mswdo_admin'].includes(req.user.role) ? 'all_barangays' : 'assigned_barangay',
         generated_at: new Date().toISOString(),
       },
     });
@@ -1735,8 +1958,8 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
     const { event_id, search_type, search_value } = req.body;
 
     if (!event_id || !search_type || !search_value) {
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         message: 'event_id, search_type, and search_value are required',
         required_fields: ['event_id', 'search_type', 'search_value'],
         valid_search_types: ['rfid', 'qr', 'id', 'manual'],
@@ -1756,7 +1979,7 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
     }
 
     // STRICT: Staff can only verify beneficiaries in their assigned barangay
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && !['admin','mswdo_admin'].includes(req.user.role)) {
+    if ((req.user.role === 'staff' || req.user.role === 'barangay') && !['admin', 'mswdo_admin'].includes(req.user.role)) {
       if (req.user.barangay_id !== event.barangay_id) {
         return res.status(403).json({
           success: false,
@@ -1768,7 +1991,7 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
 
     // Find beneficiary by search method
     let beneficiaryWhere = { status: 'Approved', barangay_id: event.barangay_id };
-    
+
     switch (search_type.toLowerCase()) {
       case 'rfid':
         beneficiaryWhere.RFID_number = search_value.trim();
@@ -1786,9 +2009,9 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
         ];
         break;
       default:
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Invalid search_type. Use: rfid, qr, id, or manual' 
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid search_type. Use: rfid, qr, id, or manual'
         });
     }
 
@@ -1799,8 +2022,8 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
     });
 
     if (beneficiaries.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         message: 'No beneficiary found matching the search criteria',
         search_type,
         search_value,
@@ -1890,8 +2113,8 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
       details: JSON.stringify({ event_id, search_type, results_count: results.length }),
     });
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: results,
       count: results.length,
       search_criteria: { event_id, search_type, search_value },
@@ -1907,6 +2130,10 @@ router.delete('/events/:id', authorize('admin'), async (req, res, next) => {
     const event = await DistributionEvent.findByPk(req.params.id);
     if (!event) {
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    }
+
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot delete DSWD distribution events.' });
     }
 
     // Only draft events can be deleted
@@ -1929,4 +2156,315 @@ router.delete('/events/:id', authorize('admin'), async (req, res, next) => {
   }
 });
 
+// ══════════════════════════════════════════════════
+//  HYBRID DIGITAL PAYOUT SYSTEM
+// ══════════════════════════════════════════════════
+
+// ── Helper: generate payout reference number ──
+const generatePayoutReference = (provider, eventId, index) => {
+  const date = new Date();
+  const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const providerCode = (provider || 'PAY').toUpperCase().replace(/\s+/g, '');
+  const random = String(Math.floor(Math.random() * 99999)).padStart(5, '0');
+  return `${providerCode}-REF-${dateStr}-${String(eventId).padStart(4, '0')}-${random}`;
+};
+
+// ── GET /events/:id/payout-summary ── Get breakdown of digital vs cash_otc transactions
+router.get('/events/:id/payout-summary', authorize('admin', 'staff', 'barangay', 'mswdo_admin'), async (req, res, next) => {
+  try {
+    const event = await DistributionEvent.findByPk(req.params.id);
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    }
+
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot view payout summary for DSWD distribution events.' });
+    }
+
+    // Count digital transactions
+    const digitalTotal = await DistributionTransaction.count({
+      where: { distribution_event_id: event.id, disbursement_type: 'digital' },
+    });
+    const digitalReleased = await DistributionTransaction.count({
+      where: { distribution_event_id: event.id, disbursement_type: 'digital', status: 'released' },
+    });
+    const digitalPending = await DistributionTransaction.count({
+      where: { distribution_event_id: event.id, disbursement_type: 'digital', status: 'pending' },
+    });
+    const digitalAmountReleased = (await DistributionTransaction.sum('amount', {
+      where: { distribution_event_id: event.id, disbursement_type: 'digital', status: 'released' },
+    })) || 0;
+    const digitalRetroReleased = (await DistributionTransaction.sum('retro_amount', {
+      where: { distribution_event_id: event.id, disbursement_type: 'digital', status: 'released' },
+    })) || 0;
+
+    // Count cash_otc transactions
+    const cashTotal = await DistributionTransaction.count({
+      where: { distribution_event_id: event.id, disbursement_type: 'cash_otc' },
+    });
+    const cashReleased = await DistributionTransaction.count({
+      where: { distribution_event_id: event.id, disbursement_type: 'cash_otc', status: 'released' },
+    });
+    const cashPending = await DistributionTransaction.count({
+      where: { distribution_event_id: event.id, disbursement_type: 'cash_otc', status: 'pending' },
+    });
+    const cashAmountReleased = (await DistributionTransaction.sum('amount', {
+      where: { distribution_event_id: event.id, disbursement_type: 'cash_otc', status: 'released' },
+    })) || 0;
+    const cashRetroReleased = (await DistributionTransaction.sum('retro_amount', {
+      where: { distribution_event_id: event.id, disbursement_type: 'cash_otc', status: 'released' },
+    })) || 0;
+
+    res.json({
+      success: true,
+      data: {
+        event_id: event.id,
+        event_status: event.status,
+        digital: {
+          total: digitalTotal,
+          released: digitalReleased,
+          pending: digitalPending,
+          amount_released: parseFloat(digitalAmountReleased) + parseFloat(digitalRetroReleased),
+        },
+        cash_otc: {
+          total: cashTotal,
+          released: cashReleased,
+          pending: cashPending,
+          amount_released: parseFloat(cashAmountReleased) + parseFloat(cashRetroReleased),
+        },
+        overall: {
+          total: digitalTotal + cashTotal,
+          released: digitalReleased + cashReleased,
+          pending: digitalPending + cashPending,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── POST /events/:id/disburse-digital ── Batch process all pending digital payout transactions (Admin only)
+// This is the SIMULATED GATEWAY — generates realistic reference numbers and marks transactions as released
+router.post('/events/:id/disburse-digital', authorize('admin', 'mswdo_admin'), async (req, res, next) => {
+  const dbTransaction = await sequelize.transaction();
+
+  try {
+    console.log('[DISBURSE DIGITAL] Request for event ID:', req.params.id);
+
+    const event = await DistributionEvent.findByPk(req.params.id, {
+      include: [{ model: BenefitProgram, as: 'Program' }],
+      transaction: dbTransaction,
+    });
+
+    if (!event) {
+      await dbTransaction.rollback();
+      return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    }
+
+    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+      await dbTransaction.rollback();
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot disburse for DSWD distribution events.' });
+    }
+
+    if (!['scheduled', 'ongoing'].includes(event.status)) {
+      await dbTransaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Cannot process digital payouts for events with status "${event.status}". Event must be scheduled or ongoing.`,
+      });
+    }
+
+    // Get all pending digital transactions
+    const pendingDigitalTxns = await DistributionTransaction.findAll({
+      where: {
+        distribution_event_id: event.id,
+        disbursement_type: 'digital',
+        status: 'pending',
+      },
+      include: [{ model: Beneficiary }],
+      transaction: dbTransaction,
+    });
+
+    if (pendingDigitalTxns.length === 0) {
+      await dbTransaction.rollback();
+      return res.json({
+        success: true,
+        message: 'No pending digital payout transactions to process.',
+        data: { processed: 0, total_amount: 0 },
+      });
+    }
+
+    console.log(`[DISBURSE DIGITAL] Processing ${pendingDigitalTxns.length} digital payouts...`);
+
+    // Simulate processing delay (realistic gateway behavior)
+    const processedTxns = [];
+    let totalAmount = 0;
+
+    for (let i = 0; i < pendingDigitalTxns.length; i++) {
+      const txn = pendingDigitalTxns[i];
+      const beneficiary = txn.Beneficiary;
+      const provider = txn.payout_provider || beneficiary?.payout_provider || 'DIGITAL';
+      const refNumber = generatePayoutReference(provider, event.id, i + 1);
+
+      const regularAmount = parseFloat(txn.amount || 0);
+      const retroAmount = parseFloat(txn.retro_amount || 0);
+      const totalPayout = regularAmount + retroAmount;
+
+      // Update transaction: mark as released with digital payout details
+      await txn.update({
+        status: 'released',
+        released_at: new Date(),
+        released_by_staff_id: req.user.id,
+        payout_reference_number: refNumber,
+        payout_provider: provider,
+        verification_method: 'digital_payout',
+      }, { transaction: dbTransaction });
+
+      totalAmount += totalPayout;
+
+      processedTxns.push({
+        transaction_id: txn.id,
+        transaction_number: txn.transaction_number,
+        beneficiary_name: beneficiary ? `${beneficiary.first_name} ${beneficiary.last_name}` : 'Unknown',
+        provider,
+        account_number: beneficiary?.payout_account_number || 'N/A',
+        amount: regularAmount,
+        retro_amount: retroAmount,
+        total_payout: totalPayout,
+        reference_number: refNumber,
+      });
+
+      // Send notification to beneficiary
+      if (beneficiary?.user_id) {
+        const retroText = retroAmount > 0 ? ` (kasama ang ₱${retroAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} retroactive backpay)` : '';
+        await Notification.create({
+          user_id: beneficiary.user_id,
+          title: '💰 Digital Payout Credited',
+          message: `Magandang araw ${beneficiary.first_name}! Ang iyong ${event.Program?.name || 'benefit'} na ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroText} ay matagumpay nang naipasok sa iyong ${provider} account. Reference: ${refNumber}.`,
+          type: 'distribution',
+          reference_id: event.id,
+        }, { transaction: dbTransaction });
+      }
+    }
+
+    // Update event counters
+    const releasedCount = await DistributionTransaction.count({
+      where: { distribution_event_id: event.id, status: 'released' },
+      transaction: dbTransaction,
+    });
+    const regularSum = (await DistributionTransaction.sum('amount', {
+      where: { distribution_event_id: event.id, status: 'released' },
+      transaction: dbTransaction,
+    })) || 0;
+    const retroSum = (await DistributionTransaction.sum('retro_amount', {
+      where: { distribution_event_id: event.id, status: 'released' },
+      transaction: dbTransaction,
+    })) || 0;
+    const releasedAmount = parseFloat(regularSum) + parseFloat(retroSum);
+
+    // Auto-transition event status
+    const updateData = {
+      total_released: releasedCount,
+      total_amount_released: releasedAmount,
+    };
+
+    // If not yet ongoing, start the session
+    if (event.status === 'scheduled') {
+      updateData.status = 'ongoing';
+      updateData.started_at = new Date();
+    }
+
+    // Auto-complete if all released
+    const totalBeneficiaries = event.total_beneficiaries;
+    if (releasedCount >= totalBeneficiaries && totalBeneficiaries > 0) {
+      updateData.status = 'completed';
+      updateData.completed_at = new Date();
+    }
+
+    await event.update(updateData, { transaction: dbTransaction });
+
+    // Audit log
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: `Digital payout batch: ${processedTxns.length} transactions processed, total ₱${totalAmount.toFixed(2)} for event "${event.title}"`,
+      module: 'distributions',
+    }, { transaction: dbTransaction });
+
+    await dbTransaction.commit();
+
+    console.log(`[DISBURSE DIGITAL] Successfully processed ${processedTxns.length} transactions, total ₱${totalAmount.toFixed(2)}`);
+
+    res.json({
+      success: true,
+      message: `Matagumpay! ${processedTxns.length} digital payout transactions ang na-process. Kabuuang halaga: ₱${totalAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}.`,
+      data: {
+        processed: processedTxns.length,
+        total_amount: totalAmount,
+        transactions: processedTxns,
+        event_status: updateData.status || event.status,
+      },
+    });
+  } catch (error) {
+    await dbTransaction.rollback();
+    console.error('[DISBURSE DIGITAL] Error:', error);
+    next(error);
+  }
+});
+
+// ── POST /transactions/:id/acknowledge ── Beneficiary confirms digital payout receipt in app
+router.post('/transactions/:id/acknowledge', authorize('beneficiary', 'admin'), async (req, res, next) => {
+  try {
+    const txn = await DistributionTransaction.findByPk(req.params.id, {
+      include: [
+        { model: Beneficiary, as: 'Beneficiary' },
+        { model: DistributionEvent, as: 'Event' },
+      ],
+    });
+
+    if (!txn) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+
+    // If caller is beneficiary, ensure it belongs to them
+    if (req.user.role === 'beneficiary') {
+      const myBen = await Beneficiary.findOne({ where: { user_id: req.user.id } });
+      if (!myBen || txn.beneficiary_id !== myBen.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to acknowledge this transaction' });
+      }
+    }
+
+    if (txn.status !== 'released') {
+      return res.status(400).json({ success: false, message: 'Only released payouts can be acknowledged' });
+    }
+
+    if (txn.beneficiary_acknowledged_at) {
+      return res.status(400).json({ success: false, message: 'Transaction already acknowledged' });
+    }
+
+    const { notes } = req.body || {};
+
+    await txn.update({
+      beneficiary_acknowledged_at: new Date(),
+      beneficiary_acknowledgment_notes: notes || 'Confirmed received via e-wallet/bank by beneficiary',
+    });
+
+    // Audit Log
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: `Beneficiary ${txn.Beneficiary ? `${txn.Beneficiary.first_name} ${txn.Beneficiary.last_name}` : ''} acknowledged digital payout of ₱${(parseFloat(txn.amount) + parseFloat(txn.retro_amount || 0)).toFixed(2)} (Ref: ${txn.payout_reference_number || 'N/A'})`,
+      module: 'distributions',
+    });
+
+    res.json({
+      success: true,
+      message: 'Matagumpay na nakumpirma ang pagtanggap ng digital payout!',
+      data: txn,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;
+

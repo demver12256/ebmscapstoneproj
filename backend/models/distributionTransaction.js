@@ -81,6 +81,45 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment: 'JSON breakdown of retro periods covered',
       },
+      // ── Digital Payout / Disbursement Tracking ──
+      disbursement_type: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'cash_otc',
+        comment: 'Disbursement method: cash_otc (physical/RFID) or digital (e-wallet/bank)',
+      },
+      payout_provider: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Financial provider used: GCash, Maya, Landbank, etc.',
+      },
+      payout_reference_number: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Generated payment reference number (e.g. GCASH-REF-2026-09281)',
+      },
+      beneficiary_acknowledged_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Timestamp when beneficiary confirmed receipt of digital payout in app',
+      },
+      beneficiary_acknowledgment_notes: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Optional note or feedback from beneficiary upon confirming receipt',
+      },
+      // ── Non-Cash / In-Kind Item Tracking ──
+      item_name: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Item name or service title received by beneficiary',
+      },
+      item_quantity: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1,
+        comment: 'Quantity of items or sessions received',
+      },
     },
     {
       tableName: 'distribution_transactions',

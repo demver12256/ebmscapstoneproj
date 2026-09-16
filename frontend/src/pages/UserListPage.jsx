@@ -254,7 +254,7 @@ export default function UserListPage() {
               <Input label="Password" name="password" type="password" value={form.password} onChange={handleChange} required autoComplete="new-password" />
               <Input label="Contact Number" name="contact_number" value={form.contact_number} onChange={handleChange} autoComplete="off" />
               
-              {['admin','mswdo_admin'].includes(currentUser?.role) && (
+              {currentUser && ['admin','mswdo_admin'].includes(currentUser.role) && (
                 <>
                   <label className="block text-sm font-semibold text-slate-700">
                     Barangay

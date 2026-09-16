@@ -19,6 +19,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
       },
+      agency: {
+        type: DataTypes.ENUM('DSWD', 'MSWDO'),
+        allowNull: false,
+        defaultValue: 'DSWD',
+      },
       category: {
         type: DataTypes.STRING,
         allowNull: false,

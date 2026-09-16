@@ -70,6 +70,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         unique: true,
       },
+      household_id_number: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
       approval_date: {
         type: DataTypes.DATEONLY,
         allowNull: true,
@@ -103,6 +107,52 @@ module.exports = (sequelize, DataTypes) => {
       sitio: {
         type: DataTypes.STRING,
         allowNull: true,
+      },
+      // ── Payout & Disbursement Details ──
+      payout_preference: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'cash_otc',
+        comment: 'Preferred payout method: cash_otc (Physical Cash / RFID) or digital (E-Wallet / Bank)',
+      },
+      payout_provider: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Financial provider: GCash, Maya, Landbank, Other',
+      },
+      payout_account_number: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Mobile number (for GCash/Maya) or ATM account number (for Landbank)',
+      },
+      payout_account_name: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Registered account holder name for name-matching verification',
+      },
+      account_verification_status: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'unverified',
+        comment: 'Account verification status: unverified, verified, rejected',
+      },
+      account_verified_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Timestamp when payout account was verified',
+      },
+      extra_payout_accounts: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'JSON array of secondary payout accounts [{provider, account_number, account_name, verification_status, added_at}]',
+        get() {
+          const raw = this.getDataValue('extra_payout_accounts');
+          if (!raw) return [];
+          try { return JSON.parse(raw); } catch { return []; }
+        },
+        set(val) {
+          this.setDataValue('extra_payout_accounts', val ? JSON.stringify(val) : null);
+        }
       },
     },
     {

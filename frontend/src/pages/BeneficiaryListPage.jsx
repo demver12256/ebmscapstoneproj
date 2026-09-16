@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { 
-  X, Users, Clock, Eye, AlertTriangle, FileCheck, ShieldAlert, 
+  X, Users, Clock, Eye, EyeOff, AlertTriangle, FileCheck, ShieldAlert, 
   Download, Archive, Edit3, CreditCard, User, MapPin, Calendar, Phone, Lock, ShieldCheck,
-  CheckCircle2, XCircle, Clock4, Award, RefreshCw
+  CheckCircle2, XCircle, Clock4, Award, RefreshCw, Package, Layers, BookmarkCheck, DollarSign, Wallet, Building2, ExternalLink, Sparkles, Gift
 } from 'lucide-react';
 import Table from '../components/ui/Table';
 import Button from '../components/ui/Button';
@@ -20,6 +20,7 @@ export default function BeneficiaryListPage() {
   const [selectedBarangayId, setSelectedBarangayId] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedIpClassification, setSelectedIpClassification] = useState('');
+  const [selectedPayoutStatus, setSelectedPayoutStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -28,10 +29,20 @@ export default function BeneficiaryListPage() {
   const [rfidInput, setRfidInput] = useState('');
   const [rfidSaving, setRfidSaving] = useState(false);
   const [rfidMsg, setRfidMsg] = useState(null);
-  const [modalTab, setModalTab] = useState('profile'); // 'profile' | 'attendance'
+  const [showFullAccountNo, setShowFullAccountNo] = useState(false);
+  const [modalTab, setModalTab] = useState('profile'); // 'profile' | 'attendance' | 'distributions' | 'programs'
   const [attendanceData, setAttendanceData] = useState(null);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceError, setAttendanceError] = useState(null);
+
+  // Distributions & Enrollments Modal Data
+  const [distributionsData, setDistributionsData] = useState(null);
+  const [distributionsLoading, setDistributionsLoading] = useState(false);
+  const [distributionsError, setDistributionsError] = useState(null);
+
+  const [enrollmentsData, setEnrollmentsData] = useState(null);
+  const [enrollmentsLoading, setEnrollmentsLoading] = useState(false);
+  const [enrollmentsError, setEnrollmentsError] = useState(null);
 
   // Edit Modal State
   const [editingBeneficiary, setEditingBeneficiary] = useState(null);
@@ -55,12 +66,13 @@ export default function BeneficiaryListPage() {
     'Senior Citizens (Social Pension)',
     'Persons with Disabilities (PWD)'
   ];
-  const displayCategories = isMswdoAdmin
-    ? [
-        'Senior Citizens (Social Pension)',
-        'Persons with Disabilities (PWD)'
-      ]
-    : CATEGORIES;
+  const displayCategories = CATEGORIES;
+
+  const is4PsCategory = (cat) => {
+    if (!cat) return false;
+    const c = String(cat).toLowerCase();
+    return c.includes('4ps') || c.includes('pantawid');
+  };
 
   const getBackendUrl = () => {
     const defaultApiUrl = 'http://localhost:5000/api';
@@ -87,7 +99,12 @@ export default function BeneficiaryListPage() {
       if (['admin','mswdo_admin'].includes(user?.role) && results[2]) {
         const apps = results[2].data?.data || [];
         // Filter non-approved applications for the pending queue
-        const pendingList = apps.filter(a => a.status !== 'Approved');
+        // MSWDO only approves Senior Citizens & PWD; DSWD approves 4Ps, Senior Citizens, and PWD
+        const pendingList = apps.filter(a => {
+          if (a.status === 'Approved') return false;
+          if (isMswdoAdmin && is4PsCategory(a.category)) return false;
+          return true;
+        });
         setPendingApplications(pendingList);
       } else {
         setPendingApplications([]);
@@ -111,6 +128,11 @@ export default function BeneficiaryListPage() {
     if (['admin','mswdo_admin'].includes(user?.role) && (location.state?.openPending || new URLSearchParams(location.search).get('pending') === 'true')) {
       openPendingModal();
     }
+    const params = new URLSearchParams(location.search);
+    const payoutParam = params.get('payout_status') || location.state?.payout_status;
+    if (payoutParam) {
+      setSelectedPayoutStatus(payoutParam);
+    }
   }, [location, user]);
 
   const openPendingModal = async () => {
@@ -120,7 +142,12 @@ export default function BeneficiaryListPage() {
     try {
       const appsRes = await beneficiaryApi.listApplications();
       const apps = appsRes.data.data || [];
-      setPendingApplications(apps.filter(a => a.status !== 'Approved'));
+      const pendingList = apps.filter(a => {
+        if (a.status === 'Approved') return false;
+        if (isMswdoAdmin && is4PsCategory(a.category)) return false;
+        return true;
+      });
+      setPendingApplications(pendingList);
     } catch (err) {
       console.error('Failed to reload pending applications:', err);
     } finally {
@@ -178,13 +205,59 @@ export default function BeneficiaryListPage() {
     }
   };
 
+  const fetchBeneficiaryDistributions = async (beneficiaryId) => {
+    if (!beneficiaryId) return;
+    setDistributionsLoading(true);
+    setDistributionsError(null);
+    try {
+      const res = await beneficiaryApi.getDistributions(beneficiaryId);
+      if (res.data?.success) {
+        setDistributionsData(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load beneficiary distributions:', err);
+      setDistributionsError(err.response?.data?.message || 'Hindi ma-load ang distribution claims.');
+    } finally {
+      setDistributionsLoading(false);
+    }
+  };
+
+  const fetchBeneficiaryEnrollments = async (beneficiaryId) => {
+    if (!beneficiaryId) return;
+    setEnrollmentsLoading(true);
+    setEnrollmentsError(null);
+    try {
+      const res = await beneficiaryApi.getEnrollments(beneficiaryId);
+      if (res.data?.success) {
+        setEnrollmentsData(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load beneficiary enrollments:', err);
+      setEnrollmentsError(err.response?.data?.message || 'Hindi ma-load ang program enrollments.');
+    } finally {
+      setEnrollmentsLoading(false);
+    }
+  };
+
+  const handleRefreshModalData = () => {
+    if (!viewingBeneficiary) return;
+    fetchBeneficiaryAttendance(viewingBeneficiary.id);
+    fetchBeneficiaryDistributions(viewingBeneficiary.id);
+    fetchBeneficiaryEnrollments(viewingBeneficiary.id);
+  };
+
   const handleViewBeneficiary = (beneficiary) => {
     setViewingBeneficiary(beneficiary);
+    setShowFullAccountNo(false);
     setRfidInput(beneficiary.RFID_number || '');
     setRfidMsg(null);
     setModalTab('profile');
     setAttendanceData(null);
+    setDistributionsData(null);
+    setEnrollmentsData(null);
     fetchBeneficiaryAttendance(beneficiary.id);
+    fetchBeneficiaryDistributions(beneficiary.id);
+    fetchBeneficiaryEnrollments(beneficiary.id);
   };
 
   const handleSaveRfidDirect = async (e) => {
@@ -218,6 +291,10 @@ export default function BeneficiaryListPage() {
       RFID_number: beneficiary.RFID_number || '',
       status: beneficiary.User?.status || 'active',
       inactivation_reason: beneficiary.inactivation_reason || '',
+      payout_preference: beneficiary.payout_preference || 'cash_otc',
+      payout_provider: beneficiary.payout_provider || '',
+      payout_account_number: beneficiary.payout_account_number || '',
+      payout_account_name: beneficiary.payout_account_name || '',
     });
     setEditError(null);
     setEditSuccess(null);
@@ -269,6 +346,10 @@ export default function BeneficiaryListPage() {
 
   // Review & Approval handlers for Pending Modal
   const handleStartReview = async (appId) => {
+    if (isMswdoAdmin && selectedApp && is4PsCategory(selectedApp.category)) {
+      alert('Access Denied: MSWDO can only review Senior Citizens and PWD applications. 4Ps applications must be reviewed by DSWD.');
+      return;
+    }
     try {
       const res = await beneficiaryApi.reviewApplication(appId);
       if (res.data?.success) {
@@ -281,6 +362,10 @@ export default function BeneficiaryListPage() {
   };
 
   const handleApproveApplication = async (appId) => {
+    if (isMswdoAdmin && selectedApp && is4PsCategory(selectedApp.category)) {
+      alert('Access Denied: MSWDO can only approve Senior Citizens and PWD applications. 4Ps applications must be approved by DSWD.');
+      return;
+    }
     if (!window.confirm('Are you sure you want to approve this application? This will issue a unique Beneficiary ID code.')) return;
     try {
       const res = await beneficiaryApi.approveApplication(appId);
@@ -297,6 +382,10 @@ export default function BeneficiaryListPage() {
 
   const handleRejectApplication = async (e) => {
     e.preventDefault();
+    if (isMswdoAdmin && selectedApp && is4PsCategory(selectedApp.category)) {
+      alert('Access Denied: MSWDO can only process Senior Citizens and PWD applications. 4Ps applications must be handled by DSWD.');
+      return;
+    }
     if (!rejectionReason.trim()) {
       alert('Please specify a rejection reason.');
       return;
@@ -377,15 +466,24 @@ export default function BeneficiaryListPage() {
   };
 
   const columns = [
-    { header: 'Beneficiary ID', accessor: 'beneficiary_id_code', cell: (row) => (
-      <button
-        onClick={() => handleViewBeneficiary(row)}
-        className="font-mono font-bold text-blue-700 hover:text-blue-900 hover:underline text-left"
-        title="Click to view details"
-      >
-        {row.beneficiary_id_code || '—'}
-      </button>
-    )},
+    { header: 'Beneficiary / Household ID', accessor: 'beneficiary_id_code', cell: (row) => {
+      const is4Ps = row.category?.toLowerCase().includes('4ps');
+      const idVal = row.household_id_number || row.beneficiary_id_code || '—';
+      return (
+        <button
+          onClick={() => handleViewBeneficiary(row)}
+          className="font-mono font-bold text-blue-700 hover:text-blue-900 hover:underline text-left inline-flex items-center gap-1.5"
+          title="Click to view details"
+        >
+          {is4Ps && (
+            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 py-0.2 rounded shrink-0">
+              4Ps HH
+            </span>
+          )}
+          <span>{idVal}</span>
+        </button>
+      );
+    }},
     { header: 'RFID No.', accessor: 'RFID_number', cell: (row) => (
       row.RFID_number ? (
         <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200 inline-block shadow-2xs">
@@ -424,6 +522,27 @@ export default function BeneficiaryListPage() {
       </span>
     )},
     { header: 'Barangay', accessor: 'barangay_id', cell: (row) => row.Barangay?.barangay_name || '—' },
+    { header: 'Payout / Ayuda Channel', accessor: 'payout_preference', cell: (row) => (
+      row.payout_preference === 'digital' ? (
+        row.account_verification_status === 'verified' ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-green-50 text-green-700 border border-green-200">
+            ⚡ {row.payout_provider || 'GCash'} (Verified)
+          </span>
+        ) : row.account_verification_status === 'rejected' ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
+            ❌ {row.payout_provider || 'Digital'} (Rejected)
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-300 animate-pulse" title="Needs Admin Verification">
+            🟡 {row.payout_provider || 'GCash'} (For Verification)
+          </span>
+        )
+      ) : (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200">
+          🏢 Cash OTC / RFID
+        </span>
+      )
+    )},
     { header: 'Date Approved', accessor: 'approval_date', cell: (row) => row.approval_date || '—' },
     { header: 'Status', accessor: 'status', cell: (row) => (
       <div className="flex flex-col gap-1 items-start">
@@ -503,7 +622,13 @@ export default function BeneficiaryListPage() {
     const barangayMatch = !selectedBarangayId || b.barangay_id === Number(selectedBarangayId);
     const catMatch = categoryMatches(b.category, selectedCategory);
     const ipMatch = !selectedIpClassification || b.ip_classification === selectedIpClassification;
-    return barangayMatch && catMatch && ipMatch;
+    const payoutMatch = !selectedPayoutStatus || (
+      selectedPayoutStatus === 'unverified' ? (b.payout_preference === 'digital' && b.account_verification_status !== 'verified') :
+      selectedPayoutStatus === 'verified' ? (b.payout_preference === 'digital' && b.account_verification_status === 'verified') :
+      selectedPayoutStatus === 'cash_otc' ? (b.payout_preference === 'cash_otc' || !b.payout_preference) :
+      true
+    );
+    return barangayMatch && catMatch && ipMatch && payoutMatch;
   });
 
   return (
@@ -546,11 +671,11 @@ export default function BeneficiaryListPage() {
       </div>
 
       {isMswdoAdmin && (
-        <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-4 flex items-start gap-3">
-          <span className="text-xl">🏥</span>
+        <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 flex items-start gap-3">
+          <span className="text-xl">📋</span>
           <div>
-            <p className="text-sm font-bold text-purple-900">MSWDO Focus: Senior Citizens & PWD</p>
-            <p className="text-xs text-purple-700">Dedicated focus on Senior Citizens (Social Pension) and Persons with Disabilities (PWD). 4Ps is managed by DSWD.</p>
+            <p className="text-sm font-bold text-blue-900">Municipal Beneficiary Records Oversight (MSWDO)</p>
+            <p className="text-xs text-blue-700">Municipal registry of 4Ps Household Beneficiaries, Senior Citizens, and Persons with Disabilities (PWD).</p>
           </div>
         </div>
       )}
@@ -610,6 +735,20 @@ export default function BeneficiaryListPage() {
               <option value="">All Classifications</option>
               <option value="IP">IP (Indigenous People)</option>
               <option value="Non-IP">Non-IP</option>
+            </select>
+          </div>
+
+          <div className="flex-1">
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Disbursement Channel</label>
+            <select
+              value={selectedPayoutStatus}
+              onChange={(e) => setSelectedPayoutStatus(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200 font-medium"
+            >
+              <option value="">All Payout Channels</option>
+              <option value="unverified">🟡 For Verification (Digital Accounts)</option>
+              <option value="verified">✅ Verified Digital (GCash / Maya / Bank)</option>
+              <option value="cash_otc">🏢 Cash OTC / Physical RFID</option>
             </select>
           </div>
         </div>
@@ -705,7 +844,8 @@ export default function BeneficiaryListPage() {
                     </span>
                   </div>
                   <p className="text-xs text-blue-200 mt-0.5 font-mono">
-                    ID: <strong className="text-yellow-300">{viewingBeneficiary.beneficiary_id_code || 'Pending'}</strong> • {viewingBeneficiary.category}
+                    {viewingBeneficiary.category?.toLowerCase().includes('4ps') ? '4Ps Household No.: ' : 'Beneficiary ID: '}
+                    <strong className="text-yellow-300">{viewingBeneficiary.household_id_number || viewingBeneficiary.beneficiary_id_code || 'Pending'}</strong> • {viewingBeneficiary.category}
                   </p>
                 </div>
               </div>
@@ -718,12 +858,12 @@ export default function BeneficiaryListPage() {
             </div>
 
             {/* Modal Navigation Tabs */}
-            <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 pt-2">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 pt-2 overflow-x-auto">
+              <div className="flex items-center gap-1 sm:gap-2">
                 <button
                   type="button"
                   onClick={() => setModalTab('profile')}
-                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition ${
+                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
                     modalTab === 'profile'
                       ? 'border-blue-600 text-blue-700'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -735,14 +875,14 @@ export default function BeneficiaryListPage() {
                 <button
                   type="button"
                   onClick={() => setModalTab('attendance')}
-                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition ${
+                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
                     modalTab === 'attendance'
                       ? 'border-blue-600 text-blue-700'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
                   <Calendar className="w-4 h-4" />
-                  Attendance Records
+                  {user?.role === 'mswdo_admin' ? 'MSWDO Attendance' : 'DSWD Attendance'}
                   {attendanceData?.stats ? (
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                       attendanceData.stats.compliance_rate >= 80 
@@ -757,26 +897,62 @@ export default function BeneficiaryListPage() {
                     <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
                   ) : null}
                 </button>
-              </div>
-
-              {/* Refresh Button if on Attendance Tab */}
-              {modalTab === 'attendance' && (
                 <button
                   type="button"
-                  onClick={() => fetchBeneficiaryAttendance(viewingBeneficiary.id)}
-                  disabled={attendanceLoading}
-                  className="pb-3 pt-2 text-xs text-slate-500 hover:text-blue-600 font-semibold flex items-center gap-1 transition"
-                  title="I-refresh ang attendance data"
+                  onClick={() => setModalTab('distributions')}
+                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
+                    modalTab === 'distributions'
+                      ? 'border-emerald-600 text-emerald-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${attendanceLoading ? 'animate-spin text-blue-600' : ''}`} />
-                  Refresh
+                  <Package className="w-4 h-4" />
+                  {user?.role === 'mswdo_admin' ? 'MSWDO Distributions' : 'DSWD Distributions'}
+                  {distributionsData?.stats ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      ₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH')} ({distributionsData.stats.released_count})
+                    </span>
+                  ) : distributionsLoading ? (
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                  ) : null}
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => setModalTab('programs')}
+                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
+                    modalTab === 'programs'
+                      ? 'border-purple-600 text-purple-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Layers className="w-4 h-4" />
+                  {user?.role === 'mswdo_admin' ? 'MSWDO Programs' : 'DSWD Programs'}
+                  {enrollmentsData?.stats ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                      {enrollmentsData.stats.active_count} Aktibo
+                    </span>
+                  ) : enrollmentsLoading ? (
+                    <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span>
+                  ) : null}
+                </button>
+              </div>
+
+              {/* Refresh Button */}
+              <button
+                type="button"
+                onClick={handleRefreshModalData}
+                disabled={attendanceLoading || distributionsLoading || enrollmentsLoading}
+                className="pb-3 pt-2 text-xs text-slate-500 hover:text-blue-600 font-semibold flex items-center gap-1 transition shrink-0 ml-2"
+                title="I-refresh ang data sa modal"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${(attendanceLoading || distributionsLoading || enrollmentsLoading) ? 'animate-spin text-blue-600' : ''}`} />
+                Refresh
+              </button>
             </div>
 
             {/* Modal Body */}
             <div className="overflow-y-auto p-6 space-y-5 flex-1 bg-slate-50/50">
-              {modalTab === 'profile' ? (
+              {modalTab === 'profile' && (
                 <>
                   {/* Attendance Quick KPI Banner inside Profile Tab */}
                   <div className="bg-gradient-to-r from-blue-50 via-indigo-50/60 to-purple-50 rounded-2xl p-4 border border-blue-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
@@ -785,8 +961,17 @@ export default function BeneficiaryListPage() {
                         <Calendar className="w-5 h-5" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h5 className="font-bold text-sm text-slate-900">Attendance Compliance Record</h5>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h5 className="font-bold text-sm text-slate-900">
+                            {user?.role === 'mswdo_admin' ? 'MSWDO Attendance Compliance Record' : 'DSWD Attendance Compliance Record'}
+                          </h5>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                            user?.role === 'mswdo_admin'
+                              ? 'text-purple-700 bg-purple-100/70 border-purple-200'
+                              : 'text-blue-700 bg-blue-100/70 border-blue-200'
+                          }`}>
+                            {user?.role === 'mswdo_admin' ? 'MSWDO & Shared Meetings' : 'DSWD Meetings Only'}
+                          </span>
                           {attendanceData?.stats && (
                             <span className={`px-2 py-0.5 text-xs font-black rounded-full ${
                               attendanceData.stats.compliance_rate >= 80 
@@ -821,6 +1006,105 @@ export default function BeneficiaryListPage() {
                       className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
                     >
                       Tingnan Buong Talaan →
+                    </button>
+                  </div>
+
+                  {/* Claimed Distributions Quick KPI Banner inside Profile Tab */}
+                  <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-cyan-50 rounded-2xl p-4 border border-emerald-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs shrink-0">
+                        <Package className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h5 className="font-bold text-sm text-slate-900">
+                            {user?.role === 'mswdo_admin' ? 'Claimed MSWDO Ayuda & Distributions' : 'Claimed DSWD Ayuda & Distributions'}
+                          </h5>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                            user?.role === 'mswdo_admin'
+                              ? 'text-emerald-700 bg-emerald-100/70 border-emerald-200'
+                              : 'text-teal-700 bg-teal-100/70 border-teal-200'
+                          }`}>
+                            {user?.role === 'mswdo_admin' ? 'MSWDO Released Only' : 'DSWD Released Only'}
+                          </span>
+                          {distributionsData?.stats && (
+                            <span className="px-2 py-0.5 text-xs font-black rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              ₱{Number(distributionsData.stats.total_amount_claimed || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} Na-claim
+                            </span>
+                          )}
+                        </div>
+                        {distributionsLoading ? (
+                          <p className="text-xs text-emerald-600 font-medium flex items-center gap-1 mt-0.5">
+                            <RefreshCw className="w-3 h-3 animate-spin" /> Kinukuha ang mga talaan ng ayuda...
+                          </p>
+                        ) : distributionsData?.stats ? (
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            Na-claim: <strong className="text-emerald-700">{distributionsData.stats.released_count}</strong> • 
+                            Pending: <strong className="text-amber-700">{distributionsData.stats.pending_count}</strong> • 
+                            Kabuuang Halaga: <strong className="text-emerald-700">₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
+                            {distributionsData.stats.last_claim_date && (
+                              <> (Huling Claim: <strong>{formatEventDate(distributionsData.stats.last_claim_date)}</strong>)</>
+                            )}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-500 mt-0.5">Walang nakatalang distribution claims.</p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('distributions')}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                    >
+                      Tingnan Buong Ayuda →
+                    </button>
+                  </div>
+
+                  {/* Enrolled Programs Quick KPI Banner inside Profile Tab */}
+                  <div className="bg-gradient-to-r from-purple-50 via-indigo-50/60 to-blue-50 rounded-2xl p-4 border border-purple-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-purple-600 text-white rounded-xl shadow-xs shrink-0">
+                        <Layers className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h5 className="font-bold text-sm text-slate-900">
+                            {user?.role === 'mswdo_admin' ? 'Mga Naka-enroll na Programang MSWDO' : 'Mga Naka-enroll na Programang DSWD'}
+                          </h5>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                            user?.role === 'mswdo_admin'
+                              ? 'text-purple-700 bg-purple-100/70 border-purple-200'
+                              : 'text-indigo-700 bg-indigo-100/70 border-indigo-200'
+                          }`}>
+                            {user?.role === 'mswdo_admin' ? 'MSWDO Programs Only' : 'DSWD Programs Only'}
+                          </span>
+                          {enrollmentsData?.stats && (
+                            <span className="px-2 py-0.5 text-xs font-black rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                              {enrollmentsData.stats.active_count} Aktibong Programa
+                            </span>
+                          )}
+                        </div>
+                        {enrollmentsLoading ? (
+                          <p className="text-xs text-purple-600 font-medium flex items-center gap-1 mt-0.5">
+                            <RefreshCw className="w-3 h-3 animate-spin" /> Kinukuha ang mga programa...
+                          </p>
+                        ) : enrollmentsData?.stats ? (
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            Naka-enroll: <strong className="text-purple-700">{enrollmentsData.stats.total_enrolled}</strong> na programa • 
+                            Aktibo: <strong className="text-emerald-700">{enrollmentsData.stats.active_count}</strong> • 
+                            Kategorya: <strong className="text-slate-800">{viewingBeneficiary.category}</strong>
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-500 mt-0.5">Walang nakatalang program enrollments.</p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('programs')}
+                      className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                    >
+                      Tingnan mga Programa →
                     </button>
                   </div>
 
@@ -968,10 +1252,243 @@ export default function BeneficiaryListPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Payout & Disbursement Details */}
+                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+                    <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5 text-purple-600" /> Payout & Disbursement Details
+                    </h4>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between py-1 border-b border-slate-100">
+                        <span className="text-slate-500">Payout Method:</span>
+                        <span className={`font-semibold ${viewingBeneficiary.payout_preference === 'digital' ? 'text-purple-700' : 'text-slate-800'}`}>
+                          {viewingBeneficiary.payout_preference === 'digital' ? '⚡ Digital (E-Wallet / Bank)' : '🏢 Cash OTC / RFID'}
+                        </span>
+                      </div>
+                      {viewingBeneficiary.payout_preference === 'digital' && (
+                        <>
+                          <div className="flex justify-between py-1 border-b border-slate-100">
+                            <span className="text-slate-500">Provider:</span>
+                            <span className="font-semibold text-slate-800">{viewingBeneficiary.payout_provider || '—'}</span>
+                          </div>
+                          <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                            <span className="text-slate-500">Account No.:</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-slate-800 text-xs tracking-wider">
+                                {showFullAccountNo 
+                                  ? viewingBeneficiary.payout_account_number 
+                                  : (viewingBeneficiary.payout_account_number 
+                                      ? viewingBeneficiary.payout_account_number.replace(/(.{4})(.*)(.{3})/, '$1****$3')
+                                      : '—')}
+                              </span>
+                              {viewingBeneficiary.payout_account_number && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFullAccountNo(!showFullAccountNo)}
+                                  className="p-1 text-slate-400 hover:text-blue-600 rounded-md hover:bg-slate-100 transition"
+                                  title={showFullAccountNo ? 'Itago ang buong numero' : 'Ipakita ang buong numero'}
+                                >
+                                  {showFullAccountNo ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Automated Phone Match Check with Registered Contact Number */}
+                          {viewingBeneficiary.payout_account_number && viewingBeneficiary.contact_number && (() => {
+                            const clean = (num) => String(num || '').replace(/\D/g, '').replace(/^63/, '0');
+                            const isMatch = clean(viewingBeneficiary.payout_account_number) === clean(viewingBeneficiary.contact_number);
+                            return (
+                              <div className={`p-2 rounded-xl text-[11px] font-medium flex items-center justify-between gap-2 ${
+                                isMatch ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-900 border border-amber-200'
+                              }`}>
+                                <span className="font-semibold">Match sa Contact No.:</span>
+                                <span className="font-bold">
+                                  {isMatch 
+                                    ? '✅ Tugma sa Opisyal na Contact Number' 
+                                    : `⚠️ Iba sa Contact No. (${viewingBeneficiary.contact_number})`}
+                                </span>
+                              </div>
+                            );
+                          })()}
+
+                          <div className="flex justify-between py-1 border-b border-slate-100">
+                            <span className="text-slate-500">Account Name:</span>
+                            <span className="font-semibold text-slate-800">{viewingBeneficiary.payout_account_name || '—'}</span>
+                          </div>
+                          <div className="flex justify-between items-center py-1">
+                            <span className="text-slate-500">Verification:</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                                viewingBeneficiary.account_verification_status === 'verified'
+                                  ? 'bg-green-100 text-green-700'
+                                  : viewingBeneficiary.account_verification_status === 'rejected'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {viewingBeneficiary.account_verification_status === 'verified' ? '✅ Verified' 
+                                  : viewingBeneficiary.account_verification_status === 'rejected' ? '❌ Rejected'
+                                  : '🟡 Unverified'}
+                              </span>
+                              {user?.role === 'admin' && viewingBeneficiary.payout_account_number && (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {viewingBeneficiary.account_verification_status !== 'verified' ? (
+                                    <button
+                                      onClick={async () => {
+                                        const clean = (num) => String(num || '').replace(/\D/g, '').replace(/^63/, '0');
+                                        const isMatch = clean(viewingBeneficiary.payout_account_number) === clean(viewingBeneficiary.contact_number);
+                                        if (!isMatch && viewingBeneficiary.contact_number) {
+                                          if (!window.confirm(`⚠️ BABALA SA BERIPIKASYON:\n\nAng GCash/Payout number (${viewingBeneficiary.payout_account_number}) ay HINDI tumutugma sa opisyal na Contact Number (${viewingBeneficiary.contact_number}) sa DSWD records.\n\nSigurado ka bang nais mong aprubahan at i-verify ang account na ito?`)) {
+                                            return;
+                                          }
+                                        }
+
+                                        try {
+                                          const res = await beneficiaryApi.verifyPayoutAccount(viewingBeneficiary.id, { force: !isMatch });
+                                          if (res.data.success) {
+                                            setViewingBeneficiary(prev => ({ ...prev, account_verification_status: 'verified', account_verified_at: new Date() }));
+                                            setBeneficiaries(prev => prev.map(b => b.id === viewingBeneficiary.id ? { ...b, account_verification_status: 'verified' } : b));
+                                            alert(`✅ ${res.data.message}`);
+                                          } else {
+                                            if (window.confirm(`${res.data.message}\n\nGusto mo bang i-force verify ang account na ito?`)) {
+                                              const forceRes = await beneficiaryApi.verifyPayoutAccount(viewingBeneficiary.id, { force: true });
+                                              if (forceRes.data.success) {
+                                                setViewingBeneficiary(prev => ({ ...prev, account_verification_status: 'verified', account_verified_at: new Date() }));
+                                                setBeneficiaries(prev => prev.map(b => b.id === viewingBeneficiary.id ? { ...b, account_verification_status: 'verified' } : b));
+                                                alert(`✅ ${forceRes.data.message}`);
+                                              }
+                                            } else {
+                                              setViewingBeneficiary(prev => ({ ...prev, account_verification_status: 'rejected' }));
+                                              setBeneficiaries(prev => prev.map(b => b.id === viewingBeneficiary.id ? { ...b, account_verification_status: 'rejected' } : b));
+                                            }
+                                          }
+                                        } catch (err) {
+                                          alert(`Error: ${err.response?.data?.message || err.message}`);
+                                        }
+                                      }}
+                                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors shadow-2xs"
+                                    >
+                                      ✓ Verify
+                                    </button>
+                                  ) : (
+                                    <>
+                                      <button
+                                        onClick={async () => {
+                                          if (!window.confirm('Nais mo bang bawiin ang beripikasyon at ibalik sa "Unverified" ang account na ito?')) return;
+                                          try {
+                                            const res = await beneficiaryApi.verifyPayoutAccount(viewingBeneficiary.id, { action: 'unverify' });
+                                            if (res.data.success) {
+                                              setViewingBeneficiary(prev => ({ ...prev, account_verification_status: 'unverified', account_verified_at: null }));
+                                              setBeneficiaries(prev => prev.map(b => b.id === viewingBeneficiary.id ? { ...b, account_verification_status: 'unverified' } : b));
+                                              alert('🟡 Naibalik sa "Unverified" ang account.');
+                                            }
+                                          } catch (err) {
+                                            alert(`Error: ${err.response?.data?.message || err.message}`);
+                                          }
+                                        }}
+                                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
+                                        title="Bawiin ang beripikasyon"
+                                      >
+                                        I-unverify
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          if (!window.confirm('Sigurado ka bang nais mong i-reject ang payout account na ito? Maabisuhan ang benepisyaryo na mag-update.')) return;
+                                          try {
+                                            const res = await beneficiaryApi.verifyPayoutAccount(viewingBeneficiary.id, { action: 'reject' });
+                                            if (res.data.success) {
+                                              setViewingBeneficiary(prev => ({ ...prev, account_verification_status: 'rejected', account_verified_at: null }));
+                                              setBeneficiaries(prev => prev.map(b => b.id === viewingBeneficiary.id ? { ...b, account_verification_status: 'rejected' } : b));
+                                              alert('❌ Na-reject ang payout account.');
+                                            }
+                                          } catch (err) {
+                                            alert(`Error: ${err.response?.data?.message || err.message}`);
+                                          }
+                                        }}
+                                        className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold rounded-lg transition-colors"
+                                        title="Tanggihan ang account"
+                                      >
+                                        I-reject
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {/* Sync Contact Number if mismatched */}
+                                  {viewingBeneficiary.payout_account_number && viewingBeneficiary.contact_number && (() => {
+                                    const clean = (num) => String(num || '').replace(/\D/g, '').replace(/^63/, '0');
+                                    const isMatch = clean(viewingBeneficiary.payout_account_number) === clean(viewingBeneficiary.contact_number);
+                                    if (!isMatch) {
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            if (!window.confirm(`Gusto mo bang gawing opisyal na Contact Number ang GCash number na ${viewingBeneficiary.payout_account_number}?\n\nPapalitan nito ang lumang contact number (${viewingBeneficiary.contact_number}).`)) return;
+                                            try {
+                                              const res = await beneficiaryApi.verifyPayoutAccount(viewingBeneficiary.id, { action: 'sync_phone' });
+                                              if (res.data.success) {
+                                                const updatedPhone = viewingBeneficiary.payout_account_number;
+                                                setViewingBeneficiary(prev => ({ ...prev, contact_number: updatedPhone }));
+                                                setBeneficiaries(prev => prev.map(b => b.id === viewingBeneficiary.id ? { ...b, contact_number: updatedPhone } : b));
+                                                alert(`✅ ${res.data.message}`);
+                                              }
+                                            } catch (err) {
+                                              alert(`Error: ${err.response?.data?.message || err.message}`);
+                                            }
+                                          }}
+                                          className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-semibold rounded-lg transition-colors"
+                                          title="Gawing opisyal na contact number"
+                                        >
+                                          📲 I-sync bilang Contact No.
+                                        </button>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Secondary / Extra Payout Accounts Display in Admin Modal */}
+                      {Array.isArray(viewingBeneficiary.extra_payout_accounts) && viewingBeneficiary.extra_payout_accounts.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-purple-200">
+                          <p className="text-xs font-bold text-slate-700 uppercase mb-2 flex items-center gap-1.5">
+                            <span>Secondary / Extra Payout Accounts ({viewingBeneficiary.extra_payout_accounts.length})</span>
+                          </p>
+                          <div className="space-y-2">
+                            {viewingBeneficiary.extra_payout_accounts.map((acc, accIdx) => (
+                              <div key={accIdx} className="bg-white/80 rounded-lg p-2.5 border border-purple-100 flex items-center justify-between gap-2 text-xs">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-purple-900">{acc.provider === 'Landbank' ? '🏦 Landbank' : `⚡ ${acc.provider}`}</span>
+                                    <span className="font-mono font-semibold text-slate-800">{acc.account_number}</span>
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                      acc.verification_status === 'verified'
+                                        ? 'bg-green-100 text-green-700'
+                                        : acc.verification_status === 'rejected'
+                                        ? 'bg-red-100 text-red-700'
+                                        : 'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {acc.verification_status || 'unverified'}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 mt-0.5">Account Name: <span className="font-medium text-slate-700">{acc.account_name}</span></p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </>
-              ) : (
-                /* ATTENDANCE RECORDS TAB */
-                <div className="space-y-5">
+              )}
+
+            {/* ATTENDANCE RECORDS TAB */}
+            {modalTab === 'attendance' && (
+              <div className="space-y-5">
                   {attendanceLoading && !attendanceData ? (
                     <div className="py-12 text-center bg-white rounded-2xl border border-slate-200">
                       <RefreshCw className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-3" />
@@ -1076,10 +1593,12 @@ export default function BeneficiaryListPage() {
                           <div>
                             <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                               <Calendar className="w-4 h-4 text-blue-600" />
-                              Talaan ng Lahat ng Meetings ({attendanceData?.records?.length || 0})
+                              {user?.role === 'mswdo_admin' ? 'Talaan ng mga Pulong mula sa MSWDO' : 'Talaan ng Lahat ng Meetings'} ({attendanceData?.records?.length || 0})
                             </h4>
                             <p className="text-xs text-slate-500 mt-0.5">
-                              Listahan ng mga opisyal na pagpupulong para sa kategoryang <strong>{viewingBeneficiary.category}</strong>
+                              {user?.role === 'mswdo_admin'
+                                ? 'Ipinapakita ang mga pagpupulong mula sa MSWDO at mga anunsyo ng DSWD na may pabatid sa MSWDO (+ MSWDO Notified).'
+                                : <>Listahan ng mga opisyal na pagpupulong para sa kategoryang <strong>{viewingBeneficiary.category}</strong></>}
                             </p>
                           </div>
                         </div>
@@ -1087,9 +1606,13 @@ export default function BeneficiaryListPage() {
                         {attendanceData?.records?.length === 0 ? (
                           <div className="p-8 text-center">
                             <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                            <p className="text-sm font-bold text-slate-700">Walang Nakatalang Meetings</p>
+                            <p className="text-sm font-bold text-slate-700">
+                              {user?.role === 'mswdo_admin' ? 'Walang Nakatalang Pulong' : 'Walang Nakatalang Meetings'}
+                            </p>
                             <p className="text-xs text-slate-500 mt-1">
-                              Wala pang nai-publish na pulong na tumutugma sa barangay at kategorya ng benepisyaryong ito.
+                              {user?.role === 'mswdo_admin'
+                                ? 'Wala pang nai-publish na pulong ang MSWDO o pabatid mula sa DSWD para sa benepisyaryong ito.'
+                                : 'Wala pang nai-publish na pulong na tumutugma sa barangay at kategorya ng benepisyaryong ito.'}
                             </p>
                           </div>
                         ) : (
@@ -1104,6 +1627,16 @@ export default function BeneficiaryListPage() {
                                     {record.announcement_type && (
                                       <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-blue-50 text-blue-700 rounded-md border border-blue-200">
                                         {record.announcement_type}
+                                      </span>
+                                    )}
+                                    {record.notify_mswdo && (
+                                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+                                        🔔 + MSWDO Notified
+                                      </span>
+                                    )}
+                                    {record.CreatedBy && (
+                                      <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-slate-100 text-slate-600">
+                                        Nilikha ni: {record.CreatedBy.first_name} {record.CreatedBy.last_name}
                                       </span>
                                     )}
                                   </div>
@@ -1171,13 +1704,422 @@ export default function BeneficiaryListPage() {
                   )}
                 </div>
               )}
+
+              {/* ========================================================================= */}
+              {/* TAB 3: CLAIMED DISTRIBUTIONS TAB                                         */}
+              {/* ========================================================================= */}
+              {modalTab === 'distributions' && (
+                <div className="space-y-5">
+                  {distributionsLoading && !distributionsData ? (
+                    <div className="py-12 text-center bg-white rounded-2xl border border-slate-200">
+                      <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin mx-auto mb-3" />
+                      <p className="text-sm font-bold text-slate-800">Kinukuha ang talaan ng mga na-claim na ayuda...</p>
+                      <p className="text-xs text-slate-500 mt-1">Hinihintay ang datos mula sa distribution transactions</p>
+                    </div>
+                  ) : distributionsError ? (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                        <span>{distributionsError}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => fetchBeneficiaryDistributions(viewingBeneficiary.id)}
+                        className="px-3 py-1 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition"
+                      >
+                        Subukang Muli
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Distribution KPIs Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {/* Total Claimed Amount Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-emerald-100 bg-emerald-50/20 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Kabuuang Na-claim</span>
+                            <DollarSign className="w-4 h-4 text-emerald-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-xl sm:text-2xl font-black text-emerald-700">
+                              ₱{Number(distributionsData?.stats?.total_amount_claimed || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-emerald-600 font-medium mt-1">
+                            Opisyal na na-release na tulong
+                          </span>
+                        </div>
+
+                        {/* Claimed Count Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Na-claim (Released)</span>
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-black text-slate-900">
+                              {distributionsData?.stats?.released_count || 0}
+                            </span>
+                            <span className="text-xs text-slate-500">/ {distributionsData?.stats?.total_claims || 0} ayuda</span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-medium mt-1">
+                            Matagumpay na natanggap
+                          </span>
+                        </div>
+
+                        {/* Pending Claims Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-amber-100 bg-amber-50/20 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">Pending / Naka-iskedyul</span>
+                            <Clock4 className="w-4 h-4 text-amber-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-black text-amber-700">
+                              {distributionsData?.stats?.pending_count || 0}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-amber-600 font-medium mt-1">
+                            Para sa releasing / verification
+                          </span>
+                        </div>
+
+                        {/* Last Claim Date Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-blue-100 bg-blue-50/20 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">Huling Release</span>
+                            <Calendar className="w-4 h-4 text-blue-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-sm font-black text-blue-900 truncate">
+                              {distributionsData?.stats?.last_claim_date 
+                                ? formatEventDate(distributionsData.stats.last_claim_date) 
+                                : 'Wala pa'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-blue-600 font-medium mt-1 truncate">
+                            {distributionsData?.stats?.last_claim_date ? 'Petsa ng pinakahuling claim' : 'Walang nakaraang claim'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Transactions List */}
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                            <Package className="w-4 h-4 text-emerald-600" />
+                            {user?.role === 'mswdo_admin' ? 'Talaan ng Na-claim na Ayuda sa MSWDO' : 'Talaan ng Na-claim na Ayuda sa DSWD'} ({distributionsData?.transactions?.length || 0})
+                          </h4>
+                          <span className="text-xs text-slate-400">
+                            Beneficiary: <strong className="text-slate-700">{viewingBeneficiary.beneficiary_id_code}</strong>
+                          </span>
+                        </div>
+
+                        {(!distributionsData?.transactions || distributionsData.transactions.length === 0) ? (
+                          <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-2xl">
+                            <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                            <p className="text-sm font-bold text-slate-700">Walang Nakatalang Claimed Distributions</p>
+                            <p className="text-xs text-slate-400 mt-0.5">Hindi pa nakakatanggap ng ayuda o relief distribution ang benepisyaryong ito.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {distributionsData.transactions.map((txn, idx) => (
+                              <div
+                                key={txn.id || idx}
+                                className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs ${
+                                  txn.status === 'released'
+                                    ? 'bg-emerald-50/30 border-emerald-200'
+                                    : txn.status === 'pending'
+                                    ? 'bg-amber-50/30 border-amber-200'
+                                    : 'bg-slate-50 border-slate-200'
+                                }`}
+                              >
+                                <div className="space-y-1.5 flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-slate-900 text-sm">
+                                      {txn.Event?.title || 'Distribution Event'}
+                                    </span>
+                                    {txn.Event?.Program?.name && (
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                        {txn.Event.Program.name}
+                                      </span>
+                                    )}
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
+                                      {txn.Event?.Program?.agency === 'MSWDO' ? '🏢 MSWDO' : '🏛️ DSWD'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
+                                    <span className="flex items-center gap-1 font-medium text-slate-700">
+                                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                      {txn.released_at ? formatScanTime(txn.released_at) : formatEventDate(txn.created_at)}
+                                    </span>
+                                    {(txn.Event?.venue || txn.Event?.Barangay?.barangay_name) && (
+                                      <span className="flex items-center gap-1 text-slate-600">
+                                        <MapPin className="w-3.5 h-3.5 text-red-400" />
+                                        {txn.Event.venue || txn.Event.Barangay?.barangay_name}
+                                      </span>
+                                    )}
+                                    <span className="font-mono text-[11px] text-slate-500">
+                                      Txn #{txn.transaction_number}
+                                    </span>
+                                  </div>
+
+                                  {/* Verification Method & Releasing Staff */}
+                                  <div className="flex items-center gap-3 text-[11px] text-slate-600 flex-wrap pt-1">
+                                    <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-medium">
+                                      {txn.verification_method === 'rfid' ? '💳 RFID Card Tap' :
+                                       txn.verification_method === 'qr' ? '📱 QR Code Scan' :
+                                       txn.verification_method === 'manual' ? '📝 Manual / ID Verified' :
+                                       '✓ Verified'}
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-medium">
+                                      {txn.disbursement_type === 'digital' 
+                                        ? `📲 Digital (${txn.payout_provider || 'E-Wallet'})` 
+                                        : '💵 Cash Over-the-Counter'}
+                                    </span>
+                                    {txn.ReleasedByStaff && (
+                                      <span className="text-slate-500">
+                                        Ni Staff: <strong className="text-slate-800">{txn.ReleasedByStaff.first_name} {txn.ReleasedByStaff.last_name}</strong>
+                                      </span>
+                                    )}
+                                    {txn.notes && (
+                                      <span className="italic text-slate-400">
+                                        • Note: {txn.notes}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Amount & Status Badge */}
+                                <div className="sm:text-right flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200">
+                                  <div className="font-black text-base text-emerald-700">
+                                    ₱{Number(txn.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                    {parseFloat(txn.retro_amount || 0) > 0 && (
+                                      <span className="block text-[10px] text-amber-600 font-normal">
+                                        (+₱{Number(txn.retro_amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })} Retro)
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {txn.status === 'released' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                      Na-claim (Released)
+                                    </span>
+                                  ) : txn.status === 'pending' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-200 shadow-2xs">
+                                      <Clock4 className="w-3.5 h-3.5 text-amber-600" />
+                                      Pending Claim
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-200 shadow-2xs">
+                                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                                      {txn.status}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB 4: ENROLLED BENEFIT PROGRAMS TAB                                     */}
+              {/* ========================================================================= */}
+              {modalTab === 'programs' && (
+                <div className="space-y-5">
+                  {enrollmentsLoading && !enrollmentsData ? (
+                    <div className="py-12 text-center bg-white rounded-2xl border border-slate-200">
+                      <RefreshCw className="w-8 h-8 text-purple-600 animate-spin mx-auto mb-3" />
+                      <p className="text-sm font-bold text-slate-800">Kinukuha ang mga naka-enroll na programa...</p>
+                      <p className="text-xs text-slate-500 mt-1">Hinihintay ang datos mula sa program enrollments</p>
+                    </div>
+                  ) : enrollmentsError ? (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                        <span>{enrollmentsError}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => fetchBeneficiaryEnrollments(viewingBeneficiary.id)}
+                        className="px-3 py-1 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition"
+                      >
+                        Subukang Muli
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Enrolled Programs KPIs Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {/* Active Programs Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-purple-100 bg-purple-50/20 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider">Aktibong Programa</span>
+                            <Layers className="w-4 h-4 text-purple-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-black text-purple-700">
+                              {enrollmentsData?.stats?.active_count || 0}
+                            </span>
+                            <span className="text-xs text-purple-600 font-medium">programa</span>
+                          </div>
+                          <span className="text-[10px] text-purple-600 font-medium mt-1">
+                            Kasalukuyang tumatanggap ng benepisyo
+                          </span>
+                        </div>
+
+                        {/* Total Enrolled Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Kabuuang Enrollment</span>
+                            <BookmarkCheck className="w-4 h-4 text-blue-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-black text-slate-900">
+                              {enrollmentsData?.stats?.total_enrolled || 0}
+                            </span>
+                            <span className="text-xs text-slate-500">lahat ng talaan</span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-medium mt-1">
+                            Kasaysayan ng mga programang sinalihan
+                          </span>
+                        </div>
+
+                        {/* Beneficiary Category Card */}
+                        <div className="bg-white p-4 rounded-2xl border border-blue-100 bg-blue-50/20 shadow-2xs flex flex-col justify-between col-span-2 sm:col-span-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">Kategorya ng Benepisyaryo</span>
+                            <User className="w-4 h-4 text-blue-600" />
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-sm font-black text-blue-900 truncate">
+                              {viewingBeneficiary.category}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-blue-600 font-medium mt-1">
+                            Opisyal na sektor sa DSWD / MSWDO
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Programs List */}
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-purple-600" />
+                            {user?.role === 'mswdo_admin' ? 'Mga Programang Sinalihan sa MSWDO (Municipal)' : 'Mga Programang Sinalihan sa DSWD (National)'} ({enrollmentsData?.enrollments?.length || 0})
+                          </h4>
+                          <span className="text-xs text-slate-400">
+                            Beneficiary: <strong className="text-slate-700">{viewingBeneficiary.beneficiary_id_code}</strong>
+                          </span>
+                        </div>
+
+                        {(!enrollmentsData?.enrollments || enrollmentsData.enrollments.length === 0) ? (
+                          <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-2xl">
+                            <Layers className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                            <p className="text-sm font-bold text-slate-700">Walang Naka-enroll na Programa</p>
+                            <p className="text-xs text-slate-400 mt-0.5">Hindi pa naka-enroll ang benepisyaryong ito sa anumang opisyal na programa.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {enrollmentsData.enrollments.map((enr, idx) => (
+                              <div
+                                key={enr.id || idx}
+                                className="p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50/60 transition-all space-y-2.5 text-xs"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h5 className="font-bold text-slate-900 text-sm">
+                                      {enr.BenefitProgram?.name || 'Benefit Program'}
+                                    </h5>
+                                    {enr.BenefitProgram?.code && (
+                                      <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                        {enr.BenefitProgram.code}
+                                      </span>
+                                    )}
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                                      {enr.BenefitProgram?.agency === 'MSWDO' ? '🏢 MSWDO (Municipal)' : '🏛️ DSWD (National)'}
+                                    </span>
+                                  </div>
+
+                                  {/* Status Badge */}
+                                  <div className="shrink-0">
+                                    {enr.status === 'active' ? (
+                                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                        Aktibo (Active)
+                                      </span>
+                                    ) : enr.status === 'completed' ? (
+                                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-blue-100 text-blue-800 border border-blue-200 shadow-2xs">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                                        Nakumpleto (Completed)
+                                      </span>
+                                    ) : enr.status === 'pending' ? (
+                                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-200 shadow-2xs">
+                                        <Clock4 className="w-3.5 h-3.5 text-amber-600" />
+                                        Pending Enrollment
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs">
+                                        {enr.status}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Metadata Row */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-[11px] text-slate-600">
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">Uri ng Benepisyo (Benefit Type):</span>
+                                    <strong className="text-slate-800">{enr.BenefitProgram?.benefit_type || 'Cash Grant'}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">Petsa ng Pag-enroll:</span>
+                                    <strong className="text-slate-800">{formatEventDate(enr.enrollment_date)}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">Kwalipikadong Sektor:</span>
+                                    <strong className="text-slate-800">{enr.BenefitProgram?.eligibility_category || viewingBeneficiary.category}</strong>
+                                  </div>
+                                </div>
+
+                                {/* Program Description if available */}
+                                {enr.BenefitProgram?.description && (
+                                  <p className="text-slate-500 text-[11px] leading-relaxed">
+                                    {enr.BenefitProgram.description}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}
             <div className="p-4 border-t border-slate-200 bg-white flex justify-between items-center gap-3">
               <div className="text-xs text-slate-500 font-medium">
+                {modalTab === 'profile' && (
+                  <span>Account Status: <strong className="text-slate-800">{viewingBeneficiary.User?.status || 'active'}</strong> • RFID: <strong>{viewingBeneficiary.RFID_number || 'Walang RFID Card'}</strong></span>
+                )}
                 {modalTab === 'attendance' && attendanceData?.stats && (
                   <span>Kabuuang Meetings: <strong>{attendanceData.stats.total_meetings}</strong> • Attendance Rating: <strong>{attendanceData.stats.compliance_rate}%</strong></span>
+                )}
+                {modalTab === 'distributions' && distributionsData?.stats && (
+                  <span>Kabuuang Na-claim: <strong className="text-emerald-700">₱{Number(distributionsData.stats.total_amount_claimed || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong> • Na-claim: <strong>{distributionsData.stats.released_count} ayuda</strong></span>
+                )}
+                {modalTab === 'programs' && enrollmentsData?.stats && (
+                  <span>Naka-enroll: <strong className="text-purple-700">{enrollmentsData.stats.active_count} Aktibong Programa</strong> (Kabuuang {enrollmentsData.stats.total_enrolled} sinalihan)</span>
                 )}
               </div>
               <button
@@ -1213,8 +2155,10 @@ export default function BeneficiaryListPage() {
             <div className="p-6 space-y-4">
               <div className="bg-slate-50 rounded-lg p-4 space-y-2 border border-slate-200">
                 <div>
-                  <p className="text-xs text-slate-600 uppercase tracking-wide font-semibold">Beneficiary ID</p>
-                  <p className="text-lg font-bold text-slate-900 font-mono">{editingBeneficiary.beneficiary_id_code || 'N/A'}</p>
+                  <p className="text-xs text-slate-600 uppercase tracking-wide font-semibold">
+                    {editingBeneficiary.category?.toLowerCase().includes('4ps') ? '4Ps Household Number' : 'Beneficiary ID'}
+                  </p>
+                  <p className="text-lg font-bold text-slate-900 font-mono">{editingBeneficiary.household_id_number || editingBeneficiary.beneficiary_id_code || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-600 uppercase tracking-wide font-semibold">Full Name</p>
@@ -1267,6 +2211,77 @@ export default function BeneficiaryListPage() {
                   </div>
                 )}
 
+                {/* ── Payout & Disbursement Details ── */}
+                <div className="border-t border-slate-200 pt-4">
+                  <h4 className="text-sm font-bold text-purple-700 mb-3 flex items-center gap-1.5">
+                    <CreditCard className="w-4 h-4" /> Payout & Disbursement
+                  </h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Payout Method</label>
+                      <select
+                        value={editFormData.payout_preference || 'cash_otc'}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditFormData(prev => ({
+                            ...prev,
+                            payout_preference: val,
+                            ...(val === 'cash_otc' ? { payout_provider: '', payout_account_number: '', payout_account_name: '' } : {})
+                          }));
+                        }}
+                        className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                      >
+                        <option value="cash_otc">🏢 Cash OTC / Physical (RFID)</option>
+                        <option value="digital">⚡ Digital (E-Wallet / Bank)</option>
+                      </select>
+                    </div>
+
+                    {editFormData.payout_preference === 'digital' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1">Provider</label>
+                          <select
+                            value={editFormData.payout_provider || ''}
+                            onChange={(e) => setEditFormData({ ...editFormData, payout_provider: e.target.value })}
+                            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                          >
+                            <option value="">— Pumili ng Provider —</option>
+                            <option value="GCash">GCash</option>
+                            <option value="Maya">Maya (PayMaya)</option>
+                            <option value="Landbank">Landbank ATM</option>
+                            <option value="Other">Iba Pa (Other)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1">
+                            Account / Mobile Number
+                          </label>
+                          <input
+                            type="text"
+                            value={editFormData.payout_account_number || ''}
+                            onChange={(e) => setEditFormData({ ...editFormData, payout_account_number: e.target.value })}
+                            placeholder="e.g., 09171234567 or 1234-5678-90"
+                            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1">
+                            Account Holder Name
+                          </label>
+                          <input
+                            type="text"
+                            value={editFormData.payout_account_name || ''}
+                            onChange={(e) => setEditFormData({ ...editFormData, payout_account_name: e.target.value })}
+                            placeholder="Pangalan sa GCash/Landbank (e.g., Juan Dela Cruz)"
+                            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                          />
+                          <p className="text-xs text-slate-400 mt-1">Dapat tugma sa pangalan ng benepisyaryo para sa verification.</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
                 {editError && (
                   <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
                     {editError}
@@ -1317,7 +2332,11 @@ export default function BeneficiaryListPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-slate-900">Pending Beneficiary Applications</h2>
-                  <p className="text-sm text-slate-600 mt-0.5">Review, verify, and approve pending applicant submissions.</p>
+                  <p className="text-sm text-slate-600 mt-0.5">
+                    {isMswdoAdmin 
+                      ? 'Review, verify, and approve pending Senior Citizens and PWD applicant submissions (4Ps is processed by DSWD).'
+                      : 'Review, verify, and approve pending applicant submissions (4Ps, Senior Citizens, and PWD).'}
+                  </p>
                 </div>
               </div>
               <button
@@ -1455,6 +2474,18 @@ export default function BeneficiaryListPage() {
                       <span className="text-slate-400 font-medium">Civil Status:</span>
                       <span className="col-span-2 font-semibold text-slate-800">{selectedApp.civil_status || '—'}</span>
                     </div>
+                    {selectedApp.category?.toLowerCase().includes('4ps') && (
+                      <div className="grid grid-cols-3 bg-blue-50/70 p-1.5 rounded-lg border border-blue-200">
+                        <span className="text-blue-700 font-bold text-xs">4Ps Household No.:</span>
+                        <span className="col-span-2 font-mono font-black text-blue-900">{selectedApp.household_id_number || selectedApp.beneficiary_id_code || '—'}</span>
+                      </div>
+                    )}
+                    {!selectedApp.category?.toLowerCase().includes('4ps') && selectedApp.beneficiary_id_code && (
+                      <div className="grid grid-cols-3">
+                        <span className="text-slate-400 font-medium">Beneficiary ID:</span>
+                        <span className="col-span-2 font-mono font-bold text-slate-800">{selectedApp.beneficiary_id_code}</span>
+                      </div>
+                    )}
                     <div className="grid grid-cols-3">
                       <span className="text-slate-400 font-medium">Contact No:</span>
                       <span className="col-span-2 font-semibold text-slate-800">{selectedApp.contact_number || '—'}</span>
@@ -1481,30 +2512,44 @@ export default function BeneficiaryListPage() {
                 <div className="space-y-4">
                   <h4 className="font-bold text-sm text-slate-900 uppercase tracking-wider">Review Actions</h4>
                   
-                  {selectedApp.status === 'Pending Review' && (
-                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-center">
-                      <p className="text-xs text-amber-800 font-medium mb-3">This application is marked as Pending Review.</p>
-                      <Button onClick={() => handleStartReview(selectedApp.id)} className="w-full">
-                        Mark Under Review
-                      </Button>
+                  {isMswdoAdmin && is4PsCategory(selectedApp.category) ? (
+                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-300 text-center space-y-2">
+                      <div className="inline-flex p-2 bg-amber-100 text-amber-800 rounded-full">
+                        <ShieldAlert className="w-6 h-6" />
+                      </div>
+                      <p className="text-sm font-bold text-amber-900">DSWD Approval Authority Required</p>
+                      <p className="text-xs text-amber-700">
+                        This applicant belongs to the <strong>4Ps Household Beneficiaries</strong> category. 4Ps applications are exclusively reviewed and approved by DSWD. MSWDO is only authorized to review and approve Senior Citizens and PWD applications.
+                      </p>
                     </div>
-                  )}
+                  ) : (
+                    <>
+                      {selectedApp.status === 'Pending Review' && (
+                        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-center">
+                          <p className="text-xs text-amber-800 font-medium mb-3">This application is marked as Pending Review.</p>
+                          <Button onClick={() => handleStartReview(selectedApp.id)} className="w-full">
+                            Mark Under Review
+                          </Button>
+                        </div>
+                      )}
 
-                  {selectedApp.status !== 'Approved' && !showRejectForm && (
-                    <div className="flex gap-4">
-                      <Button 
-                        onClick={() => handleApproveApplication(selectedApp.id)} 
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-                      >
-                        Approve Application
-                      </Button>
-                      <Button 
-                        onClick={() => setShowRejectForm(true)} 
-                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold"
-                      >
-                        Reject Application
-                      </Button>
-                    </div>
+                      {selectedApp.status !== 'Approved' && !showRejectForm && (
+                        <div className="flex gap-4">
+                          <Button 
+                            onClick={() => handleApproveApplication(selectedApp.id)} 
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                          >
+                            Approve Application
+                          </Button>
+                          <Button 
+                            onClick={() => setShowRejectForm(true)} 
+                            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold"
+                          >
+                            Reject Application
+                          </Button>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {showRejectForm && (

@@ -62,6 +62,21 @@ module.exports = (sequelize, DataTypes) => {
           key: 'id',
         },
       },
+      agency: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'DSWD',
+        comment: 'Agency scope: DSWD or MSWDO',
+      },
+      created_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'users',
+          key: 'id',
+        },
+        comment: 'User ID of the creator',
+      },
     },
     {
       tableName: 'benefit_programs',

@@ -27,6 +27,7 @@ import {
   Archive,
   ArchiveRestore,
   Sparkles,
+  Building2,
 } from 'lucide-react';
 import { announcementApi, programApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -215,15 +216,12 @@ export default function AnnouncementManagementPage() {
   // Recipient Stats / Audit Modal
   const [selectedAnnouncementStats, setSelectedAnnouncementStats] = useState(null);
 
-  const activeAllowedCategories = user?.role === 'mswdo_admin'
-    ? TARGET_CATEGORIES.filter((c) => !c.toLowerCase().includes('4ps'))
-    : TARGET_CATEGORIES;
-
-  const availablePresets = user?.role === 'mswdo_admin'
-    ? OFFICIAL_MEETING_PRESETS.filter((p) => !p.sector.toLowerCase().includes('4ps'))
-    : OFFICIAL_MEETING_PRESETS;
+  const activeAllowedCategories = TARGET_CATEGORIES;
+  const availablePresets = OFFICIAL_MEETING_PRESETS;
 
   // Form State
+  const [bgySelectionMode, setBgySelectionMode] = useState('single'); // 'single' | 'multiple'
+  const [bgySearchFilter, setBgySearchFilter] = useState('');
   const [formData, setFormData] = useState({
     title: '',
     message: '',
@@ -360,6 +358,8 @@ export default function AnnouncementManagementPage() {
   // Reset form
   const handleOpenCreateModal = () => {
     setEditingAnnouncement(null);
+    setBgySelectionMode('single');
+    setBgySearchFilter('');
     setFormData({
       title: '',
       message: '',
@@ -374,7 +374,7 @@ export default function AnnouncementManagementPage() {
       expiration_date: '',
       target_categories: [...activeAllowedCategories],
       target_programs: mapCategoriesToProgramIds(activeAllowedCategories, programs),
-      target_barangays: barangays.map((b) => b.id),
+      target_barangays: [], // Default to empty so admin MUST explicitly pick the target barangay
       notify_mswdo: false,
     });
     setIsModalOpen(true);
@@ -403,6 +403,8 @@ export default function AnnouncementManagementPage() {
     });
 
     const parsedTargetBarangays = parseBarangayIds(ann.target_barangays);
+    setBgySelectionMode(parsedTargetBarangays.length === 1 ? 'single' : 'multiple');
+    setBgySearchFilter('');
 
     setFormData({
       title: ann.title || '',
@@ -1324,43 +1326,138 @@ export default function AnnouncementManagementPage() {
                     </div>
                   </div>
 
-                  {/* Target Barangays (Styled exactly like screenshot) */}
-                  <div className="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/60">
+                  {/* Target Barangays Selection */}
+                  <div className="border border-slate-200 rounded-xl p-3 space-y-2.5 bg-slate-50/60">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-black uppercase text-slate-700">
-                        Target Barangays <span className="text-red-500">*</span>
+                      <label className="text-xs font-black uppercase text-slate-700 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Target Barangay <span className="text-red-500">*</span></span>
                       </label>
-                      <button
-                        type="button"
-                        onClick={toggleAllBarangays}
-                        className="text-xs font-bold text-dswd-blue hover:underline"
-                      >
-                        {formData.target_barangays.length === barangays.length ? 'Deselect All' : 'Select All'}
-                      </button>
+                      <div className="flex items-center gap-1 bg-slate-200 p-0.5 rounded-lg text-[10px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBgySelectionMode('single');
+                            if (formData.target_barangays.length > 1) {
+                              setFormData(prev => ({ ...prev, target_barangays: [prev.target_barangays[0]] }));
+                            }
+                          }}
+                          className={`px-2 py-0.5 rounded-md transition ${
+                            bgySelectionMode === 'single'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Isang Barangay
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBgySelectionMode('multiple')}
+                          className={`px-2 py-0.5 rounded-md transition ${
+                            bgySelectionMode === 'multiple'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Maramihan / Lahat
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-                      {barangays.map((b) => {
-                        const selected = formData.target_barangays.includes(b.id);
-                        return (
-                          <div
-                            key={b.id}
-                            onClick={() => toggleBarangayTarget(b.id)}
-                            className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition text-xs font-bold ${selected
-                              ? 'bg-emerald-100/90 text-emerald-950 border-2 border-emerald-400 shadow-sm'
-                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-                              }`}
+                    {/* Single Barangay Mode (Instant 1-click selection) */}
+                    {bgySelectionMode === 'single' ? (
+                      <div className="space-y-2">
+                        <select
+                          value={formData.target_barangays.length === 1 ? formData.target_barangays[0] : ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setFormData((prev) => ({
+                              ...prev,
+                              target_barangays: val ? [Number(val)] : [],
+                            }));
+                          }}
+                          className="w-full px-3 py-2 bg-white border-2 border-emerald-400 rounded-xl font-bold text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 shadow-sm outline-none"
+                        >
+                          <option value="">-- Piliin ang Barangay kung saan ididirekta (hal. Anilao) --</option>
+                          {barangays.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              Barangay {b.barangay_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      /* Multiple Barangays Mode */
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <input
+                            type="text"
+                            placeholder="Maghanap ng barangay..."
+                            value={bgySearchFilter}
+                            onChange={(e) => setBgySearchFilter(e.target.value)}
+                            className="w-full px-2.5 py-1 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:border-emerald-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={toggleAllBarangays}
+                            className="text-xs font-bold text-dswd-blue hover:underline whitespace-nowrap"
                           >
-                            {selected ? (
-                              <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
-                            ) : (
-                              <Square className="w-4 h-4 text-slate-300 shrink-0" />
-                            )}
-                            <span className="truncate">{b.barangay_name}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                            {formData.target_barangays.length === barangays.length ? 'Deselect All' : 'Select All'}
+                          </button>
+                        </div>
+
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          {barangays
+                            .filter((b) => b.barangay_name.toLowerCase().includes(bgySearchFilter.toLowerCase()))
+                            .map((b) => {
+                              const selected = formData.target_barangays.map(Number).includes(Number(b.id));
+                              return (
+                                <div
+                                  key={b.id}
+                                  onClick={() => toggleBarangayTarget(b.id)}
+                                  className={`flex items-center gap-2.5 p-2 rounded-xl cursor-pointer transition text-xs font-bold ${
+                                    selected
+                                      ? 'bg-emerald-100/90 text-emerald-950 border-2 border-emerald-400 shadow-sm'
+                                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                                  }`}
+                                >
+                                  {selected ? (
+                                    <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
+                                  ) : (
+                                    <Square className="w-4 h-4 text-slate-300 shrink-0" />
+                                  )}
+                                  <span className="truncate">{b.barangay_name}</span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Directing Notice Banner */}
+                    {formData.target_barangays.length === 1 ? (
+                      <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 text-xs text-emerald-950 font-bold flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span>
+                            Direktang Target: <strong>Barangay {barangays.find((b) => Number(b.id) === Number(formData.target_barangays[0]))?.barangay_name || 'Napili'}</strong> lamang.
+                          </span>
+                          <p className="text-[11px] font-medium text-emerald-800 mt-0.5">
+                            Ang mga Staff at Benepisyaryo lamang ng barangay na ito ang makakatanggap ng notification at makakakita sa anunsyo.
+                          </p>
+                        </div>
+                      </div>
+                    ) : formData.target_barangays.length > 1 ? (
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-2 text-xs text-blue-900 font-semibold flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>Naka-target sa <strong>{formData.target_barangays.length}</strong> na mga Barangay.</span>
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-300 rounded-xl p-2 text-xs text-amber-900 font-semibold flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Pumili ng Barangay kung saan ididirekta ang anunsyo.</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

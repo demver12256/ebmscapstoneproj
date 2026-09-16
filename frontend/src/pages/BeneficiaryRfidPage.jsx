@@ -203,8 +203,10 @@ export default function BeneficiaryRfidPage() {
               {/* Beneficiary Information */}
               <div className="bg-slate-50 rounded-lg p-4 space-y-3">
                 <div>
-                  <p className="text-xs text-slate-600 uppercase tracking-wide font-semibold">Beneficiary ID</p>
-                  <p className="text-lg font-bold text-slate-900 font-mono">{selectedBeneficiary.beneficiary_id_code || 'N/A'}</p>
+                  <p className="text-xs text-slate-600 uppercase tracking-wide font-semibold">
+                    {selectedBeneficiary.category?.toLowerCase().includes('4ps') ? '4Ps Household Number' : 'Beneficiary ID'}
+                  </p>
+                  <p className="text-lg font-bold text-slate-900 font-mono">{selectedBeneficiary.household_id_number || selectedBeneficiary.beneficiary_id_code || 'N/A'}</p>
                 </div>
 
                 <div>

@@ -71,7 +71,14 @@ app.use('/api', apiLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/barangays', barangayRoutes);
-app.use('/api/beneficiaries', beneficiaryRoutes);
+app.use('/api/beneficiaries', (req, res, next) => {
+  try {
+    delete require.cache[require.resolve('./routes/beneficiaries')];
+    return require('./routes/beneficiaries')(req, res, next);
+  } catch (err) {
+    return next(err);
+  }
+});
 app.use('/api/programs', programRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/distributions', (req, res, next) => {

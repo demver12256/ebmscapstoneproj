@@ -16,6 +16,7 @@ const {
   Attendance,
 } = require('../db');
 const { isMswdoRole } = require('../utils/roles');
+const { parseDateTime, autoCompleteExpiredAnnouncements } = require('../utils/announcementScheduler');
 
 const router = express.Router();
 router.use(authenticate);
@@ -314,136 +315,6 @@ router.get('/preview-count', authorize('admin', 'staff', 'barangay'), async (req
   }
 });
 
-function parseDateTime(dateStr, timeStr) {
-  if (!dateStr) return null;
-  let hours = 23;
-  let minutes = 59;
-
-  if (timeStr) {
-    const timeMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
-    if (timeMatch) {
-      let h = parseInt(timeMatch[1], 10);
-      const m = parseInt(timeMatch[2], 10);
-      const ampm = timeMatch[3] ? timeMatch[3].toUpperCase() : null;
-      if (ampm === 'PM' && h < 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-      hours = h;
-      minutes = m;
-    }
-  }
-
-  const [year, month, day] = dateStr.split('-').map(Number);
-  if (!year || !month || !day) return null;
-  return new Date(year, month - 1, day, hours, minutes, 59);
-}
-
-async function autoCompleteExpiredAnnouncements() {
-  try {
-    const publishedAnnouncements = await Announcement.findAll({
-      where: { status: 'published' },
-    });
-
-    const now = new Date();
-
-    for (const ann of publishedAnnouncements) {
-
-      const timeToCheck = ann.end_time || ann.event_time || '23:59';
-      const expireTime = parseDateTime(ann.event_date, timeToCheck);
-
-      // Only auto-complete if at least 24 hours have passed since event ended, or past expiration_date
-      const gracePeriodPassed = expireTime && (now.getTime() - expireTime.getTime() > 24 * 60 * 60 * 1000);
-      const isPastExpiration = ann.expiration_date && (now > parseDateTime(ann.expiration_date, '23:59'));
-
-      if (gracePeriodPassed || isPastExpiration) {
-        console.log(`⏰ Auto-completing expired announcement ID ${ann.id}: "${ann.title}"`);
-
-        const [absentCount] = await AnnouncementRecipient.update(
-          { attendance_status: 'Absent' },
-          {
-            where: {
-              announcement_id: ann.id,
-              attendance_status: 'Pending',
-            },
-          }
-        );
-
-        const absentRecipients = await AnnouncementRecipient.findAll({
-          where: {
-            announcement_id: ann.id,
-            attendance_status: 'Absent',
-          },
-          include: [
-            {
-              model: Beneficiary,
-              as: 'Beneficiary',
-              include: [
-                { model: User, attributes: ['id', 'email', 'contact_number'] },
-                { model: Barangay, attributes: ['barangay_name'] },
-              ],
-            },
-          ],
-        });
-
-        const inAppNotifications = [];
-        const smsNotifications = [];
-
-        for (const recipient of absentRecipients) {
-          const b = recipient.Beneficiary;
-          if (!b || !b.User) continue;
-
-          const existingNotif = await Notification.findOne({
-            where: {
-              user_id: b.User.id,
-              reference_id: ann.id,
-              reference_type: 'announcement_absence',
-            },
-          });
-
-          if (!existingNotif) {
-            inAppNotifications.push({
-              user_id: b.User.id,
-              title: `Absent: ${ann.title}`,
-              message: `You were marked absent for "${ann.title}" held on ${ann.event_date || 'N/A'}. Please contact the municipal office for more information.`,
-              type: 'program',
-              reference_id: ann.id,
-              reference_type: 'announcement_absence',
-              is_read: false,
-            });
-          }
-
-          if (b.contact_number) {
-            smsNotifications.push({
-              beneficiary_id: b.id,
-              phone_number: b.contact_number,
-              message: `[EBMS] You were marked ABSENT for "${ann.title}" on ${ann.event_date || 'today'}. Please contact DSWD for details.`,
-              status: 'sent',
-              sent_at: new Date(),
-            });
-          }
-        }
-
-        if (inAppNotifications.length > 0) {
-          await Notification.bulkCreate(inAppNotifications, { ignoreDuplicates: true });
-        }
-        if (smsNotifications.length > 0) {
-          await SMSNotification.bulkCreate(smsNotifications, { ignoreDuplicates: true });
-        }
-
-        await ann.update({ status: 'completed' });
-
-        await AuditLog.create({
-          user_id: ann.created_by_user_id || 1,
-          action: `AUTO_COMPLETED_ACTIVITY: "${ann.title}" - Marked ${absentCount} beneficiaries as absent`,
-          module: 'Announcements',
-          timestamp: new Date(),
-        });
-      }
-    }
-  } catch (err) {
-    console.error('Error in autoCompleteExpiredAnnouncements:', err);
-  }
-}
-
 // ── GET /my-attendance ── Beneficiary Meeting Attendance History & Summary Stats
 router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) => {
   try {
@@ -502,6 +373,10 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
         (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
 
       if (matchesBarangay && matchesCategory) {
+        const timeToCheck = ann.end_time || ann.event_time || '23:59';
+        const expireTime = parseDateTime(ann.event_date, timeToCheck);
+        const isEnded = ann.status === 'completed' || (expireTime && new Date() >= expireTime);
+
         await AnnouncementRecipient.findOrCreate({
           where: {
             announcement_id: ann.id,
@@ -512,7 +387,7 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
             beneficiary_id: beneficiary.id,
             user_id: req.user.id,
             is_read: false,
-            attendance_status: 'Pending',
+            attendance_status: isEnded ? 'Absent' : 'Pending',
             notification_sent: true,
           },
         });
@@ -710,6 +585,10 @@ router.get('/', async (req, res, next) => {
           (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
 
         if (matchesBarangay && matchesCategory) {
+          const timeToCheck = ann.end_time || ann.event_time || '23:59';
+          const expireTime = parseDateTime(ann.event_date, timeToCheck);
+          const isEnded = ann.status === 'completed' || (expireTime && new Date() >= expireTime);
+
           await AnnouncementRecipient.findOrCreate({
             where: {
               announcement_id: ann.id,
@@ -720,7 +599,7 @@ router.get('/', async (req, res, next) => {
               beneficiary_id: beneficiary.id,
               user_id: req.user.id,
               is_read: false,
-              attendance_status: 'Pending',
+              attendance_status: isEnded ? 'Absent' : 'Pending',
               notification_sent: true,
             },
           });
@@ -829,14 +708,24 @@ router.get('/', async (req, res, next) => {
       ];
     }
 
+    // Two-way agency isolation: identify all MSWDO admin users
+    const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
+    const mswdoUserIds = mswdoUsers.map(u => u.id);
+
     // Filter MSWDO view at DB level: MSWDO only sees announcements they created OR where notify_mswdo is true
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin') {
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push({
         [Op.or]: [
-          { created_by_user_id: req.user.id },
+          { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
           { notify_mswdo: true },
         ],
+      });
+    } else if (req.user.role === 'admin') {
+      // DSWD Admin: strictly see announcements created by DSWD users (NOT MSWDO)
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        created_by_user_id: { [Op.notIn]: mswdoUserIds.length ? mswdoUserIds : [-1] },
       });
     }
 
@@ -874,24 +763,16 @@ router.get('/', async (req, res, next) => {
 
     // Filter staff view to events that target their barangay if role === 'barangay' OR 'staff'
     // CRITICAL: Both 'staff' and 'barangay' roles should only see announcements for their assigned barangay
-    if ((req.user.role === 'barangay' || req.user.role === 'staff') && req.user.barangay_id) {
-      const userBarangayId = Number(req.user.barangay_id);
-      console.log(`[ANNOUNCEMENT FILTER] User: ${req.user.first_name} ${req.user.last_name} (ID: ${req.user.id})`);
-      console.log(`[ANNOUNCEMENT FILTER] Role: ${req.user.role}, Barangay ID: ${userBarangayId}`);
-      console.log(`[ANNOUNCEMENT FILTER] Before filter: ${announcements.length} announcements`);
-      
-      announcements = announcements.filter((a) => {
-        const targetIds = parseTargetBarangayIds(a.target_barangays);
-        const isMatch = targetIds.includes(userBarangayId);
-        if (!isMatch) {
-          console.log(`[ANNOUNCEMENT FILTER]   ❌ Filtered out: "${a.title}" (Target barangays: ${JSON.stringify(targetIds)})`);
-        } else {
-          console.log(`[ANNOUNCEMENT FILTER]   ✅ Included: "${a.title}" (Target barangays: ${JSON.stringify(targetIds)})`);
-        }
-        return isMatch;
-      });
-      
-      console.log(`[ANNOUNCEMENT FILTER] After filter: ${announcements.length} announcements\n`);
+    if (req.user.role === 'barangay' || req.user.role === 'staff') {
+      const userBarangayId = req.user.barangay_id ? Number(req.user.barangay_id) : null;
+      if (userBarangayId) {
+        announcements = announcements.filter((a) => {
+          const targetIds = parseTargetBarangayIds(a.target_barangays);
+          return targetIds.includes(userBarangayId);
+        });
+      } else {
+        announcements = [];
+      }
     }
 
     // Filter MSWDO view: If DSWD Admin did NOT notify MSWDO (notify_mswdo is false),
@@ -953,6 +834,18 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Announcement not found' });
     }
 
+    // Two-way isolation check: DSWD Admin cannot view MSWDO announcements
+    const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
+    const mswdoUserIds = mswdoUsers.map(u => u.id);
+    const isMswdoAuthor = mswdoUserIds.includes(announcement.created_by_user_id);
+
+    if (req.user.role === 'admin' && isMswdoAuthor) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: DSWD Admin cannot view MSWDO announcements.',
+      });
+    }
+
     // Security check: If MSWDO, cannot view direct-only announcements where MSWDO was not notified
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin') {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
@@ -965,7 +858,28 @@ router.get('/:id', async (req, res, next) => {
       }
     }
 
+    // Staff isolation check: Staff can strictly view announcements targeting their assigned barangay
+    if (req.user.role === 'staff' || req.user.role === 'barangay') {
+      const userBarangayId = req.user.barangay_id ? Number(req.user.barangay_id) : null;
+      const targetIds = parseTargetBarangayIds(announcement.target_barangays);
+      if (!userBarangayId || !targetIds.includes(userBarangayId)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: Ang aktibidad na ito ay nakalaan para sa ibang barangay.',
+        });
+      }
+    }
+
     const plain = announcement.toJSON();
+    // For MSWDO Admin: if not author and not notified, strip the beneficiary attendance Recipients list
+    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin') {
+      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
+      const isNotified = Boolean(announcement.notify_mswdo);
+      if (!isAuthor && !isNotified) {
+        plain.Recipients = [];
+      }
+    }
+
     const recipients = plain.Recipients || [];
     plain.present_count = recipients.filter((r) => r.attendance_status === 'Present').length;
     plain.absent_count = plain.recipient_count - plain.present_count;
@@ -1002,13 +916,6 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
     const targetCatsOrProgs = req.body.target_categories || target_programs;
     if (!Array.isArray(targetCatsOrProgs) || targetCatsOrProgs.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one target category must be selected' });
-    }
-
-    if (req.user.role === 'mswdo_admin') {
-      const has4Ps = targetCatsOrProgs.some(cat => String(cat).toLowerCase().includes('4ps'));
-      if (has4Ps) {
-        return res.status(403).json({ success: false, message: 'Access denied: MSWDO Admin cannot create announcements for 4Ps programs' });
-      }
     }
 
     const parsedBarangays = parseTargetBarangayIds(target_barangays);
@@ -1073,6 +980,24 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
     const announcement = await Announcement.findByPk(req.params.id);
     if (!announcement) {
       return res.status(404).json({ success: false, message: 'Announcement activity not found' });
+    }
+
+    // Check if announcement has ended or is completed
+    const timeToCheck = announcement.end_time || announcement.event_time || '23:59';
+    const expireTime = parseDateTime(announcement.event_date, timeToCheck);
+    const isPastEvent = expireTime && new Date() >= expireTime;
+    const isPastExpiration = announcement.expiration_date && new Date() > parseDateTime(announcement.expiration_date, '23:59');
+    const isEnded = announcement.status === 'completed' || announcement.status === 'archived' || isPastEvent || isPastExpiration;
+
+    if (isEnded) {
+      if (announcement.status !== 'completed' && announcement.status !== 'archived') {
+        await announcement.update({ status: 'completed' });
+      }
+      return res.status(400).json({
+        success: false,
+        message: `BAWAL NA ANG ATTENDANCE: Ang aktibidad na "${announcement.title}" ay tapos na. Hindi na maaaring magtala ng attendance ang staff.`,
+        is_ended: true,
+      });
     }
 
     // Find beneficiary by RFID or Beneficiary ID code
@@ -1198,6 +1123,16 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Announcement not found' });
     }
 
+    // Security check: MSWDO Admin can strictly access attendance stats ONLY for announcements they created
+    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin') {
+      if (announcement.created_by_user_id !== req.user.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: MSWDO Admin can only access attendance stats for announcements they created.',
+        });
+      }
+    }
+
     const recipients = await AnnouncementRecipient.findAll({
       where: { announcement_id: announcement.id },
       include: [
@@ -1291,23 +1226,32 @@ router.post('/:id/complete', authorize('admin', 'staff', 'barangay'), async (req
       const b = recipient.Beneficiary;
       if (!b || !b.User) continue;
 
-      // In-app notification
-      inAppNotifications.push({
-        user_id: b.User.id,
-        title: `Absent: ${announcement.title}`,
-        message: `You were marked absent for "${announcement.title}" held on ${announcement.event_date || 'N/A'}. Please contact the municipal office for more information.`,
-        type: 'program',
-        reference_id: announcement.id,
-        reference_type: 'announcement_absence',
-        is_read: false,
+      const existingNotif = await Notification.findOne({
+        where: {
+          user_id: b.User.id,
+          reference_id: announcement.id,
+          reference_type: 'announcement_absence',
+        },
       });
+
+      if (!existingNotif) {
+        inAppNotifications.push({
+          user_id: b.User.id,
+          title: `Paunawa: Hindi Naka-attend sa ${announcement.title}`,
+          message: `Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad na "${announcement.title}" noong ${announcement.event_date || 'N/A'}${announcement.event_time ? ` (${announcement.event_time})` : ''}. Mangyaring makipag-ugnayan sa Tanggapan ng DSWD/MSWDO o sa inyong Barangay Staff kung may balidong dahilan.`,
+          type: 'announcement_absence',
+          reference_id: announcement.id,
+          reference_type: 'announcement_absence',
+          is_read: false,
+        });
+      }
 
       // SMS notification (if contact number available)
       if (b.contact_number) {
         smsNotifications.push({
           beneficiary_id: b.id,
           phone_number: b.contact_number,
-          message: `[EBMS] You were marked ABSENT for "${announcement.title}" on ${announcement.event_date || 'today'}. Please contact DSWD for details.`,
+          message: `[EBMS] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad "${announcement.title}" noong ${announcement.event_date || 'N/A'}. Makipag-ugnayan sa DSWD/MSWDO para sa detalye.`,
           status: 'sent',
           sent_at: new Date(),
         });
@@ -1355,6 +1299,16 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
     });
     if (!announcement) {
       return res.status(404).json({ success: false, message: 'Announcement not found' });
+    }
+
+    // Security check: MSWDO Admin can strictly export attendance ONLY for announcements they created
+    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin') {
+      if (announcement.created_by_user_id !== req.user.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: MSWDO Admin can only export attendance for announcements they created.',
+        });
+      }
     }
 
     const recipients = await AnnouncementRecipient.findAll({
@@ -1544,7 +1498,7 @@ router.patch('/:id/read', async (req, res, next) => {
             where: {
               user_id: req.user.id,
               reference_id: announcement.id,
-              reference_type: { [Op.in]: ['announcement', 'announcement_absence', 'announcement_staff', 'announcement_mswdo'] },
+              reference_type: { [Op.in]: ['announcement', 'announcement_staff', 'announcement_mswdo'] },
             },
           }
         );

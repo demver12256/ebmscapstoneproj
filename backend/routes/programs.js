@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { BenefitProgram, Enrollment, Beneficiary, Barangay, DistributionEvent, DistributionTransaction, AuditLog, Notification } = require('../db');
-const { isMswdoRole, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory } = require('../utils/roles');
+const { isMswdoRole, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory, isMswdoEligibility } = require('../utils/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -32,9 +32,12 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (r
       if (req.query.status) {
         where.status = req.query.status;
       }
-      // MSWDO restricted to Senior Citizens and PWD programs only
-      if (isMswdoRole(req.user.role)) {
-        where[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
+      if (req.user.role === 'mswdo_admin') {
+        // MSWDO Admin strictly sees ONLY MSWDO municipal programs (including MSWDO 4Ps programs)
+        where.agency = 'MSWDO';
+      } else if (req.user.role === 'admin') {
+        // DSWD Admin strictly manages DSWD programs only
+        where.agency = 'DSWD';
       }
     } else if (req.user.role === 'beneficiary') {
       // Beneficiary sees only programs in their barangay that they are enrolled in
@@ -77,6 +80,128 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (r
   }
 });
 
+// ── GET /eligible-preview ── Preview eligible beneficiaries for category and barangay(s)
+router.get('/eligible-preview', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+  try {
+    const { category, barangay_ids, program_id } = req.query;
+
+    let targetBarangayIds = [];
+
+    // Role-based barangay scoping for staff / barangay
+    if (['staff', 'barangay'].includes(req.user.role)) {
+      if (req.user.barangay_id) {
+        targetBarangayIds = [Number(req.user.barangay_id)];
+      }
+    } else if (barangay_ids) {
+      if (Array.isArray(barangay_ids)) {
+        targetBarangayIds = barangay_ids.map(Number).filter(Boolean);
+      } else {
+        targetBarangayIds = String(barangay_ids)
+          .split(',')
+          .map((id) => Number(id.trim()))
+          .filter(Boolean);
+      }
+    }
+
+    const whereClause = {
+      status: 'Approved',
+    };
+
+    if (targetBarangayIds.length > 0) {
+      whereClause.barangay_id = { [Op.in]: targetBarangayIds };
+    }
+
+    if (category) {
+      const cat = category;
+      const isPwd = cat.toLowerCase().includes('pwd') || cat.toLowerCase().includes('disabilit');
+      const isSenior = cat.toLowerCase().includes('senior');
+      const is4ps = cat.toLowerCase().includes('4ps') || cat.toLowerCase().includes('4p');
+
+      if (isPwd) {
+        whereClause.category = {
+          [Op.or]: [
+            { [Op.like]: '%PWD%' },
+            { [Op.like]: '%Disabilit%' },
+            { [Op.like]: '%Person with Disability%' },
+            { [Op.like]: '%Persons with Disabilities%' },
+          ],
+        };
+      } else if (isSenior) {
+        whereClause.category = { [Op.like]: '%Senior%' };
+      } else if (is4ps) {
+        whereClause.category = { [Op.like]: '%4Ps%' };
+      } else {
+        whereClause.category = { [Op.like]: `%${cat}%` };
+      }
+    }
+
+    // If MSWDO Admin without specific category, enforce MSWDO scope (includes 4Ps, Senior, PWD)
+    if (req.user.role === 'mswdo_admin' && !category) {
+      whereClause[Op.or] = [
+        { category: { [Op.like]: '%Senior%' } },
+        { category: { [Op.like]: '%PWD%' } },
+        { category: { [Op.like]: '%Disabilit%' } },
+        { category: { [Op.like]: '%4Ps%' } },
+        { category: { [Op.like]: '%Pantawid%' } },
+      ];
+    }
+
+    const beneficiaries = await Beneficiary.findAll({
+      where: whereClause,
+      include: [
+        { model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] },
+      ],
+      order: [
+        ['barangay_id', 'ASC'],
+        ['last_name', 'ASC'],
+        ['first_name', 'ASC'],
+      ],
+    });
+
+    // If program_id is supplied, check who is already enrolled
+    let enrolledBeneficiaryIds = new Set();
+    if (program_id) {
+      const existingEnrollments = await Enrollment.findAll({
+        where: { program_id, status: 'active' },
+        attributes: ['beneficiary_id'],
+      });
+      enrolledBeneficiaryIds = new Set(existingEnrollments.map((e) => e.beneficiary_id));
+    }
+
+    // Group count by barangay
+    const byBarangay = {};
+    const formattedList = beneficiaries.map((b) => {
+      const bgyName = b.Barangay?.barangay_name || `Barangay ${b.barangay_id}`;
+      byBarangay[bgyName] = (byBarangay[bgyName] || 0) + 1;
+
+      return {
+        id: b.id,
+        first_name: b.first_name,
+        last_name: b.last_name,
+        middle_name: b.middle_name,
+        suffix: b.suffix,
+        beneficiary_id_code: b.beneficiary_id_code,
+        category: b.category,
+        barangay_id: b.barangay_id,
+        barangay_name: bgyName,
+        contact_number: b.contact_number,
+        phone_number: b.phone_number,
+        status: b.status,
+        is_enrolled: program_id ? enrolledBeneficiaryIds.has(b.id) : false,
+      };
+    });
+
+    res.json({
+      success: true,
+      total_eligible: formattedList.length,
+      by_barangay: byBarangay,
+      data: formattedList,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ── GET /:id ── Get single program (barangay-enforced)
 router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (req, res, next) => {
   try {
@@ -93,9 +218,14 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async
         return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): This program is assigned to another barangay.' });
       }
     }
-    // MSWDO can view Senior and PWD programs only (cannot access 4Ps)
-    if (isMswdoRole(req.user.role) && !isMswdoEligibility(program.eligibility_category)) {
-      return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): MSWDO cannot access 4Ps programs. Access is strictly restricted to Senior Citizens and PWD programs.' });
+    // MSWDO strictly views MSWDO agency programs; DSWD Admin strictly views DSWD programs
+    if (isMswdoRole(req.user.role)) {
+      if (program.agency !== 'MSWDO') {
+        return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): MSWDO Admin cannot view or manage DSWD programs.' });
+      }
+    }
+    if (req.user.role === 'admin' && program.agency === 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): DSWD Admin cannot view or manage MSWDO programs.' });
     }
 
     res.json({ success: true, data: program });
@@ -117,6 +247,14 @@ router.get('/:id/beneficiaries', authorize('admin', 'staff', 'barangay'), async 
       if (program.barangay_id !== req.user.barangay_id) {
         return res.status(403).json({ success: false, message: 'Access Denied: This program is assigned to another barangay.' });
       }
+    }
+
+    // MSWDO Admin cannot access beneficiaries of DSWD programs
+    if (req.user.role === 'mswdo_admin' && program.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot view beneficiaries of DSWD programs.' });
+    }
+    if (req.user.role === 'admin' && program.agency === 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: DSWD Admin cannot view beneficiaries of MSWDO programs.' });
     }
 
     const enrollments = await Enrollment.findAll({
@@ -144,6 +282,10 @@ router.post('/:id/auto-enroll', authorize('admin', 'staff'), async (req, res, ne
     const program = await BenefitProgram.findByPk(req.params.id);
     if (!program) {
       return res.status(404).json({ success: false, message: 'Program not found' });
+    }
+
+    if (req.user.role === 'mswdo_admin' && program.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot auto-enroll into DSWD programs.' });
     }
 
     // Enforce barangay access for staff ONLY (admins can access all)
@@ -306,6 +448,10 @@ router.post('/:id/enroll', authorize('admin', 'staff'), async (req, res, next) =
       return res.status(404).json({ success: false, message: 'Program not found' });
     }
 
+    if (req.user.role === 'mswdo_admin' && program.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot enroll into DSWD programs.' });
+    }
+
     // Enforce barangay access for staff ONLY (admins can access all)
     if (req.user.role === 'staff') {
       if (program.barangay_id !== req.user.barangay_id) {
@@ -462,15 +608,13 @@ router.post('/', authorize('admin'), async (req, res, next) => {
     if (!req.body.barangay_id) {
       return res.status(400).json({ success: false, message: 'barangay_id is required. Each program must be assigned to a specific barangay.' });
     }
-    // MSWDO can only create Senior Citizens and PWD programs (4Ps is strictly for DSWD)
-    if (isMswdoRole(req.user.role)) {
-      const cat = req.body.eligibility_category || req.body.category;
-      if (!isMswdoEligibility(cat)) {
-        return res.status(403).json({ success: false, message: 'Access Denied: MSWDO cannot create 4Ps programs. MSWDO is restricted to Senior Citizens and PWD programs only.' });
-      }
-    }
-
-    const program = await BenefitProgram.create(mapProgramPayload(req.body));
+    const agency = req.user.role === 'mswdo_admin' ? 'MSWDO' : 'DSWD';
+    const programData = {
+      ...mapProgramPayload(req.body),
+      agency,
+      created_by: req.user.id,
+    };
+    const program = await BenefitProgram.create(programData);
 
     // Reload with Barangay association so the response includes barangay info
     const created = await BenefitProgram.findByPk(program.id, {
@@ -564,9 +708,11 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
     if (!program) {
       return res.status(404).json({ success: false, message: 'Program not found' });
     }
-    // MSWDO cannot modify 4Ps programs
-    if (isMswdoRole(req.user.role) && !isMswdoEligibility(program.eligibility_category)) {
-      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO cannot modify 4Ps programs. Only Senior Citizens and PWD programs are authorized.' });
+    if (req.user.role === 'mswdo_admin' && program.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot modify DSWD programs.' });
+    }
+    if (req.user.role === 'admin' && program.agency === 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: DSWD Admin cannot modify MSWDO programs.' });
     }
     await program.update(mapProgramPayload(req.body));
 
@@ -592,6 +738,12 @@ router.patch('/:id/status', authorize('admin'), async (req, res, next) => {
     if (!program) {
       return res.status(404).json({ success: false, message: 'Program not found' });
     }
+    if (req.user.role === 'mswdo_admin' && program.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot change status of DSWD programs.' });
+    }
+    if (req.user.role === 'admin' && program.agency === 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: DSWD Admin cannot change status of MSWDO programs.' });
+    }
     const newStatus = program.status === 'active' ? 'inactive' : 'active';
     await program.update({ status: newStatus });
     await AuditLog.create({
@@ -611,6 +763,12 @@ router.delete('/:id', authorize('admin'), async (req, res, next) => {
     const program = await BenefitProgram.findByPk(req.params.id);
     if (!program) {
       return res.status(404).json({ success: false, message: 'Program not found' });
+    }
+    if (req.user.role === 'mswdo_admin' && program.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot delete DSWD programs.' });
+    }
+    if (req.user.role === 'admin' && program.agency === 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access Denied: DSWD Admin cannot delete MSWDO programs.' });
     }
 
     // Cascade: delete distribution transactions → events → enrollments → program

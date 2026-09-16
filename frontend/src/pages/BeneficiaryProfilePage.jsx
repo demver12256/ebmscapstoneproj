@@ -146,11 +146,12 @@ export default function BeneficiaryProfilePage() {
                 {beneficiary?.status}
               </span>
               
-              {beneficiary?.beneficiary_id_code && (
+              {(beneficiary?.household_id_number || beneficiary?.beneficiary_id_code) && (
                 <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full">
                   <IdCard className="w-3.5 h-3.5 text-blue-600" />
                   <span className="text-xs font-bold text-blue-700 font-mono">
-                    {beneficiary.beneficiary_id_code}
+                    {beneficiary?.category?.toLowerCase().includes('4ps') ? '4Ps HH: ' : 'ID: '}
+                    {beneficiary.household_id_number || beneficiary.beneficiary_id_code}
                   </span>
                 </div>
               )}

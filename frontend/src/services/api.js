@@ -43,6 +43,9 @@ export const authApi = {
   googleLogin: (data) => apiClient.post('/auth/google', data),
   sendOtp: (data) => apiClient.post('/auth/send-otp', data),
   verifyOtp: (data) => apiClient.post('/auth/verify-otp', data),
+  sendForgotPasswordOtp: (data) => apiClient.post('/auth/forgot-password/send-otp', data),
+  resetPassword: (data) => apiClient.post('/auth/forgot-password/reset', data),
+  changePassword: (data) => apiClient.post('/auth/change-password', data),
 };
 
 export const dashboardApi = {
@@ -60,10 +63,16 @@ export const reportsApi = {
   getTableBeneficiaries: (params) => apiClient.get('/reports/table/beneficiaries', { params }),
   getTablePrograms: (params) => apiClient.get('/reports/table/programs', { params }),
   getTableEnrollments: (params) => apiClient.get('/reports/table/enrollments', { params }),
+  getTableAssistanceRequests: (params) => apiClient.get('/reports/table/assistance-requests', { params }),
+  getTableAttendance: (params) => apiClient.get('/reports/table/attendance', { params }),
+  getTableAuditLogs: (params) => apiClient.get('/reports/table/audit-logs', { params }),
   exportBeneficiaries: (params) => apiClient.get('/reports/export/beneficiaries', { params, responseType: 'blob' }),
   exportDistributions: (params) => apiClient.get('/reports/export/distributions', { params, responseType: 'blob' }),
   exportPrograms: (params) => apiClient.get('/reports/export/programs', { params, responseType: 'blob' }),
   exportEnrollments: (params) => apiClient.get('/reports/export/enrollments', { params, responseType: 'blob' }),
+  exportAssistanceRequests: (params) => apiClient.get('/reports/export/assistance-requests', { params, responseType: 'blob' }),
+  exportAttendance: (params) => apiClient.get('/reports/export/attendance', { params, responseType: 'blob' }),
+  exportAuditLogs: (params) => apiClient.get('/reports/export/audit-logs', { params, responseType: 'blob' }),
 };
 
 export const barangayApi = {
@@ -92,6 +101,12 @@ export const beneficiaryApi = {
   approveApplication: (id) => apiClient.post(`/beneficiaries/applications/${id}/approve`),
   rejectApplication: (id, data) => apiClient.post(`/beneficiaries/applications/${id}/reject`, data),
   getAttendance: (id) => apiClient.get(`/beneficiaries/${id}/attendance`),
+  getDistributions: (id) => apiClient.get(`/beneficiaries/${id}/distributions`),
+  getEnrollments: (id) => apiClient.get(`/beneficiaries/${id}/enrollments`),
+  verifyPayoutAccount: (id, data) => apiClient.post(`/beneficiaries/${id}/verify-payout-account`, data),
+  updateMyPayoutAccount: (data) => apiClient.put('/beneficiaries/me/payout-account', data),
+  addExtraPayoutAccount: (data) => apiClient.post('/beneficiaries/me/extra-payout-accounts', data),
+  removeExtraPayoutAccount: (index) => apiClient.delete(`/beneficiaries/me/extra-payout-accounts/${index}`),
 };
 
 export const programApi = {
@@ -104,6 +119,7 @@ export const programApi = {
   getEnrolledBeneficiaries: (id) => apiClient.get(`/programs/${id}/beneficiaries`),
   enrollBeneficiaries: (id, data) => apiClient.post(`/programs/${id}/enroll`, data),
   autoEnrollBeneficiaries: (id) => apiClient.post(`/programs/${id}/auto-enroll`),
+  getEligiblePreview: (params) => apiClient.get('/programs/eligible-preview', { params }),
 };
 
 export const attendanceApi = {
@@ -136,7 +152,12 @@ export const distributionApi = {
   getReceipt: (eventId, txnId) => apiClient.get(`/distributions/events/${eventId}/receipt/${txnId}`),
   
   // Dashboard
-  getDashboardStats: () => apiClient.get('/distributions/dashboard/stats'),
+  getDashboardStats: (params) => apiClient.get('/distributions/dashboard/stats', { params }),
+  
+  // Hybrid Digital Payout
+  getPayoutSummary: (eventId) => apiClient.get(`/distributions/events/${eventId}/payout-summary`),
+  disburseDigital: (eventId) => apiClient.post(`/distributions/events/${eventId}/disburse-digital`),
+  acknowledgePayout: (txnId, data) => apiClient.post(`/distributions/transactions/${txnId}/acknowledge`, data),
   
   // Legacy (old distribution model - keep for backward compatibility)
   list: () => apiClient.get('/distributions'),
@@ -154,6 +175,7 @@ export const userApi = {
   create: (data) => apiClient.post('/users', data),
   update: (id, data) => apiClient.put(`/users/${id}`, data),
   remove: (id) => apiClient.delete(`/users/${id}`),
+  changePassword: (data) => apiClient.post('/auth/change-password', data),
 };
 
 export const seedApi = {
@@ -197,9 +219,17 @@ export const notificationApi = {
 
 export const assistanceRequestApi = {
   list: (params) => apiClient.get('/assistance-requests', { params }),
-  create: (data) => apiClient.post('/assistance-requests', data),
+  create: (data) => {
+    if (typeof FormData !== 'undefined' && data instanceof FormData) {
+      return apiClient.post('/assistance-requests', data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    }
+    return apiClient.post('/assistance-requests', data);
+  },
   updateStatus: (id, data) => apiClient.patch(`/assistance-requests/${id}/status`, data),
-  stats: () => apiClient.get('/assistance-requests/stats'),
+  stats: (params) => apiClient.get('/assistance-requests/stats', { params }),
+  claimWithRfid: (data) => apiClient.post('/assistance-requests/claim-rfid', data),
 };
 
 export const medicalAssistanceApi = {

@@ -18,10 +18,52 @@ import {
 } from 'lucide-react';
 import { announcementApi } from '../services/api';
 
+// Helper to determine if announcement is active for attendance recording
+const isAnnouncementActiveForAttendance = (ann) => {
+  if (!ann) return false;
+  if (ann.status === 'completed' || ann.status === 'archived') return false;
+  if (ann.status !== 'published') return false;
+
+  const now = new Date();
+  if (ann.event_date) {
+    const timeToCheck = ann.end_time || ann.event_time || '23:59';
+    let hours = 23;
+    let minutes = 59;
+    if (timeToCheck) {
+      const match = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const ampm = match[3] ? match[3].toUpperCase() : null;
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+    const [y, m, d] = String(ann.event_date).split('-').map(Number);
+    if (y && m && d) {
+      const eventEndTime = new Date(y, m - 1, d, hours, minutes, 59);
+      if (now > eventEndTime) return false;
+    }
+  }
+
+  if (ann.expiration_date) {
+    const [y, m, d] = String(ann.expiration_date).split('-').map(Number);
+    if (y && m && d) {
+      const expirationTime = new Date(y, m - 1, d, 23, 59, 59);
+      if (now > expirationTime) return false;
+    }
+  }
+
+  return true;
+};
+
 export default function RfidAnnouncementAttendanceModal({ announcement, onClose, onRefresh }) {
   const [rfidInput, setRfidInput] = useState('');
   const [scanLoading, setScanLoading] = useState(false);
   const [lastScanResult, setLastScanResult] = useState(null); // { status: 'success'|'rejected'|'duplicate', message, beneficiary, timestamp }
+  const isEnded = !isAnnouncementActiveForAttendance(announcement);
   const [stats, setStats] = useState({
     total_expected: announcement?.recipient_count || 0,
     total_present: announcement?.present_count || 0,
@@ -60,6 +102,16 @@ export default function RfidAnnouncementAttendanceModal({ announcement, onClose,
   // Handle RFID Submit / Hardware scan
   const handleScanSubmit = async (e) => {
     e.preventDefault();
+    if (isEnded) {
+      setLastScanResult({
+        status: 'rejected',
+        message: `BAWAL NA ANG ATTENDANCE: Ang aktibidad na "${announcement?.title}" ay tapos na. Hindi na maaaring magtala ng attendance ang staff.`,
+        beneficiary: null,
+        timestamp: new Date().toLocaleTimeString(),
+      });
+      return;
+    }
+
     if (!rfidInput.trim()) return;
 
     const scannedCode = rfidInput.trim();
@@ -118,13 +170,15 @@ export default function RfidAnnouncementAttendanceModal({ announcement, onClose,
         {/* Header */}
         <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 px-6 py-4 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-400 text-slate-950 rounded-xl">
-              <Smartphone className="w-6 h-6 animate-pulse" />
+            <div className={`p-2 rounded-xl ${isEnded ? 'bg-red-500 text-white' : 'bg-yellow-400 text-slate-950'}`}>
+              <Smartphone className={`w-6 h-6 ${isEnded ? '' : 'animate-pulse'}`} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="bg-yellow-400/20 text-yellow-300 font-extrabold text-[10px] uppercase px-2 py-0.5 rounded">
-                  LIVE RFID ATTENDANCE SCANNER
+                <span className={`font-extrabold text-[10px] uppercase px-2 py-0.5 rounded ${
+                  isEnded ? 'bg-red-500/30 text-red-200' : 'bg-yellow-400/20 text-yellow-300'
+                }`}>
+                  {isEnded ? 'ATTENDANCE ISINARA NA' : 'LIVE RFID ATTENDANCE SCANNER'}
                 </span>
                 <span className="text-xs text-blue-200">• Activity Facilitation</span>
               </div>
@@ -159,28 +213,49 @@ export default function RfidAnnouncementAttendanceModal({ announcement, onClose,
 
           <div className="flex items-center gap-2">
             <span className="text-slate-500">Facility Status:</span>
-            <span className="bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              ATTENDANCE ACTIVE
-            </span>
+            {isEnded ? (
+              <span className="bg-red-100 text-red-800 font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-500" />
+                ATTENDANCE CLOSED (TAPOS NA)
+              </span>
+            ) : (
+              <span className="bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                ATTENDANCE ACTIVE
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Closed Announcement Notice Banner */}
+        {isEnded && (
+          <div className="bg-red-50 border-b-2 border-red-300 px-6 py-3.5 flex items-center gap-3 text-red-900">
+            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+            <div className="text-xs">
+              <strong className="font-bold text-red-950">⛔ BAWAL NA ANG ATTENDANCE (Tapos na ang Aktibidad):</strong>{' '}
+              Ang aktibidad na ito ay nagwakas na noong <strong>{announcement?.event_date || 'nakaraang petsa'}</strong>.
+              Ayon sa patakaran ng sistema, <strong>hindi na pinahihintulutan ang staff na magtala ng attendance</strong> matapos ang pagtatapos ng anunsyo.
+            </div>
+          </div>
+        )}
 
         {/* Main Grid Content */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-y-auto">
           {/* Scanner Input & Result Column (Left 7 cols) */}
           <div className="lg:col-span-7 space-y-6">
             {/* RFID Hardware Scanner Box */}
-            <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-6 shadow-md border border-slate-800 space-y-4">
+            <div className={`text-white rounded-2xl p-6 shadow-md border space-y-4 ${
+              isEnded ? 'bg-gradient-to-br from-slate-900 to-red-950 border-red-900' : 'bg-gradient-to-br from-slate-900 to-indigo-950 border-slate-800'
+            }`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Smartphone className="w-5 h-5 text-yellow-400" />
-                  <label className="text-sm font-black uppercase text-yellow-300 tracking-wider">
-                    Scan Beneficiary RFID Card
+                  <Smartphone className={`w-5 h-5 ${isEnded ? 'text-red-400' : 'text-yellow-400'}`} />
+                  <label className={`text-sm font-black uppercase tracking-wider ${isEnded ? 'text-red-300' : 'text-yellow-300'}`}>
+                    {isEnded ? 'Scanner Closed' : 'Scan Beneficiary RFID Card'}
                   </label>
                 </div>
-                <span className="text-[11px] font-semibold text-slate-400">
-                  Card Reader Ready
+                <span className={`text-[11px] font-semibold ${isEnded ? 'text-red-300' : 'text-slate-400'}`}>
+                  {isEnded ? 'Attendance Closed' : 'Card Reader Ready'}
                 </span>
               </div>
 
@@ -188,24 +263,34 @@ export default function RfidAnnouncementAttendanceModal({ announcement, onClose,
                 <input
                   ref={rfidInputRef}
                   type="text"
-                  placeholder="Tap RFID Card or enter Beneficiary ID Code..."
+                  placeholder={isEnded ? "Sarado na ang attendance para sa tapos nang event..." : "Tap RFID Card or enter Beneficiary ID Code..."}
                   value={rfidInput}
                   onChange={(e) => setRfidInput(e.target.value)}
-                  disabled={scanLoading}
-                  className="w-full pl-4 pr-24 py-3.5 bg-slate-800/90 border-2 border-yellow-400/60 rounded-xl text-white font-mono text-base tracking-wider focus:outline-none focus:border-yellow-400 focus:ring-4 focus:ring-yellow-400/20 transition placeholder:text-slate-500"
+                  disabled={scanLoading || isEnded}
+                  className={`w-full pl-4 pr-24 py-3.5 bg-slate-800/90 border-2 rounded-xl text-white font-mono text-base tracking-wider focus:outline-none transition ${
+                    isEnded
+                      ? 'border-red-500/50 cursor-not-allowed text-slate-400 placeholder:text-red-300/60'
+                      : 'border-yellow-400/60 focus:border-yellow-400 focus:ring-4 focus:ring-yellow-400/20 placeholder:text-slate-500'
+                  }`}
                 />
                 <button
                   type="submit"
-                  disabled={scanLoading || !rfidInput.trim()}
-                  className="absolute right-2 top-2 bottom-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black px-4 rounded-lg transition disabled:opacity-50 text-xs flex items-center gap-1"
+                  disabled={scanLoading || !rfidInput.trim() || isEnded}
+                  className={`absolute right-2 top-2 bottom-2 font-black px-4 rounded-lg transition disabled:opacity-50 text-xs flex items-center gap-1 ${
+                    isEnded
+                      ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                      : 'bg-yellow-400 hover:bg-yellow-500 text-slate-950'
+                  }`}
                 >
-                  {scanLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Record'}
+                  {scanLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : isEnded ? 'Sarado' : 'Record'}
                 </button>
               </form>
 
               <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                Tap beneficiary RFID card on physical scanner. System automatically validates program enrollment and barangay assignment.
+                <CheckCircle2 className={`w-3.5 h-3.5 ${isEnded ? 'text-red-400' : 'text-emerald-400'}`} />
+                {isEnded
+                  ? 'Hindi na maaaring gamitin ang physical scanner para sa tapos nang anunsyong ito.'
+                  : 'Tap beneficiary RFID card on physical scanner. System automatically validates program enrollment and barangay assignment.'}
               </p>
             </div>
 

@@ -14,6 +14,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
       },
+      agency: {
+        type: DataTypes.ENUM('DSWD', 'MSWDO'),
+        allowNull: false,
+        defaultValue: 'DSWD',
+      },
       type: {
         type: DataTypes.STRING,
         allowNull: false,
@@ -40,6 +45,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+      attachment_url: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
       reviewed_by: {
         type: DataTypes.INTEGER,
         allowNull: true,
@@ -47,6 +56,22 @@ module.exports = (sequelize, DataTypes) => {
       reviewed_at: {
         type: DataTypes.DATE,
         allowNull: true,
+      },
+      claimed_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      claimed_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      rfid_scanned: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      valid_id_verified: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
       },
     },
     {

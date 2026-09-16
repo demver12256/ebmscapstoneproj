@@ -1,12 +1,14 @@
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, Bell, Moon, ChevronDown, CheckCheck, Users, MessageSquare, Megaphone, UserPlus, Package, Clock, X, ExternalLink, AlertCircle, UserCheck, Info, HandHeart, FileText } from 'lucide-react';
+import { Search, Bell, Moon, Sun, ChevronDown, CheckCheck, Users, MessageSquare, Megaphone, UserPlus, Package, Clock, X, ExternalLink, AlertCircle, UserCheck, Info, HandHeart, FileText, CreditCard, User, Lock, LogOut, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { notificationApi, beneficiaryApi, messageApi, assistanceRequestApi } from '../../services/api';
+import { notificationApi, beneficiaryApi, messageApi, assistanceRequestApi, authApi } from '../../services/api';
+import { useDarkMode } from '../../hooks/useDarkMode';
 
 export default function Header() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { isDark, toggle: toggleDarkMode } = useDarkMode();
   const [unreadCount, setUnreadCount] = useState(0);
 
   // Notification dropdown state
@@ -20,8 +22,39 @@ export default function Header() {
   const dropdownRef = useRef(null);
   const bellRef = useRef(null);
 
+  // User profile dropdown state
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef(null);
+  const userAvatarRef = useRef(null);
+
+  // Beneficiary profile picture
+  const [beneficiaryProfilePic, setBeneficiaryProfilePic] = useState(null);
+
+  // Change password modal state
+  const [showChangePwModal, setShowChangePwModal] = useState(false);
+  const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState(null);
+  const [pwSuccess, setPwSuccess] = useState(null);
+  const [showPwFields, setShowPwFields] = useState({ current: false, new: false, confirm: false });
+
   const isAdmin = ['admin','mswdo_admin'].includes(user?.role);
+  const isMswdoAdmin = user?.role === 'mswdo_admin';
   const isStaff = user?.role === 'staff' || user?.role === 'barangay';
+
+  const filterPendingApps = useCallback((apps) => {
+    return apps.filter(a => {
+      const isPendingStatus = a.status === 'pending' || a.status === 'Pending' ||
+        a.status === 'Pending Review' || a.status === 'pending_review' ||
+        a.status === 'Under Review' || a.status === 'under_review';
+      if (!isPendingStatus) return false;
+      if (isMswdoAdmin) {
+        const cat = String(a.category || '').toLowerCase();
+        if (cat.includes('4ps') || cat.includes('pantawid')) return false;
+      }
+      return true;
+    });
+  }, [isMswdoAdmin]);
 
   // Time ago helper
   const timeAgo = (dateStr) => {
@@ -66,10 +99,7 @@ export default function Header() {
       if (isAdmin) {
         beneficiaryApi.listApplications().then(res => {
           const apps = res.data?.data || [];
-          setPendingApplications(apps.filter(a =>
-            a.status === 'pending' || a.status === 'Pending' ||
-            a.status === 'Under Review' || a.status === 'under_review'
-          ));
+          setPendingApplications(filterPendingApps(apps));
         }).catch(() => {});
       } else {
         setPendingApplications([]);
@@ -97,10 +127,7 @@ export default function Header() {
         if (isAdmin) {
           beneficiaryApi.listApplications().then(res => {
             const apps = res.data?.data || [];
-            setPendingApplications(apps.filter(a =>
-              a.status === 'pending' || a.status === 'Pending' ||
-              a.status === 'Under Review' || a.status === 'under_review'
-            ));
+            setPendingApplications(filterPendingApps(apps));
           }).catch(() => {});
         }
         if (isAdmin || isStaff) {
@@ -150,10 +177,7 @@ export default function Header() {
         try {
           const appRes = await beneficiaryApi.listApplications();
           const apps = appRes.data?.data || [];
-          setPendingApplications(apps.filter(a =>
-            a.status === 'pending' || a.status === 'Pending' ||
-            a.status === 'Under Review' || a.status === 'under_review'
-          ));
+          setPendingApplications(filterPendingApps(apps));
         } catch (e) {
           console.error('Failed to load applications:', e);
         }
@@ -223,6 +247,9 @@ export default function Header() {
   // Get notification icon based on type
   const getNotifIcon = (notif) => {
     const type = notif.reference_type || notif.type || '';
+    if (type.includes('payout') || notif.reference_type === 'payout_verification') {
+      return <CreditCard className="w-4 h-4 text-purple-600" />;
+    }
     if (type.includes('announcement') || type.includes('megaphone')) {
       return <Megaphone className="w-4 h-4 text-blue-500" />;
     }
@@ -244,6 +271,7 @@ export default function Header() {
   // Get icon background color
   const getNotifIconBg = (notif) => {
     const type = notif.reference_type || notif.type || '';
+    if (type.includes('payout') || notif.reference_type === 'payout_verification') return 'bg-purple-100';
     if (type.includes('announcement')) return 'bg-blue-100';
     if (type.includes('enrollment') || type.includes('enroll')) return 'bg-green-100';
     if (type.includes('distribution') || type.includes('benefit')) return 'bg-purple-100';
@@ -279,7 +307,67 @@ export default function Header() {
     return user.role;
   };
 
+  const getBackendBaseUrl = () => {
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    return apiUrl.replace('/api', '');
+  };
+
+  // Fetch beneficiary profile picture
+  useEffect(() => {
+    if (user?.role === 'beneficiary') {
+      beneficiaryApi.getMe().then(res => {
+        const pic = res.data?.data?.profile_picture;
+        if (pic) setBeneficiaryProfilePic(`${getBackendBaseUrl()}/${pic}`);
+      }).catch(() => {});
+    }
+  }, [user]);
+
+  // Close user menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (
+        userMenuRef.current && !userMenuRef.current.contains(e.target) &&
+        userAvatarRef.current && !userAvatarRef.current.contains(e.target)
+      ) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setPwError(null);
+    setPwSuccess(null);
+    if (pwForm.new_password !== pwForm.confirm_password) {
+      setPwError('Ang bagong password at confirm password ay hindi magkatugma.');
+      return;
+    }
+    if (pwForm.new_password.length < 6) {
+      setPwError('Ang bagong password ay dapat hindi bababa sa 6 characters.');
+      return;
+    }
+    setPwLoading(true);
+    try {
+      await authApi.changePassword({ current_password: pwForm.current_password, new_password: pwForm.new_password });
+      setPwSuccess('Matagumpay na napalitan ang iyong password!');
+      setPwForm({ current_password: '', new_password: '', confirm_password: '' });
+      setTimeout(() => { setShowChangePwModal(false); setPwSuccess(null); }, 2000);
+    } catch (err) {
+      setPwError(err.response?.data?.message || 'Hindi mapalitan ang password. Subukan muli.');
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/?login=true');
+  };
+
   return (
+    <>
     <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between sticky top-0 z-30 shadow-sm">
       {/* Search Input Bar (DSWD dashboard inspired) */}
       <div className="relative w-80 max-w-xs sm:max-w-md hidden sm:block">
@@ -392,7 +480,7 @@ export default function Header() {
                     {isAdmin && pendingApplications.length > 0 && (
                       <div className="py-1">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 py-2">
-                          🔔 Pending Beneficiary Approvals ({pendingApplications.length})
+                          🔔 {isMswdoAdmin ? 'Pending Senior / PWD Approvals' : 'Pending Beneficiary Approvals'} ({pendingApplications.length})
                         </p>
                         {pendingApplications.slice(0, 5).map((app) => (
                           <button
@@ -554,7 +642,9 @@ export default function Header() {
                                 handleMarkAsRead(notif.id, { stopPropagation: () => {} });
                               }
                               setShowDropdown(false);
-                              if (notif.link) {
+                              if (notif.reference_type === 'payout_verification' || notif.title?.toLowerCase().includes('payout')) {
+                                navigate('/dashboard/beneficiaries?payout_status=unverified', { state: { payout_status: 'unverified' } });
+                              } else if (notif.link) {
                                 navigate(notif.link);
                               } else if (notif.title?.includes('Approved') || notif.message?.includes('APPROVED') || notif.type === 'assistance') {
                                 navigate('/dashboard/my-benefits');
@@ -611,32 +701,196 @@ export default function Header() {
           )}
         </div>
 
-        {/* Dark Mode Moon Icon */}
-        <button className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 transition">
-          <Moon className="h-5 w-5" />
+        {/* Dark Mode Toggle */}
+        <button
+          onClick={toggleDarkMode}
+          className={`p-2 rounded-xl transition ${isDark ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-600' : 'bg-slate-50 hover:bg-slate-100 text-slate-600'}`}
+          title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        >
+          {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </button>
 
         <div className="h-6 w-px bg-slate-200" />
 
-        {/* User Details & Avatar */}
-        <div className="flex items-center gap-3">
-          {/* Avatar (CSS styled as circular letter block or fallback) */}
-          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-dswd-blue to-dswd-lightBlue text-white flex items-center justify-center font-bold text-sm shadow-md ring-2 ring-slate-100 uppercase">
-            {getInitials()}
-          </div>
-          <div className="hidden md:block text-left">
-            <span className="text-sm font-bold text-slate-900 block leading-tight">
-              {user ? `${user.first_name} ${user.last_name}` : 'Guest User'}
-            </span>
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mt-0.5">
-              {getUserRoleLabel()}
-            </span>
-          </div>
-          <button className="text-slate-400 hover:text-slate-600 transition">
-            <ChevronDown className="h-4 w-4" />
+        {/* User Details & Avatar with Dropdown */}
+        <div className="relative">
+          <button
+            ref={userAvatarRef}
+            onClick={() => setShowUserMenu(prev => !prev)}
+            className="flex items-center gap-3 hover:bg-slate-50 rounded-xl px-2 py-1.5 transition"
+          >
+            {/* Avatar - shows profile pic for beneficiary, initials for others */}
+            {user?.role === 'beneficiary' && beneficiaryProfilePic ? (
+              <img
+                src={beneficiaryProfilePic}
+                alt="Profile"
+                className="h-10 w-10 rounded-full object-cover shadow-md ring-2 ring-slate-100"
+                onError={() => setBeneficiaryProfilePic(null)}
+              />
+            ) : (
+              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-dswd-blue to-dswd-lightBlue text-white flex items-center justify-center font-bold text-sm shadow-md ring-2 ring-slate-100 uppercase">
+                {getInitials()}
+              </div>
+            )}
+            <div className="hidden md:block text-left">
+              <span className="text-sm font-bold text-slate-900 block leading-tight">
+                {user ? `${user.first_name} ${user.last_name}` : 'Guest User'}
+              </span>
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mt-0.5">
+                {getUserRoleLabel()}
+              </span>
+            </div>
+            <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
           </button>
+
+          {/* User Menu Dropdown */}
+          {showUserMenu && (
+            <div
+              ref={userMenuRef}
+              className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50"
+              style={{ boxShadow: '0 12px 40px rgba(0,0,0,0.15)' }}
+            >
+              {/* User info header */}
+              <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+                <p className="text-sm font-bold text-slate-900">{user ? `${user.first_name} ${user.last_name}` : 'Guest'}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">{getUserRoleLabel()}</p>
+              </div>
+
+              <div className="py-1">
+                {/* Profile - only for beneficiary */}
+                {user?.role === 'beneficiary' && (
+                  <button
+                    onClick={() => { setShowUserMenu(false); navigate('/dashboard/my-profile'); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    <User className="h-4 w-4 text-slate-400" />
+                    Profile
+                  </button>
+                )}
+
+                {/* Change Password */}
+                <button
+                  onClick={() => { setShowUserMenu(false); setShowChangePwModal(true); }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                >
+                  <Lock className="h-4 w-4 text-slate-400" />
+                  Change Password
+                </button>
+
+                <div className="border-t border-slate-100 my-1" />
+
+                {/* Logout */}
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>
+
+    {/* Change Password Modal */}
+    {showChangePwModal && (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          {/* Modal Header */}
+          <div className="bg-gradient-to-r from-dswd-blue to-dswd-lightBlue px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <KeyRound className="h-5 w-5 text-white" />
+              <h2 className="text-lg font-bold text-white">Change Password</h2>
+            </div>
+            <button onClick={() => { setShowChangePwModal(false); setPwError(null); setPwSuccess(null); setPwForm({ current_password: '', new_password: '', confirm_password: '' }); }} className="text-white/70 hover:text-white transition">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+            {pwError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{pwError}</div>
+            )}
+            {pwSuccess && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">{pwSuccess}</div>
+            )}
+
+            {/* Current Password */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Current Password</label>
+              <div className="relative">
+                <input
+                  type={showPwFields.current ? 'text' : 'password'}
+                  value={pwForm.current_password}
+                  onChange={e => setPwForm(p => ({ ...p, current_password: e.target.value }))}
+                  placeholder="Enter current password"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 pr-10 text-sm outline-none focus:border-dswd-lightBlue focus:ring-2 focus:ring-blue-100 transition"
+                  required
+                />
+                <button type="button" onClick={() => setShowPwFields(p => ({ ...p, current: !p.current }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  {showPwFields.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* New Password */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">New Password</label>
+              <div className="relative">
+                <input
+                  type={showPwFields.new ? 'text' : 'password'}
+                  value={pwForm.new_password}
+                  onChange={e => setPwForm(p => ({ ...p, new_password: e.target.value }))}
+                  placeholder="Enter new password (min. 6 characters)"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 pr-10 text-sm outline-none focus:border-dswd-lightBlue focus:ring-2 focus:ring-blue-100 transition"
+                  required
+                />
+                <button type="button" onClick={() => setShowPwFields(p => ({ ...p, new: !p.new }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  {showPwFields.new ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Confirm Password */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Confirm New Password</label>
+              <div className="relative">
+                <input
+                  type={showPwFields.confirm ? 'text' : 'password'}
+                  value={pwForm.confirm_password}
+                  onChange={e => setPwForm(p => ({ ...p, confirm_password: e.target.value }))}
+                  placeholder="Re-enter new password"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 pr-10 text-sm outline-none focus:border-dswd-lightBlue focus:ring-2 focus:ring-blue-100 transition"
+                  required
+                />
+                <button type="button" onClick={() => setShowPwFields(p => ({ ...p, confirm: !p.confirm }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  {showPwFields.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => { setShowChangePwModal(false); setPwError(null); setPwSuccess(null); setPwForm({ current_password: '', new_password: '', confirm_password: '' }); }}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={pwLoading}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-dswd-blue text-white text-sm font-bold hover:bg-dswd-lightBlue transition disabled:opacity-60"
+              >
+                {pwLoading ? 'Saving...' : 'Save Password'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

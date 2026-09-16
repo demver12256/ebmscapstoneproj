@@ -2,8 +2,8 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { 
-  Home, Users, MapPin, ListChecks, BarChart3, UserCog, MessageSquare, LogOut, 
-  Smartphone, Package, User, FileText, Award, FileCheck, Bell, HelpCircle, Settings, Megaphone, Lock, HandHeart,
+  Home, Users, MapPin, ListChecks, BarChart3, UserCog, MessageSquare,
+  Smartphone, Package, FileText, Award, FileCheck, Bell, HelpCircle, Settings, Megaphone, HandHeart,
   Stethoscope, CalendarCheck
 } from 'lucide-react';
 
@@ -29,12 +29,10 @@ const beneficiaryNavItems = [
   { path: '/dashboard/request-assistance', label: 'Request Assistance', icon: FileText, requiresApproval: true, section: 'main' },
   { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, badge: 'messages', requiresApproval: true, section: 'main' },
   { path: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: 'notifications', requiresApproval: true, section: 'main' },
-  { path: '/dashboard/my-profile', label: 'Profile', icon: User, requiresApproval: true, section: 'account' },
-  { path: '/dashboard/settings', label: 'Change Password', icon: Lock, requiresApproval: true, section: 'account' },
 ];
 
 export default function Sidebar() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [beneficiaryStatus, setBeneficiaryStatus] = React.useState(null);
   const [unreadCount, setUnreadCount] = React.useState(0);
@@ -92,11 +90,6 @@ export default function Sidebar() {
     };
     fetchBeneficiaryStatus();
   }, [user]);
-
-  const handleLogout = () => {
-    logout();
-    navigate('/?login=true');
-  };
 
   const isBeneficiary = user?.role === 'beneficiary';
   const isApprovedBeneficiary = isBeneficiary && beneficiaryStatus === 'Approved';
@@ -236,7 +229,7 @@ export default function Sidebar() {
       </div>
 
       {/* Footer Area */}
-      <div className="mt-8 space-y-4 pt-4 border-t border-slate-100">
+      <div className="mt-8 pt-4 border-t border-slate-100">
         {/* DSWD Tagline Badge */}
         <div className="bg-gradient-to-br from-yellow-50 to-amber-50 border border-yellow-200 rounded-2xl p-4 text-center space-y-3 shadow-sm">
           <div className="flex justify-center">
@@ -256,15 +249,6 @@ export default function Sidebar() {
             <div className="w-10 h-1 bg-gradient-to-r from-dswd-blue via-dswd-red to-dswd-yellow mx-auto rounded-full" />
           </div>
         </div>
-
-        {/* Logout Trigger */}
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold text-slate-500 hover:bg-red-50 hover:text-red-600 transition"
-        >
-          <LogOut className="h-5 w-5 shrink-0" />
-          Logout
-        </button>
       </div>
     </aside>
   );

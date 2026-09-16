@@ -8,6 +8,7 @@ const { authorize } = require('../middleware/role.middleware');
 const {
   MedicalAssistanceApplication,
   MedicalAssistanceDocument,
+  AssistanceRequest,
   Beneficiary,
   User,
   Barangay,
@@ -485,6 +486,7 @@ router.post('/save-draft', authorize('beneficiary'), async (req, res, next) => {
         hospital_confinement_status: hospital_confinement_status || 'not_applicable',
         had_surgical_operation: Boolean(had_surgical_operation),
         total_amount_requested: total_amount_requested || 0,
+        agency: req.body.agency || application.agency || 'DSWD',
       });
     } else {
       const appNumber = await generateApplicationNumber();
@@ -493,6 +495,7 @@ router.post('/save-draft', authorize('beneficiary'), async (req, res, next) => {
         beneficiary_id: beneficiary.id,
         user_id: req.user.id,
         barangay_id: beneficiary.barangay_id || 1,
+        agency: req.body.agency || 'DSWD',
         category,
         patient_name: patient_name || `${beneficiary.first_name} ${beneficiary.last_name}`,
         patient_gender,
@@ -722,6 +725,23 @@ router.post('/my-applications/:id/submit', authorize('beneficiary'), async (req,
       additional_requirements_notes: null,
     });
 
+    // Automatically sync into unified AssistanceRequest
+    try {
+      await AssistanceRequest.create({
+        beneficiary_id: application.beneficiary_id,
+        user_id: req.user.id,
+        barangay_id: application.barangay_id,
+        agency: application.agency || 'DSWD',
+        type: application.category,
+        subject: `${application.category} (${application.application_number})`,
+        description: `Patient: ${application.patient_name}\nFacility/Institution: ${application.hospital_or_clinic_name || application.pharmacy_name || 'N/A'}\nDiagnosis/Reason: ${application.diagnosis || 'N/A'}\nRequested Amount: ₱${Number(application.total_amount_requested || 0).toLocaleString('en-PH')}`,
+        status: 'Pending',
+        priority: 'Normal',
+      });
+    } catch (syncErr) {
+      console.error('Failed to sync application to AssistanceRequest:', syncErr);
+    }
+
     // Notify user
     await Notification.create({
       user_id: req.user.id,
@@ -756,6 +776,10 @@ router.post('/my-applications/:id/submit', authorize('beneficiary'), async (req,
 // GET /api/medical-assistance/admin/stats
 router.get('/admin/stats', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
+    if (req.user.role === 'mswdo_admin') {
+      return res.json({ success: true, data: { statusCounts: { total: 0 }, categoryCounts: {} } });
+    }
+
     let whereClause = {};
     if (req.user.role === 'staff' || req.user.role === 'barangay') {
       const brgyId = await getUserBarangayId(req.user);
@@ -804,6 +828,10 @@ router.get('/admin/stats', authorize('admin', 'staff', 'barangay'), async (req, 
 // GET /api/medical-assistance/admin/applications
 router.get('/admin/applications', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
+    if (req.user.role === 'mswdo_admin') {
+      return res.json({ success: true, data: [] });
+    }
+
     let whereClause = {};
     if (req.user.role === 'staff' || req.user.role === 'barangay') {
       const brgyId = await getUserBarangayId(req.user);
@@ -871,6 +899,10 @@ router.get('/admin/applications', authorize('admin', 'staff', 'barangay'), async
 // GET /api/medical-assistance/admin/applications/:id
 router.get('/admin/applications/:id', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
+    if (req.user.role === 'mswdo_admin') {
+      return res.status(403).json({ success: false, message: 'Access Denied: DSWD Medical Assistance applications are exclusively managed by DSWD Admin.' });
+    }
+
     const application = await MedicalAssistanceApplication.findByPk(req.params.id, {
       include: [
         {
@@ -908,6 +940,10 @@ router.get('/admin/applications/:id', authorize('admin', 'staff', 'barangay'), a
 // PATCH /api/medical-assistance/admin/applications/:id/status
 router.patch('/admin/applications/:id/status', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
+    if (req.user.role === 'mswdo_admin') {
+      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot manage DSWD Medical Assistance applications.' });
+    }
+
     const application = await MedicalAssistanceApplication.findByPk(req.params.id);
     if (!application) {
       return res.status(404).json({ success: false, message: 'Application not found.' });

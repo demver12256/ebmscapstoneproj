@@ -4,7 +4,8 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { programApi, barangayApi, beneficiaryApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Briefcase, Plus, X, Edit2, Trash2, ToggleLeft, ToggleRight, Filter, MapPin, Eye, Archive, ArchiveRestore, UserPlus, Users, Calendar } from 'lucide-react';
+import { Briefcase, Plus, X, Edit2, Trash2, ToggleLeft, ToggleRight, Filter, MapPin, Eye, Archive, ArchiveRestore, UserPlus, Users, Calendar, Search, CheckCircle2, AlertCircle } from 'lucide-react';
+import { getProgramAssistanceClassification } from '../utils/nonCashPrograms';
 
 const CATEGORIES = [
   '4Ps Household Beneficiaries',
@@ -137,8 +138,15 @@ const PROGRAMS_BY_CATEGORY = {
   ],
 };
 
-// Dedicated MSWDO Municipal Programs (Local Level for MSWDO Admin - Senior & PWD Only)
+// Dedicated MSWDO Municipal Programs (Local Level for MSWDO Admin)
 const MSWDO_PROGRAMS_BY_CATEGORY = {
+  '4Ps Household Beneficiaries': [
+    'MSWDO LGU 4Ps Local Assistance & Counterpart Grant',
+    'MSWDO 4Ps Family Development Session (FDS) Support',
+    'MSWDO 4Ps Emergency Relief & Livelihood Referral',
+    'MSWDO 4Ps Municipal Health & Nutrition Augmentation',
+    'MSWDO 4Ps Child Education & Learning Supply Support',
+  ],
   'Senior Citizens (Social Pension)': [
     'MSWDO Local Social Pension (Municipal Counterpart)',
     'Senior Citizens Birthday Cash Incentive & Gift Pack',
@@ -183,12 +191,7 @@ export default function ProgramListPage() {
   const { user, token } = useAuth();
   const isAdmin = ['admin','mswdo_admin'].includes(user?.role);
   const isMswdoAdmin = user?.role === 'mswdo_admin';
-  const displayCategories = isMswdoAdmin
-    ? [
-        'Senior Citizens (Social Pension)',
-        'Persons with Disabilities (PWD)'
-      ]
-    : CATEGORIES;
+  const displayCategories = CATEGORIES;
   const [programs, setPrograms] = useState([]);
   const [allPrograms, setAllPrograms] = useState([]);
   const [barangays, setBarangays] = useState([]);
@@ -208,7 +211,23 @@ export default function ProgramListPage() {
   const [selectedProgram, setSelectedProgram] = useState(null);
   const [enrolledBeneficiaries, setEnrolledBeneficiaries] = useState([]);
   const [eligibleBeneficiaries, setEligibleBeneficiaries] = useState([]);
+  const [allEligibleBeneficiaries, setAllEligibleBeneficiaries] = useState([]);
+  const [detailsTab, setDetailsTab] = useState('enrolled'); // 'enrolled' | 'all_eligible'
+  const [detailsSearch, setDetailsSearch] = useState('');
+  const [autoEnrolling, setAutoEnrolling] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
+
+  // Live Eligible Beneficiaries Preview for Create/Edit Modal
+  const [eligiblePreview, setEligiblePreview] = useState({
+    loading: false,
+    count: 0,
+    byBarangay: {},
+    beneficiaries: [],
+    error: null,
+  });
+  const [showEligiblePreviewModal, setShowEligiblePreviewModal] = useState(false);
+  const [eligibleSearch, setEligibleSearch] = useState('');
+  const [eligibleFilterBarangay, setEligibleFilterBarangay] = useState('');
 
   // Admin filters
   const [filterBarangay, setFilterBarangay] = useState('');
@@ -291,12 +310,11 @@ export default function ProgramListPage() {
         }
       }
 
-      // MSWDO can only access Senior Citizens and PWD programs (4Ps is strictly DSWD)
+      // Agency-level scoping: MSWDO only sees MSWDO programs; DSWD Admin only sees DSWD programs; Staff sees all programs for their barangay
       const allowedPrograms = isMswdoAdmin
-        ? allFetched.filter(p => {
-            const cat = String(p.eligibility_category || p.category || '').toLowerCase();
-            return (cat.includes('senior') || cat.includes('pwd') || cat.includes('disabilit')) && !cat.includes('4ps') && !cat.includes('pantawid');
-          })
+        ? allFetched.filter(p => p.agency === 'MSWDO')
+        : user?.role === 'admin'
+        ? allFetched.filter(p => !p.agency || p.agency === 'DSWD')
         : allFetched;
 
       setAllPrograms(allowedPrograms);
@@ -360,11 +378,155 @@ export default function ProgramListPage() {
     }
   };
 
+  // Live fetch eligible beneficiaries preview for Create / Edit Modal
+  useEffect(() => {
+    let isCancelled = false;
+
+    const fetchPreview = async () => {
+      const selectedBids = form.barangay_ids.length > 0
+        ? form.barangay_ids
+        : form.barangay_id
+        ? [form.barangay_id]
+        : [];
+
+      if (!form.category || selectedBids.length === 0) {
+        setEligiblePreview({
+          loading: false,
+          count: 0,
+          byBarangay: {},
+          beneficiaries: [],
+          error: null,
+        });
+        return;
+      }
+
+      setEligiblePreview(prev => ({ ...prev, loading: true, error: null }));
+
+      try {
+        let beneficiariesData = [];
+        let byBarangayData = {};
+        let totalCount = 0;
+
+        try {
+          const res = await programApi.getEligiblePreview({
+            category: form.category,
+            barangay_ids: selectedBids.join(','),
+            program_id: editingProgram ? editingProgram.id : undefined,
+          });
+          if (res.data?.success) {
+            beneficiariesData = res.data.data || [];
+            byBarangayData = res.data.by_barangay || {};
+            totalCount = res.data.total_eligible ?? beneficiariesData.length;
+          }
+        } catch (apiErr) {
+          // Graceful fallback to client-side filtering if backend hasn't reloaded
+          const allRes = await beneficiaryApi.list();
+          const allList = allRes.data?.data || [];
+          
+          const normalizeCategory = (cat) => cat?.toLowerCase().replace(/ies$/i, 'y').replace(/s$/i, '').trim();
+          const targetCat = normalizeCategory(form.category);
+          const bidNums = selectedBids.map(Number);
+
+          const filtered = allList.filter(b => {
+            if (b.status !== 'Approved') return false;
+            if (!bidNums.includes(Number(b.barangay_id))) return false;
+            if (!b.category) return false;
+
+            const bCat = normalizeCategory(b.category);
+            const isMatch = bCat === targetCat ||
+              bCat.includes(targetCat) ||
+              targetCat.includes(bCat) ||
+              (targetCat.includes('4ps') && bCat.includes('4ps')) ||
+              (targetCat.includes('senior') && bCat.includes('senior')) ||
+              ((targetCat.includes('pwd') || targetCat.includes('disabilit')) && (bCat.includes('pwd') || bCat.includes('disabilit')));
+
+            return isMatch;
+          });
+
+          beneficiariesData = filtered.map(b => {
+            const bgyName = b.Barangay?.barangay_name || `Barangay ${b.barangay_id}`;
+            return {
+              id: b.id,
+              first_name: b.first_name,
+              last_name: b.last_name,
+              middle_name: b.middle_name,
+              suffix: b.suffix,
+              beneficiary_id_code: b.beneficiary_id_code,
+              category: b.category,
+              barangay_id: b.barangay_id,
+              barangay_name: bgyName,
+              contact_number: b.contact_number || b.phone_number || '',
+              status: b.status,
+              is_enrolled: false,
+            };
+          });
+
+          byBarangayData = {};
+          beneficiariesData.forEach(b => {
+            byBarangayData[b.barangay_name] = (byBarangayData[b.barangay_name] || 0) + 1;
+          });
+          totalCount = beneficiariesData.length;
+        }
+
+        if (!isCancelled) {
+          setEligiblePreview({
+            loading: false,
+            count: totalCount,
+            byBarangay: byBarangayData,
+            beneficiaries: beneficiariesData,
+            error: null,
+          });
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          setEligiblePreview(prev => ({
+            ...prev,
+            loading: false,
+            error: getErrorMessage(err, 'Failed to preview eligible beneficiaries'),
+          }));
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (showModal) {
+        fetchPreview();
+      }
+    }, 250);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [form.category, form.barangay_ids, form.barangay_id, showModal, editingProgram]);
+
+  // Filter for preview modal (search & barangay filter)
+  const filteredEligiblePreview = (eligiblePreview.beneficiaries || []).filter(ben => {
+    if (eligibleFilterBarangay && ben.barangay_name !== eligibleFilterBarangay) {
+      return false;
+    }
+    if (eligibleSearch.trim()) {
+      const q = eligibleSearch.toLowerCase().trim();
+      const fullName = `${ben.first_name || ''} ${ben.middle_name || ''} ${ben.last_name || ''} ${ben.suffix || ''}`.toLowerCase();
+      const idCode = (ben.beneficiary_id_code || '').toLowerCase();
+      const bgy = (ben.barangay_name || '').toLowerCase();
+      return fullName.includes(q) || idCode.includes(q) || bgy.includes(q);
+    }
+    return true;
+  });
+
   const openCreateModal = () => {
     setEditingProgram(null);
     setForm({ ...EMPTY_FORM });
     setIsCustomProgramName(false);
     setFormError(null);
+    setEligiblePreview({
+      loading: false,
+      count: 0,
+      byBarangay: {},
+      beneficiaries: [],
+      error: null,
+    });
     setShowModal(true);
   };
 
@@ -452,6 +614,7 @@ export default function ProgramListPage() {
             start_date: form.start_date,
             end_date: form.end_date,
             status: form.status,
+            agency: isMswdoAdmin ? 'MSWDO' : 'DSWD',
           };
           const res = await programApi.create(payload);
           totalAutoEnrolled += res.data?.auto_enrolled_count || 0;
@@ -488,67 +651,121 @@ export default function ProgramListPage() {
     setSelectedProgram(program);
     setShowDetailsModal(true);
     setDetailsLoading(true);
+    setDetailsTab('enrolled');
+    setDetailsSearch('');
     
     try {
-      // Get enrolled beneficiaries
+      // 1. Get enrolled beneficiaries
       const enrolledRes = await programApi.getEnrolledBeneficiaries(program.id);
-      const enrolledBeneficiariesData = enrolledRes.data.data || [];
+      const enrolledBeneficiariesData = enrolledRes.data?.data || [];
       setEnrolledBeneficiaries(enrolledBeneficiariesData);
       
-      // Get all approved beneficiaries for the same barangay and category
-      const allBeneficiariesRes = await beneficiaryApi.list();
-      const allBeneficiaries = allBeneficiariesRes.data.data || [];
-      
-      // Get enrolled beneficiary IDs
-      const enrolledIds = enrolledBeneficiariesData.map(b => b.id);
-      
-      // Filter eligible beneficiaries (approved, same barangay, same category, not enrolled)
-      const normalizeCategory = (cat) => cat?.toLowerCase().replace(/ies$/i, 'y').replace(/s$/i, '');
-      const programCat = normalizeCategory(program.eligibility_category || program.category);
-      
-      const eligible = allBeneficiaries.filter(b => {
-        if (b.status !== 'Approved') return false;
-        if (b.barangay_id !== program.barangay_id) return false;
-        if (enrolledIds.includes(b.id)) return false;
-        
-        // Check category match
-        const beneficiaryCat = normalizeCategory(b.category);
-        const hasMatchingCategory = b.category && (
-          beneficiaryCat === programCat || 
-          beneficiaryCat?.includes(programCat) ||
-          b.category?.toLowerCase().includes((program.eligibility_category || program.category || '').toLowerCase())
-        );
-        
-        return hasMatchingCategory;
-      });
-      
-      setEligibleBeneficiaries(eligible);
+      const enrolledIds = new Set(enrolledBeneficiariesData.map(b => b.id));
 
-      // AUTO-ENROLL: If there are eligible beneficiaries but no enrolled beneficiaries, auto-enroll them
-      if (eligible.length > 0 && enrolledBeneficiariesData.length === 0) {
-        console.log(`Auto-enrolling ${eligible.length} eligible beneficiaries...`);
+      // 2. Fetch all approved beneficiaries for this barangay and category
+      let allMatchingBeneficiaries = [];
+      try {
+        const previewRes = await programApi.getEligiblePreview({
+          category: program.eligibility_category || program.category,
+          barangay_ids: String(program.barangay_id),
+          program_id: program.id,
+        });
+        if (previewRes.data?.success) {
+          allMatchingBeneficiaries = previewRes.data.data || [];
+        }
+      } catch (previewErr) {
+        // Fallback to client-side filtering via beneficiaryApi.list
+        const allBeneficiariesRes = await beneficiaryApi.list();
+        const allBeneficiaries = allBeneficiariesRes.data?.data || [];
+
+        const normalizeCategory = (cat) => cat?.toLowerCase().replace(/ies$/i, 'y').replace(/s$/i, '').trim();
+        const programCat = normalizeCategory(program.eligibility_category || program.category);
+
+        allMatchingBeneficiaries = allBeneficiaries.filter(b => {
+          if (b.status !== 'Approved') return false;
+          if (Number(b.barangay_id) !== Number(program.barangay_id)) return false;
+          if (!b.category) return false;
+
+          const beneficiaryCat = normalizeCategory(b.category);
+          return (
+            beneficiaryCat === programCat ||
+            beneficiaryCat.includes(programCat) ||
+            programCat.includes(beneficiaryCat) ||
+            (programCat.includes('4ps') && beneficiaryCat.includes('4ps')) ||
+            (programCat.includes('senior') && beneficiaryCat.includes('senior')) ||
+            ((programCat.includes('pwd') || programCat.includes('disabilit')) && (beneficiaryCat.includes('pwd') || beneficiaryCat.includes('disabilit')))
+          );
+        }).map(b => ({
+          ...b,
+          barangay_name: b.Barangay?.barangay_name || `Barangay ${b.barangay_id}`,
+          is_enrolled: enrolledIds.has(b.id),
+        }));
+      }
+
+      // Ensure is_enrolled reflects current enrolledIds
+      const taggedEligible = allMatchingBeneficiaries.map(b => ({
+        ...b,
+        is_enrolled: enrolledIds.has(b.id) || b.is_enrolled,
+      }));
+
+      setAllEligibleBeneficiaries(taggedEligible);
+
+      const pending = taggedEligible.filter(b => !b.is_enrolled);
+      setEligibleBeneficiaries(pending);
+
+      // AUTO-ENROLL: If there are eligible beneficiaries but 0 enrolled beneficiaries, auto-enroll them
+      if (pending.length > 0 && enrolledBeneficiariesData.length === 0) {
         try {
           const autoEnrollRes = await programApi.autoEnrollBeneficiaries(program.id);
-          console.log('Auto-enrollment result:', autoEnrollRes.data);
-          
-          // Reload enrolled beneficiaries after auto-enrollment
           const updatedEnrolledRes = await programApi.getEnrolledBeneficiaries(program.id);
-          setEnrolledBeneficiaries(updatedEnrolledRes.data.data || []);
+          const updatedEnrolledData = updatedEnrolledRes.data?.data || [];
+          setEnrolledBeneficiaries(updatedEnrolledData);
           
-          // Clear eligible list since they're now enrolled
-          setEligibleBeneficiaries([]);
-          
-          setSuccess(autoEnrollRes.data.message || `Successfully auto-enrolled ${autoEnrollRes.data.data.newly_enrolled} beneficiary(ies)`);
+          const newEnrolledIds = new Set(updatedEnrolledData.map(b => b.id));
+          const updatedTagged = taggedEligible.map(b => ({
+            ...b,
+            is_enrolled: newEnrolledIds.has(b.id),
+          }));
+          setAllEligibleBeneficiaries(updatedTagged);
+          setEligibleBeneficiaries(updatedTagged.filter(b => !b.is_enrolled));
+
+          setSuccess(autoEnrollRes.data?.message || `Successfully auto-enrolled ${autoEnrollRes.data?.data?.newly_enrolled || pending.length} beneficiary(ies)`);
           setTimeout(() => setSuccess(null), 5000);
         } catch (autoEnrollError) {
           console.error('Auto-enrollment failed:', autoEnrollError);
-          // Don't show error to user, just log it - enrollment can still be done manually
         }
       }
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to load beneficiaries'));
     } finally {
       setDetailsLoading(false);
+    }
+  };
+
+  const handleAutoEnrollPending = async () => {
+    if (!selectedProgram) return;
+    setAutoEnrolling(true);
+    try {
+      const res = await programApi.autoEnrollBeneficiaries(selectedProgram.id);
+      
+      const updatedEnrolledRes = await programApi.getEnrolledBeneficiaries(selectedProgram.id);
+      const updatedEnrolledData = updatedEnrolledRes.data?.data || [];
+      setEnrolledBeneficiaries(updatedEnrolledData);
+
+      const enrolledIds = new Set(updatedEnrolledData.map(b => b.id));
+      const updatedTagged = allEligibleBeneficiaries.map(b => ({
+        ...b,
+        is_enrolled: enrolledIds.has(b.id),
+      }));
+      setAllEligibleBeneficiaries(updatedTagged);
+      setEligibleBeneficiaries(updatedTagged.filter(b => !b.is_enrolled));
+
+      setSuccess(res.data?.message || 'Successfully enrolled pending beneficiaries!');
+      setTimeout(() => setSuccess(null), 5000);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to enroll pending beneficiaries'));
+    } finally {
+      setAutoEnrolling(false);
     }
   };
 
@@ -599,10 +816,9 @@ export default function ProgramListPage() {
       const response = await programApi.list(params);
       const rawArchived = response.data.data || [];
       const allowedArchived = isMswdoAdmin
-        ? rawArchived.filter(p => {
-            const cat = String(p.eligibility_category || p.category || '').toLowerCase();
-            return (cat.includes('senior') || cat.includes('pwd') || cat.includes('disabilit')) && !cat.includes('4ps') && !cat.includes('pantawid');
-          })
+        ? rawArchived.filter(p => p.agency === 'MSWDO')
+        : user?.role === 'admin'
+        ? rawArchived.filter(p => !p.agency || p.agency === 'DSWD')
         : rawArchived;
       setArchivedPrograms(allowedArchived);
     } catch (err) {
@@ -628,7 +844,35 @@ export default function ProgramListPage() {
   };
 
   const columns = [
-    { header: 'Program Name', accessor: 'name' },
+    { 
+      header: 'Program Name', 
+      accessor: 'name',
+      cell: (row) => {
+        const info = getProgramAssistanceClassification(row.name, row.benefit_type);
+        const isNonCash = info?.isNonCash;
+        return (
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-slate-900">{row.name}</span>
+              {isNonCash ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                  {info?.badge || '📦 Non-Cash / In-Kind'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  {info?.badge || '💵 Cash Assistance'}
+                </span>
+              )}
+            </div>
+            {info && (
+              <p className={`text-xs mt-0.5 font-medium ${isNonCash ? 'text-purple-700' : 'text-emerald-700'}`}>
+                Uri ng Tulong: {info.assistanceType}
+              </p>
+            )}
+          </div>
+        );
+      }
+    },
     { header: 'Barangay', accessor: 'Barangay', cell: (row) => (
       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
         <MapPin className="w-3 h-3" />
@@ -756,8 +1000,8 @@ export default function ProgramListPage() {
         <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-4 flex items-start gap-3">
           <span className="text-xl">🏥</span>
           <div>
-            <p className="text-sm font-bold text-purple-900">MSWDO Program Scope: Senior Citizens & PWD Only</p>
-            <p className="text-xs text-purple-700">MSWDO administers programs for Senior Citizens (Social Pension) and Persons with Disabilities (PWD). 4Ps programs are managed exclusively by DSWD and are not accessible to MSWDO.</p>
+            <p className="text-sm font-bold text-purple-900">MSWDO Municipal Programs Management</p>
+            <p className="text-xs text-purple-700">MSWDO administers local municipal programs for 4Ps Household Beneficiaries, Senior Citizens, and Persons with Disabilities (PWD). Programs created under MSWDO are independent and managed exclusively by MSWDO.</p>
           </div>
         </div>
       )}
@@ -954,7 +1198,7 @@ export default function ProgramListPage() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
                   required
                 >
-                  <option value="">{isMswdoAdmin ? 'Select Category (Senior Citizens, PWD)' : 'Select Category'}</option>
+                  <option value="">Select Category</option>
                   {displayCategories.map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
@@ -1008,6 +1252,59 @@ export default function ProgramListPage() {
                     Please select a category first
                   </div>
                 )}
+                {(() => {
+                  if (!form.name) return null;
+                  const info = getProgramAssistanceClassification(form.name);
+                  if (!info) return null;
+
+                  if (info.isNonCash) {
+                    return (
+                      <div className="mt-2.5 p-3 rounded-lg bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200 text-xs text-purple-900 shadow-xs">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-1.5 font-bold text-purple-900">
+                            <span>🎁</span>
+                            <span>In-Kind / Non-Cash Program ({info.badge})</span>
+                          </div>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300">
+                            🚫 Walang Cash na Kasama
+                          </span>
+                        </div>
+                        <p className="text-purple-800">
+                          <strong>Uri ng Tulong:</strong> {info.assistanceType}
+                        </p>
+                        <p className="text-purple-700 text-[11px] mt-1">
+                          <strong>Paraan ng Pamamahagi:</strong> {info.disbursementMethod}
+                        </p>
+                        <p className="text-purple-600 text-[10px] mt-0.5">
+                          Target: {info.target}
+                        </p>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="mt-2.5 p-3 rounded-lg bg-gradient-to-r from-emerald-50 via-teal-50 to-green-50 border border-emerald-200 text-xs text-emerald-900 shadow-xs">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-1.5 font-bold text-emerald-900">
+                            <span>💵</span>
+                            <span>Cash Assistance Program ({info.badge})</span>
+                          </div>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            💰 May Involve na Pera / Cash
+                          </span>
+                        </div>
+                        <p className="text-emerald-800">
+                          <strong>Uri ng Tulong:</strong> {info.assistanceType}
+                        </p>
+                        <p className="text-emerald-700 text-[11px] mt-1">
+                          <strong>Paraan ng Payout:</strong> {info.disbursementMethod}
+                        </p>
+                        <p className="text-emerald-600 text-[10px] mt-0.5">
+                          Paalala: Kailangang mag-set ng halaga (₱ amount) sa bawat distribution event para sa ayuda.
+                        </p>
+                      </div>
+                    );
+                  }
+                })()}
               </div>
 
               <div>
@@ -1098,6 +1395,76 @@ export default function ProgramListPage() {
                     ? 'Update the barangay this program is assigned to.'
                     : 'A separate program record will be created for each selected barangay.'}
                 </p>
+
+                {/* Live Eligible Beneficiaries Preview Card */}
+                {form.category && (form.barangay_ids.length > 0 || form.barangay_id) && (
+                  <div className="mt-3 p-3.5 rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 via-indigo-50/60 to-blue-50 text-slate-800 shadow-xs transition-all animate-fadeIn">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="p-2 bg-purple-600 text-white rounded-lg mt-0.5 shadow-xs shrink-0">
+                          <Users className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-700">
+                              Kwalipikadong Benepisyaryo (Eligibility Preview)
+                            </span>
+                            {eligiblePreview.loading && (
+                              <span className="inline-block w-3 h-3 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></span>
+                            )}
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900 mt-0.5">
+                            {eligiblePreview.loading ? (
+                              <span className="text-slate-500 font-normal text-xs">Sinusuri ang mga kwalipikadong benepisyaryo...</span>
+                            ) : eligiblePreview.count > 0 ? (
+                              <>
+                                May <span className="text-purple-700 font-bold text-base">{eligiblePreview.count}</span> kwalipikadong benepisyaryo para sa {form.category}
+                              </>
+                            ) : (
+                              <span className="text-slate-600 text-xs font-normal">
+                                Walang aprubadong benepisyaryo sa kategoryang ito sa napiling barangay.
+                              </span>
+                            )}
+                          </p>
+
+                          {/* Barangay breakdown tags */}
+                          {!eligiblePreview.loading && Object.keys(eligiblePreview.byBarangay).length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                              {Object.entries(eligiblePreview.byBarangay).map(([bName, bCount]) => (
+                                <span
+                                  key={bName}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-purple-200 text-[11px] font-medium text-purple-900 shadow-2xs"
+                                >
+                                  <MapPin className="w-2.5 h-2.5 text-purple-600" />
+                                  <span>{bName}:</span>
+                                  <strong className="text-purple-700">{bCount}</strong>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <p className="text-[11px] text-slate-500 mt-1.5">
+                            ✓ {editingProgram ? 'Awtomatikong naka-link ang mga kwalipikadong benepisyaryo.' : 'Awtomatikong mai-eenroll ang mga kwalipikadong benepisyaryo pagka-create ng program record.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowEligiblePreviewModal(true)}
+                        disabled={eligiblePreview.loading || eligiblePreview.count === 0}
+                        className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap self-start sm:self-center ${
+                          eligiblePreview.count > 0
+                            ? 'bg-purple-600 hover:bg-purple-700 text-white cursor-pointer active:scale-95'
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Tingnan ang Listahan ({eligiblePreview.count})</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1145,6 +1512,156 @@ export default function ProgramListPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Eligible Beneficiaries Preview Modal (from Create/Edit form) */}
+      {showEligiblePreviewModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-xs p-3 sm:p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-purple-100">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 bg-gradient-to-r from-purple-700 via-purple-800 to-indigo-900 text-white">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/15 rounded-xl backdrop-blur-xs">
+                  <Users className="w-6 h-6 text-yellow-300" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">Mga Kwalipikadong Benepisyaryo (Eligible Beneficiaries)</h3>
+                  <p className="text-xs text-purple-200">
+                    Kategorya: <strong className="text-white">{form.category || 'Lahat'}</strong> • Napiling Barangay: <strong className="text-white">{form.barangay_ids.length > 0 ? `${form.barangay_ids.length} Barangay` : '1 Barangay'}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEligiblePreviewModal(false);
+                  setEligibleSearch('');
+                  setEligibleFilterBarangay('');
+                }}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Filter & Search Toolbar */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Maghanap ayon sa pangalan o ID..."
+                  value={eligibleSearch}
+                  onChange={(e) => setEligibleSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-300 rounded-lg outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                {form.barangay_ids.length > 1 && (
+                  <select
+                    value={eligibleFilterBarangay}
+                    onChange={(e) => setEligibleFilterBarangay(e.target.value)}
+                    className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg outline-none focus:border-purple-500"
+                  >
+                    <option value="">Lahat ng Napiling Barangay</option>
+                    {Object.keys(eligiblePreview.byBarangay).map((bName) => (
+                      <option key={bName} value={bName}>{bName}</option>
+                    ))}
+                  </select>
+                )}
+                <span className="text-xs font-semibold px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full whitespace-nowrap">
+                  Total: {filteredEligiblePreview.length} benepisyaryo
+                </span>
+              </div>
+            </div>
+
+            {/* Table Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {filteredEligiblePreview.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 rounded-xl border border-slate-200">
+                  <Users className="w-12 h-12 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-slate-700">Walang natagpuang kwalipikadong benepisyaryo</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {eligibleSearch ? 'Subukan ang ibang keyword sa paghahanap.' : 'Walang aprubadong benepisyaryo na tumutugma sa pamantayan sa napiling barangay.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-purple-200 text-purple-900 uppercase font-bold sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left">#</th>
+                        <th className="px-3 py-2.5 text-left">Buong Pangalan</th>
+                        <th className="px-3 py-2.5 text-left">Beneficiary ID</th>
+                        <th className="px-3 py-2.5 text-left">Kategorya</th>
+                        <th className="px-3 py-2.5 text-left">Barangay</th>
+                        <th className="px-3 py-2.5 text-left">Contact No.</th>
+                        <th className="px-3 py-2.5 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredEligiblePreview.map((ben, idx) => (
+                        <tr key={ben.id} className="hover:bg-purple-50/50 transition">
+                          <td className="px-3 py-2 text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="px-3 py-2">
+                            <span className="font-bold text-slate-900">
+                              {ben.first_name} {ben.middle_name ? `${ben.middle_name} ` : ''}{ben.last_name} {ben.suffix || ''}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 font-mono text-purple-700 font-medium">
+                            {ben.beneficiary_id_code || '—'}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                              {ben.category}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center gap-1 text-slate-700">
+                              <MapPin className="w-3 h-3 text-purple-600" />
+                              {ben.barangay_name}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-600 font-mono">
+                            {ben.contact_number || ben.phone_number || '—'}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Eligible (Approved)
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-slate-600">
+                <span className="text-base">ℹ️</span>
+                <span>
+                  Awtomatikong mai-eenroll ang mga kwalipikadong benepisyaryong ito kapag na-click ang <strong>Create Program</strong>.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEligiblePreviewModal(false);
+                  setEligibleSearch('');
+                  setEligibleFilterBarangay('');
+                }}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg shadow-sm transition"
+              >
+                Bumalik sa Form (Done)
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1210,6 +1727,36 @@ export default function ProgramListPage() {
                   </div>
                 )}
 
+                {(() => {
+                  const info = getProgramAssistanceClassification(selectedProgram.name, selectedProgram.benefit_type);
+                  if (!info) return null;
+                  return (
+                    <div className={`mt-4 p-3 rounded-lg border text-xs ${
+                      info.isNonCash 
+                        ? 'bg-purple-50 border-purple-200 text-purple-900' 
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    }`}>
+                      <div className="flex items-center justify-between gap-2 font-bold mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <span>{info.isNonCash ? '🎁' : '💵'}</span>
+                          <span>{info.classification} ({info.badge})</span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          info.isNonCash ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {info.isNonCash ? '🚫 Walang Cash na Kasama' : '💰 May Involve na Pera / Cash'}
+                        </span>
+                      </div>
+                      <p className="font-medium mt-1">
+                        <strong>Uri ng Tulong:</strong> {info.assistanceType}
+                      </p>
+                      <p className="mt-1 opacity-90">
+                        <strong>Paraan ng Pamamahagi:</strong> {info.disbursementMethod}
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 <div className="mt-4 pt-4 border-t border-slate-300 grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-slate-500 mb-1">
@@ -1228,129 +1775,191 @@ export default function ProgramListPage() {
                 </div>
               </div>
 
-              {/* Enrolled Beneficiaries Section */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-slate-900">
-                    <Users className="w-5 h-5 inline mr-2" />
-                    Enrolled Beneficiaries ({enrolledBeneficiaries.length})
-                  </h3>
+              {/* Beneficiaries Management Section with Tabs */}
+              <div className="space-y-4">
+                {/* Header & Tabs */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setDetailsTab('enrolled')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        detailsTab === 'enrolled'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Enrolled ({enrolledBeneficiaries.length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDetailsTab('all_eligible')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        detailsTab === 'all_eligible'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>Lahat ng Eligible sa Barangay ({allEligibleBeneficiaries.length})</span>
+                    </button>
+
+                    {eligibleBeneficiaries.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setDetailsTab('pending')}
+                        className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          detailsTab === 'pending'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                        }`}
+                      >
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>Pending ({eligibleBeneficiaries.length})</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Search in details */}
+                  <div className="relative w-full sm:w-64">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Maghanap ng pangalan o ID..."
+                      value={detailsSearch}
+                      onChange={(e) => setDetailsSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg outline-none focus:bg-white focus:border-purple-500"
+                    />
+                  </div>
                 </div>
 
-                {detailsLoading ? (
-                  <div className="text-center py-8">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-                    <p className="text-sm text-slate-600 mt-2">Loading beneficiaries...</p>
-                  </div>
-                ) : enrolledBeneficiaries.length === 0 ? (
-                  <div className="text-center py-6 bg-slate-50 rounded-lg border border-slate-200">
-                    <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm text-slate-600">No beneficiaries enrolled yet</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto border border-slate-200 rounded-lg mb-6">
-                    <table className="w-full text-sm">
-                      <thead className="bg-green-50 border-b border-green-200">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">Name</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">ID</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">Category</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">Enrolled Date</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-green-700 uppercase">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {enrolledBeneficiaries.map((beneficiary) => (
-                          <tr key={beneficiary.id} className="hover:bg-green-50">
-                            <td className="px-4 py-3">
-                              <p className="font-semibold text-slate-900">
-                                {beneficiary.first_name} {beneficiary.last_name}
-                              </p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="text-sm font-mono">{beneficiary.beneficiary_id_code}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="text-sm">{beneficiary.category}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="text-sm">{new Date(beneficiary.enrollment_date).toLocaleDateString()}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
-                                {beneficiary.enrollment_status || 'active'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                {/* Pending Alert Banner */}
+                {eligibleBeneficiaries.length > 0 && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 text-amber-900">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        May <strong>{eligibleBeneficiaries.length}</strong> kwalipikadong benepisyaryo sa barangay na hindi pa naka-enroll sa programang ito.
+                      </span>
+                    </div>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={handleAutoEnrollPending}
+                        disabled={autoEnrolling}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition active:scale-95 whitespace-nowrap self-start sm:self-auto flex items-center gap-1 shadow-2xs"
+                      >
+                        {autoEnrolling ? 'Enrolling...' : `⚡ Auto-Enroll All (${eligibleBeneficiaries.length})`}
+                      </button>
+                    )}
                   </div>
                 )}
-              </div>
 
-              {/* Eligible Beneficiaries for Enrollment */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-slate-900">
-                    <UserPlus className="w-5 h-5 inline mr-2" />
-                    Eligible Beneficiaries ({eligibleBeneficiaries.length})
-                  </h3>
-                </div>
-
+                {/* Table Data */}
                 {detailsLoading ? (
-                  <div className="text-center py-8">
+                  <div className="text-center py-10">
                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-                    <p className="text-sm text-slate-600 mt-2">Loading eligible beneficiaries...</p>
+                    <p className="text-xs text-slate-600 mt-2">Loading beneficiaries...</p>
                   </div>
-                ) : eligibleBeneficiaries.length === 0 ? (
-                  <div className="text-center py-6 bg-slate-50 rounded-lg border border-slate-200">
-                    <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm text-slate-600">No eligible beneficiaries available</p>
-                    <p className="text-xs text-slate-500 mt-1">All matching beneficiaries are already enrolled in this program</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-96">
-                    <table className="w-full text-sm">
-                      <thead className="bg-purple-50 border-b border-purple-200 sticky top-0">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">Name</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">ID</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">Category</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">Barangay</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-purple-700 uppercase">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {eligibleBeneficiaries.map((beneficiary) => (
-                          <tr key={beneficiary.id} className="hover:bg-purple-50 transition">
-                            <td className="px-4 py-3">
-                              <p className="font-semibold text-slate-900">
-                                {beneficiary.first_name} {beneficiary.last_name}
-                              </p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="text-sm font-mono text-slate-600">{beneficiary.beneficiary_id_code}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
-                                {beneficiary.category}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="text-sm text-slate-600">{beneficiary.Barangay?.barangay_name || '—'}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
-                                {beneficiary.status}
-                              </span>
-                            </td>
+                ) : (() => {
+                  let listToDisplay = [];
+                  if (detailsTab === 'enrolled') {
+                    listToDisplay = enrolledBeneficiaries;
+                  } else if (detailsTab === 'pending') {
+                    listToDisplay = eligibleBeneficiaries;
+                  } else {
+                    listToDisplay = allEligibleBeneficiaries;
+                  }
+
+                  if (detailsSearch.trim()) {
+                    const q = detailsSearch.toLowerCase().trim();
+                    listToDisplay = listToDisplay.filter(b => {
+                      const name = `${b.first_name || ''} ${b.last_name || ''}`.toLowerCase();
+                      const idCode = (b.beneficiary_id_code || '').toLowerCase();
+                      return name.includes(q) || idCode.includes(q);
+                    });
+                  }
+
+                  if (listToDisplay.length === 0) {
+                    return (
+                      <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-200">
+                        <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                        <p className="text-sm font-semibold text-slate-700">
+                          {detailsSearch ? 'Walang tumutugma sa iyong paghahanap' : 'Walang benepisyaryo sa listahang ito'}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {detailsTab === 'enrolled'
+                            ? 'Wala pang naka-enroll sa programang ito.'
+                            : detailsTab === 'pending'
+                            ? 'Lahat ng kwalipikadong benepisyaryo ay naka-enroll na.'
+                            : 'Walang aprubadong benepisyaryo sa kategoryang ito sa barangay.'}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl max-h-96 shadow-2xs">
+                      <table className="w-full text-xs">
+                        <thead className={`sticky top-0 border-b font-bold uppercase ${
+                          detailsTab === 'enrolled' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
+                          detailsTab === 'pending' ? 'bg-amber-50 border-amber-200 text-amber-900' :
+                          'bg-purple-50 border-purple-200 text-purple-900'
+                        }`}>
+                          <tr>
+                            <th className="px-3.5 py-2.5 text-left">#</th>
+                            <th className="px-3.5 py-2.5 text-left">Pangalan</th>
+                            <th className="px-3.5 py-2.5 text-left">Beneficiary ID</th>
+                            <th className="px-3.5 py-2.5 text-left">Kategorya</th>
+                            <th className="px-3.5 py-2.5 text-left">Barangay</th>
+                            <th className="px-3.5 py-2.5 text-center">Enrollment Status</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {listToDisplay.map((b, idx) => {
+                            const isEnrolled = b.enrollment_date || b.is_enrolled;
+                            return (
+                              <tr key={b.id || idx} className="hover:bg-slate-50 transition">
+                                <td className="px-3.5 py-2 text-slate-400 font-mono">{idx + 1}</td>
+                                <td className="px-3.5 py-2">
+                                  <p className="font-bold text-slate-900">
+                                    {b.first_name} {b.last_name} {b.suffix || ''}
+                                  </p>
+                                </td>
+                                <td className="px-3.5 py-2 font-mono text-purple-700 font-medium">
+                                  {b.beneficiary_id_code || '—'}
+                                </td>
+                                <td className="px-3.5 py-2">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                    {b.category || selectedProgram.eligibility_category}
+                                  </span>
+                                </td>
+                                <td className="px-3.5 py-2 text-slate-600">
+                                  {b.Barangay?.barangay_name || b.barangay_name || selectedProgram.Barangay?.barangay_name || '—'}
+                                </td>
+                                <td className="px-3.5 py-2 text-center">
+                                  {isEnrolled ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      Enrolled
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                                      <AlertCircle className="w-3 h-3 text-amber-600" />
+                                      Pending (Eligible)
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -1362,6 +1971,8 @@ export default function ProgramListPage() {
                   setSelectedProgram(null);
                   setEnrolledBeneficiaries([]);
                   setEligibleBeneficiaries([]);
+                  setAllEligibleBeneficiaries([]);
+                  setDetailsSearch('');
                 }}
                 className="px-6 py-2 bg-slate-700 text-white font-semibold rounded-lg hover:bg-slate-800 transition"
               >

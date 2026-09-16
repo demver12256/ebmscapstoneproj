@@ -1,8 +1,49 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users, ArrowLeft, Calendar, MapPin } from 'lucide-react';
+import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users, ArrowLeft, Calendar, MapPin, Ban, XCircle } from 'lucide-react';
 import { announcementApi } from '../services/api';
 import * as XLSX from 'xlsx';
+
+// Helper to determine if announcement is active for attendance recording
+const isAnnouncementActiveForAttendance = (ann) => {
+  if (!ann) return false;
+  if (ann.status === 'completed' || ann.status === 'archived') return false;
+  if (ann.status !== 'published') return false;
+
+  const now = new Date();
+  if (ann.event_date) {
+    const timeToCheck = ann.end_time || ann.event_time || '23:59';
+    let hours = 23;
+    let minutes = 59;
+    if (timeToCheck) {
+      const match = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const ampm = match[3] ? match[3].toUpperCase() : null;
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+    const [y, m, d] = String(ann.event_date).split('-').map(Number);
+    if (y && m && d) {
+      const eventEndTime = new Date(y, m - 1, d, hours, minutes, 59);
+      if (now > eventEndTime) return false;
+    }
+  }
+
+  if (ann.expiration_date) {
+    const [y, m, d] = String(ann.expiration_date).split('-').map(Number);
+    if (y && m && d) {
+      const expirationTime = new Date(y, m - 1, d, 23, 59, 59);
+      if (now > expirationTime) return false;
+    }
+  }
+
+  return true;
+};
 
 export default function RfidAnnouncementScannerPage() {
   const [searchParams] = useSearchParams();
@@ -20,21 +61,17 @@ export default function RfidAnnouncementScannerPage() {
   const [stats, setStats] = useState({ total_expected: 0, total_present: 0, total_absent: 0, percentage: 0 });
   const rfidInputRef = useRef(null);
 
-  // Load published announcements
+  // Load announcements
   useEffect(() => {
     const fetchAnnouncements = async () => {
       try {
         const res = await announcementApi.list();
         const allAnn = res.data?.data || [];
-        // Only published announcements
-        const published = allAnn.filter(
-          (a) => a.status === 'published'
-        );
-        setAnnouncements(published);
+        setAnnouncements(allAnn);
 
         // Auto-select if preselected
         if (preselectedId) {
-          const found = published.find((a) => a.id === Number(preselectedId));
+          const found = allAnn.find((a) => a.id === Number(preselectedId));
           if (found) {
             setSelectedAnnouncement(String(found.id));
             setEventName(found.title);
@@ -186,11 +223,21 @@ export default function RfidAnnouncementScannerPage() {
     }
   };
 
+  const activeAnnouncements = announcements.filter(isAnnouncementActiveForAttendance);
+  const endedAnnouncements = announcements.filter((a) => !isAnnouncementActiveForAttendance(a));
+  const selectedAnn = announcements.find((a) => a.id === Number(selectedAnnouncement));
+  const isSelectedEnded = selectedAnn ? !isAnnouncementActiveForAttendance(selectedAnn) : false;
+
   const handleScan = async (e) => {
     e.preventDefault();
 
     if (!selectedAnnouncement) {
       setError('Please select an announcement event first');
+      return;
+    }
+
+    if (isSelectedEnded) {
+      setError('BAWAL NA ANG ATTENDANCE: Ang anunsyo o aktibidad na ito ay tapos na. Hindi na maaaring magtala ng attendance ang staff.');
       return;
     }
 
@@ -251,8 +298,6 @@ export default function RfidAnnouncementScannerPage() {
     }
   };
 
-  const selectedAnn = announcements.find((a) => a.id === Number(selectedAnnouncement));
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -265,6 +310,20 @@ export default function RfidAnnouncementScannerPage() {
           <p className="text-sm text-slate-600 mt-1">Tap RFID cards to record attendance for events and programs.</p>
         </div>
       </div>
+
+      {/* Attendance Closed Notice */}
+      {isSelectedEnded && (
+        <div className="rounded-xl bg-red-50 border-2 border-red-300 p-4 flex items-start gap-3">
+          <Ban className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold text-red-900 text-base">⛔ ISINARA NA ANG ATTENDANCE (Tapos na ang Aktibidad)</p>
+            <p className="text-sm text-red-700 mt-1">
+              Ang anunsyo o aktibidad na ito ay nagwakas na noong <strong>{selectedAnn?.event_date || 'nakaraang petsa'}</strong>.
+              Ayon sa patakaran ng sistema, <strong>hindi na pinahihintulutan ang staff na magtala ng attendance</strong> matapos ang opisyal na pagtatapos ng anunsyo.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Event Setup */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
@@ -291,12 +350,25 @@ export default function RfidAnnouncementScannerPage() {
               onChange={(e) => setSelectedAnnouncement(e.target.value)}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
-              <option value="">-- Choose an announcement event --</option>
-              {announcements.map((ann) => (
-                <option key={ann.id} value={ann.id}>
-                  {ann.title} - {ann.priority} ({ann.event_date || 'No date'})
-                </option>
-              ))}
+              <option value="">-- Pumili ng Anunsyo / Aktibidad --</option>
+              {activeAnnouncements.length > 0 && (
+                <optgroup label="🟢 Aktibong mga Anunsyo (Bukás para sa Attendance)">
+                  {activeAnnouncements.map((ann) => (
+                    <option key={ann.id} value={ann.id}>
+                      {ann.title} - {ann.priority} ({ann.event_date || 'Walang petsa'})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {endedAnnouncements.length > 0 && (
+                <optgroup label="⛔ Mga Tapos Nang Anunsyo (Sarado na ang Attendance)">
+                  {endedAnnouncements.map((ann) => (
+                    <option key={ann.id} value={ann.id} disabled>
+                      {ann.title} ({ann.event_date || 'Tapos na'}) [TAPOS NA / SARADO]
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
@@ -317,15 +389,19 @@ export default function RfidAnnouncementScannerPage() {
 
         {/* Event Details (when selected) */}
         {selectedAnn && (
-          <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 space-y-2">
+          <div className={`rounded-lg p-4 space-y-2 border ${isSelectedEnded ? 'bg-red-50 border-red-200 text-red-900' : 'bg-blue-50 border-blue-200'}`}>
             <div className="flex items-start gap-3">
-              <Users className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-blue-700">
-                <p className="font-medium">Target Beneficiaries: {stats.total_expected}</p>
-                <p>Only enrolled beneficiaries matching the selected programs and barangays can be scanned for this event.</p>
+              <Users className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isSelectedEnded ? 'text-red-600' : 'text-blue-600'}`} />
+              <div className="text-sm">
+                <p className={`font-medium ${isSelectedEnded ? 'text-red-800' : 'text-blue-700'}`}>Target Beneficiaries: {stats.total_expected}</p>
+                <p className={isSelectedEnded ? 'text-red-600' : 'text-blue-600'}>
+                  {isSelectedEnded
+                    ? 'SARADO: Hindi na maaaring magtala ng attendance dahil tapos na ang aktibidad.'
+                    : 'Only enrolled beneficiaries matching the selected programs and barangays can be scanned for this event.'}
+                </p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-4 text-xs text-blue-800 font-semibold pt-1">
+            <div className={`flex flex-wrap items-center gap-4 text-xs font-semibold pt-1 ${isSelectedEnded ? 'text-red-700' : 'text-blue-800'}`}>
               {selectedAnn.event_date && (
                 <span className="flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5" />
@@ -362,13 +438,19 @@ export default function RfidAnnouncementScannerPage() {
       </div>
 
       {/* RFID Scanner Input */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200 p-6 space-y-4">
+      <div className={`rounded-lg border-2 p-6 space-y-4 ${
+        isSelectedEnded ? 'bg-red-50/40 border-red-200' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
+      }`}>
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">RFID Scanner Ready</h2>
-            <p className="text-sm text-slate-600 mt-1">Tap cards here to record attendance</p>
+            <h2 className="text-lg font-semibold text-slate-900">
+              {isSelectedEnded ? 'RFID Scanner Closed' : 'RFID Scanner Ready'}
+            </h2>
+            <p className="text-sm text-slate-600 mt-1">
+              {isSelectedEnded ? 'Hindi na tumatanggap ng attendance para sa aktibidad na ito' : 'Tap cards here to record attendance'}
+            </p>
           </div>
-          <div className={`w-4 h-4 rounded-full animate-pulse ${selectedAnnouncement ? 'bg-green-500' : 'bg-red-500'}`} />
+          <div className={`w-4 h-4 rounded-full ${isSelectedEnded ? 'bg-red-500' : selectedAnnouncement ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
         </div>
 
         <form onSubmit={handleScan} className="space-y-3">
@@ -377,10 +459,12 @@ export default function RfidAnnouncementScannerPage() {
             type="text"
             value={rfidInput}
             onChange={(e) => setRfidInput(e.target.value)}
-            placeholder="Tap RFID card here..."
-            disabled={!selectedAnnouncement}
+            placeholder={isSelectedEnded ? "Sarado na ang attendance para sa tapos nang aktibidad na ito..." : "Tap RFID card here..."}
+            disabled={!selectedAnnouncement || isSelectedEnded}
             className={`w-full px-6 py-4 border-2 rounded-lg text-center text-lg font-mono focus:outline-none transition-all ${
-              selectedAnnouncement
+              isSelectedEnded
+                ? 'border-red-300 bg-red-50 text-red-500 cursor-not-allowed'
+                : selectedAnnouncement
                 ? 'border-blue-400 bg-white focus:ring-2 focus:ring-blue-500'
                 : 'border-slate-300 bg-slate-100 cursor-not-allowed text-slate-500'
             }`}
@@ -403,10 +487,14 @@ export default function RfidAnnouncementScannerPage() {
 
           <button
             type="submit"
-            disabled={loading || !selectedAnnouncement}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+            disabled={loading || !selectedAnnouncement || isSelectedEnded}
+            className={`w-full py-3 font-semibold rounded-lg transition-colors text-white ${
+              isSelectedEnded
+                ? 'bg-slate-400 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+            }`}
           >
-            {loading ? 'Recording...' : 'Tap card or press Enter'}
+            {loading ? 'Recording...' : isSelectedEnded ? '⛔ Sarado na ang Attendance (Tapos na)' : 'Tap card or press Enter'}
           </button>
         </form>
       </div>

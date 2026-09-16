@@ -278,7 +278,7 @@ export default function MessagesPage() {
     return name.includes(term) || role.includes(term) || brgy.includes(term) || lastMsg.includes(term);
   });
 
-  const canMessage = user && ['admin', 'staff', 'barangay', 'beneficiary'].includes(user.role);
+  const canMessage = user && ['admin', 'mswdo_admin', 'staff', 'barangay', 'beneficiary'].includes(user.role);
 
   if (!canMessage) {
     return (

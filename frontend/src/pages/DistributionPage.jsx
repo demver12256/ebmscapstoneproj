@@ -2,14 +2,17 @@ import { useEffect, useState, useCallback } from 'react';
 import { 
   Package, Plus, Calendar, MapPin, Users, DollarSign, 
   Eye, Edit, Trash2, CheckCircle, XCircle, Clock,
-  Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw, Archive, Download, AlertTriangle
+  Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw, Archive, Download, AlertTriangle,
+  Zap, CreditCard, Smartphone, Building2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { distributionApi, programApi, barangayApi, userApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { isNonCashProgram, getNonCashDetails } from '../utils/nonCashPrograms';
 
 export default function DistributionPage() {
   const { user } = useAuth();
+  const isMswdoAdmin = user?.role === 'mswdo_admin';
   const [events, setEvents] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -40,7 +43,11 @@ export default function DistributionPage() {
     amount_per_beneficiary: '',
     assigned_staff_id: '',
     notes: '',
-    target_category: '' // 4Ps, Senior Citizen, PWD, etc.
+    target_category: '', // 4Ps, Senior Citizen, PWD, etc.
+    item_name: '',
+    item_quantity: '1',
+    item_unit: 'package',
+    benefit_type: 'Cash'
   });
   
   // Reference data
@@ -56,6 +63,7 @@ export default function DistributionPage() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [eligibleBeneficiaries, setEligibleBeneficiaries] = useState([]);
   const [eligibleMeta, setEligibleMeta] = useState({ total: 0, qualified_count: 0, program_name: '' });
+  const [disbursingDigital, setDisbursingDigital] = useState(false);
 
   // Status badge configuration
   const STATUS_CONFIG = {
@@ -74,7 +82,13 @@ export default function DistributionPage() {
       if (barangayFilter !== 'all') params.barangay_id = barangayFilter;
       
       const res = await distributionApi.listEvents(params);
-      setEvents(res.data.data || []);
+      const rawEvents = res.data.data || [];
+      const scopedEvents = isMswdoAdmin
+        ? rawEvents.filter(e => e.agency === 'MSWDO' || e.Program?.agency === 'MSWDO')
+        : user?.role === 'admin'
+        ? rawEvents.filter(e => !e.agency || e.agency === 'DSWD' || e.Program?.agency === 'DSWD')
+        : rawEvents;
+      setEvents(scopedEvents);
       setLastUpdated(new Date());
       setError(null);
     } catch (err) {
@@ -82,18 +96,21 @@ export default function DistributionPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, barangayFilter]);
+  }, [statusFilter, barangayFilter, isMswdoAdmin, user?.role]);
 
   const loadDashboardStats = useCallback(async () => {
     try {
-      const res = await distributionApi.getDashboardStats();
+      const params = {};
+      if (barangayFilter !== 'all') params.barangay_id = barangayFilter;
+      const res = await distributionApi.getDashboardStats(params);
       setStats(res.data.data);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error('Failed to load stats:', err);
       console.error('Error response:', err.response?.data);
       // Don't show error to user for stats - it's not critical
     }
-  }, []);
+  }, [barangayFilter]);
 
   const loadReferenceData = useCallback(async () => {
     try {
@@ -102,7 +119,13 @@ export default function DistributionPage() {
         barangayApi.list(),
         userApi.list()
       ]);
-      setPrograms(programsRes.data.data || []);
+      const rawProgs = programsRes.data.data || [];
+      const scopedProgs = isMswdoAdmin
+        ? rawProgs.filter(p => p.agency === 'MSWDO')
+        : user?.role === 'admin'
+        ? rawProgs.filter(p => !p.agency || p.agency === 'DSWD')
+        : rawProgs;
+      setPrograms(scopedProgs);
       setBarangays(barangaysRes.data.data || []);
       // Filter users to only staff/barangay roles
       const staffUsers = (usersRes.data.data || []).filter(
@@ -112,7 +135,7 @@ export default function DistributionPage() {
     } catch (err) {
       console.error('Failed to load reference data:', err);
     }
-  }, []);
+  }, [isMswdoAdmin, user?.role]);
 
   // Load reference data on mount
   useEffect(() => {
@@ -125,18 +148,17 @@ export default function DistributionPage() {
     loadDashboardStats();
   }, [loadEvents, loadDashboardStats]);
 
-  // Auto-refresh every 5 seconds if there are ongoing events
+  // Real-time polling: auto-refresh every 5s if ongoing/scheduled, or every 10s otherwise
   useEffect(() => {
     const hasOngoingEvents = events.some(e => e.status === 'ongoing' || e.status === 'scheduled');
+    const pollInterval = hasOngoingEvents ? 5000 : 10000;
     
-    if (hasOngoingEvents) {
-      const interval = setInterval(() => {
-        loadEvents();
-        loadDashboardStats();
-      }, 5000); // Refresh every 5 seconds
-      
-      return () => clearInterval(interval);
-    }
+    const interval = setInterval(() => {
+      loadEvents();
+      loadDashboardStats();
+    }, pollInterval);
+    
+    return () => clearInterval(interval);
   }, [events, loadEvents, loadDashboardStats]);
 
   // Handle program selection — auto-fill barangay & category from program data
@@ -156,11 +178,19 @@ export default function DistributionPage() {
     }
 
     // Auto-fill barangay and category from program
+    const isNonCash = isNonCashProgram(selectedProgram.name, selectedProgram.benefit_type);
+    const nonCashDetails = isNonCash ? getNonCashDetails(selectedProgram.name) : null;
+
     const updatedForm = {
       ...formData,
       program_id: programId,
       barangay_id: selectedProgram.barangay_id ? String(selectedProgram.barangay_id) : '',
       target_category: selectedProgram.eligibility_category || '',
+      benefit_type: isNonCash ? (nonCashDetails?.type || 'In-Kind') : 'Cash',
+      amount_per_beneficiary: isNonCash ? '0' : (selectedProgram.amount ? selectedProgram.amount.toString() : ''),
+      item_name: isNonCash ? (nonCashDetails?.default_item || '') : '',
+      item_quantity: '1',
+      item_unit: 'package',
     };
     setFormData(updatedForm);
     setProgramAutoFilled(true);
@@ -200,8 +230,8 @@ export default function DistributionPage() {
         // Filter by approved status
         const qualifiedBeneficiaries = enrolledBeneficiaries.filter(b => b.status === 'Approved');
 
-        // Suggest default amount per beneficiary from program if available
-        if (selectedProgram.amount && !formData.amount_per_beneficiary) {
+        // Suggest default amount per beneficiary from program if available (only for cash)
+        if (!isNonCash && selectedProgram.amount && !formData.amount_per_beneficiary) {
           setFormData(prev => ({
             ...prev,
             amount_per_beneficiary: selectedProgram.amount.toString()
@@ -229,14 +259,24 @@ export default function DistributionPage() {
     setSuccess(null);
     
     try {
-      const amountPerBen = parseFloat(formData.amount_per_beneficiary || 0);
+      const selectedProgram = programs.find(p => p.id === parseInt(formData.program_id));
+      const isNonCash = isNonCashProgram(selectedProgram?.name, formData.benefit_type || selectedProgram?.benefit_type);
+      const nonCashDetails = isNonCash ? getNonCashDetails(selectedProgram?.name) : null;
+
+      const amountPerBen = isNonCash ? 0 : parseFloat(formData.amount_per_beneficiary || 0);
       const benCount = eligibleMeta.qualified_count || 1;
-      const computedBudget = amountPerBen * benCount;
+      const computedBudget = isNonCash ? 0 : (amountPerBen * benCount);
 
       await distributionApi.createEvent({
         ...formData,
-        venue: formData.venue?.trim() || null,
+        agency: isMswdoAdmin ? 'MSWDO' : 'DSWD',
+        amount_per_beneficiary: amountPerBen,
         budget: computedBudget,
+        benefit_type: isNonCash ? (formData.benefit_type || nonCashDetails?.type || 'In-Kind') : 'Cash',
+        item_name: isNonCash ? (formData.item_name || nonCashDetails?.default_item || 'In-Kind Package') : null,
+        item_quantity: isNonCash ? (parseInt(formData.item_quantity, 10) || 1) : 1,
+        item_unit: isNonCash ? (formData.item_unit || 'package') : null,
+        venue: formData.venue?.trim() || null,
       });
       setSuccess('Distribution event created successfully!');
       setFormData({
@@ -249,7 +289,11 @@ export default function DistributionPage() {
         amount_per_beneficiary: '',
         assigned_staff_id: '',
         notes: '',
-        target_category: ''
+        target_category: '',
+        item_name: '',
+        item_quantity: '1',
+        item_unit: 'package',
+        benefit_type: 'Cash'
       });
       await loadEvents();
       await loadDashboardStats();
@@ -657,12 +701,44 @@ export default function DistributionPage() {
         console.warn('Could not load retro preview for event:', err);
       }
       
+      // Fetch digital payout summary
+      try {
+        if (eventData.status !== 'draft') {
+          const payoutRes = await distributionApi.getPayoutSummary(eventId);
+          if (payoutRes.data?.success) {
+            eventData.payoutSummary = payoutRes.data.data;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load payout summary for event:', err);
+      }
+      
       setSelectedEvent(eventData);
       setShowDetailsModal(true);
     } catch (err) {
       setError(err.message || 'Failed to load event details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDisburseDigital = async (eventId) => {
+    if (!window.confirm('Sigurado ka ba na gusto mong iproseso ang Digital Disbursements para sa event na ito?\n\nAwtomatikong ike-credit ang payout sa mga verified GCash/Maya/Landbank accounts ng mga benepisyaryo at magpapadala ng confirmation notification.')) {
+      return;
+    }
+
+    setDisbursingDigital(true);
+    try {
+      const res = await distributionApi.disburseDigital(eventId);
+      if (res.data?.success) {
+        alert(`✅ ${res.data.message}\nTotal Na-disburse: ₱${parseFloat(res.data.data?.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} (${res.data.data?.disbursed_count || 0} benepisyaryo)`);
+        await handleViewDetails(eventId);
+        loadEvents();
+      }
+    } catch (err) {
+      alert(`Error sa digital disbursement: ${err.response?.data?.message || err.message}`);
+    } finally {
+      setDisbursingDigital(false);
     }
   };
 
@@ -939,12 +1015,25 @@ export default function DistributionPage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm">
-                            <p className="font-semibold text-purple-600">
-                              ₱{parseFloat(event.budget).toLocaleString()}
-                            </p>
-                            <p className="text-xs text-slate-600">
-                              ₱{parseFloat(event.amount_per_beneficiary).toLocaleString()}/beneficiary
-                            </p>
+                            {isNonCashProgram(event.Program?.name || event.title, event.benefit_type) ? (
+                              <>
+                                <span className="inline-flex items-center gap-1 font-bold text-xs px-2.5 py-1 rounded-md bg-purple-100 text-purple-800 border border-purple-200">
+                                  {getNonCashDetails(event.Program?.name || event.title)?.badge || '📦 In-Kind Goods'}
+                                </span>
+                                <p className="text-xs text-slate-600 mt-1 truncate max-w-[170px]" title={event.item_name || getNonCashDetails(event.Program?.name || event.title)?.assistance_type}>
+                                  {event.item_name || getNonCashDetails(event.Program?.name || event.title)?.assistance_type}
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="font-semibold text-purple-600">
+                                  ₱{parseFloat(event.budget || 0).toLocaleString()}
+                                </p>
+                                <p className="text-xs text-slate-600">
+                                  ₱{parseFloat(event.amount_per_beneficiary || 0).toLocaleString()}/beneficiary
+                                </p>
+                              </>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -1012,6 +1101,19 @@ export default function DistributionPage() {
                               </button>
                             )}
                             
+                            {/* Quick Disburse Digital on event card */}
+                            {['admin', 'mswdo_admin'].includes(user?.role) && ['scheduled', 'ongoing'].includes(event.status) && event.Transactions?.some(t => (t.disbursement_type === 'digital' || t.Beneficiary?.payout_preference === 'digital') && t.status === 'pending') && (
+                              <button
+                                onClick={() => handleDisburseDigital(event.id)}
+                                disabled={disbursingDigital}
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors shadow-xs cursor-pointer"
+                                title="Disburse Pending Digital Payouts (GCash/Bank)"
+                              >
+                                <Zap className="w-3.5 h-3.5 fill-current" />
+                                Disburse Digital
+                              </button>
+                            )}
+
                             {/* Ongoing Status Actions - END SESSION */}
                             {event.status === 'ongoing' && (['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff' || user?.role === 'barangay') && (
                               <button
@@ -1204,31 +1306,106 @@ export default function DistributionPage() {
                 />
               </div>
 
-              {/* Amount per Beneficiary */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Amount per Beneficiary (₱) *
-                </label>
-                <input
-                  type="number"
-                  value={formData.amount_per_beneficiary}
-                  onChange={(e) => setFormData({ ...formData, amount_per_beneficiary: e.target.value })}
-                  placeholder="e.g., 1000"
-                  min="1"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-semibold text-slate-900"
-                  required
-                />
-                {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 ? (
-                  <p className="text-xs text-green-600 mt-1 font-medium">
-                    ₱{parseFloat(formData.amount_per_beneficiary || 0).toLocaleString()} × {eligibleMeta.qualified_count} qualified beneficiaries = ₱{(parseFloat(formData.amount_per_beneficiary || 0) * eligibleMeta.qualified_count).toLocaleString()} estimated total
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-500 mt-1">
-                    Manual: Ilagay ang halaga na matatanggap ng bawat benepisyaryo
-                  </p>
-                )}
-              </div>
+              {/* Amount per Beneficiary OR Non-Cash In-Kind Package Fields */}
+              {(() => {
+                const currentProg = programs.find(p => p.id === parseInt(formData.program_id));
+                const isFormNonCash = isNonCashProgram(currentProg?.name, formData.benefit_type || currentProg?.benefit_type);
+                const formNonCashDetails = isFormNonCash ? getNonCashDetails(currentProg?.name) : null;
+
+                if (isFormNonCash) {
+                  return (
+                    <div className="md:col-span-2 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border-2 border-purple-200 rounded-xl p-4 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2 flex-wrap mb-3 pb-2 border-b border-purple-200/60">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">🎁</span>
+                          <div>
+                            <h4 className="text-sm font-bold text-purple-950 flex items-center gap-2">
+                              In-Kind / Non-Cash Distribution
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                {formNonCashDetails?.badge || '📦 In-Kind'}
+                              </span>
+                            </h4>
+                            <p className="text-xs text-purple-700">
+                              <strong>Uri ng Tulong:</strong> {formNonCashDetails?.assistance_type || 'Goods / Services (Hindi Cash)'}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                          ✓ Walang Cash Amount na Kinakailangan
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            Pangalan ng Package / Kagamitan / Serbisyo *
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.item_name || ''}
+                            onChange={(e) => setFormData({ ...formData, item_name: e.target.value })}
+                            placeholder="Hal. Family Food Pack, Hot Meals, Wheelchair, Vocational Training..."
+                            className="w-full px-3 py-2 text-sm border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 bg-white font-medium text-slate-900"
+                            required
+                          />
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            Para kanino: <span className="font-semibold text-slate-700">{formNonCashDetails?.target}</span>
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            Dami Bawat Benepisyaryo
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={formData.item_quantity || '1'}
+                              onChange={(e) => setFormData({ ...formData, item_quantity: e.target.value })}
+                              className="w-20 px-3 py-2 text-sm border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 bg-white font-bold text-center text-slate-900"
+                              required
+                            />
+                            <span className="text-xs text-slate-600 font-medium">package / unit</span>
+                          </div>
+                          {eligibleMeta.qualified_count > 0 && (
+                            <p className="text-[11px] text-purple-900 font-bold mt-1">
+                              Kabuuan: {(parseInt(formData.item_quantity || 1, 10) * eligibleMeta.qualified_count)} units para sa {eligibleMeta.qualified_count} benepisyaryo
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Amount per Beneficiary (₱) *
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.amount_per_beneficiary}
+                      onChange={(e) => setFormData({ ...formData, amount_per_beneficiary: e.target.value })}
+                      placeholder="e.g., 1000"
+                      min="1"
+                      step="0.01"
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-semibold text-slate-900"
+                      required
+                    />
+                    {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 ? (
+                      <p className="text-xs text-green-600 mt-1 font-medium">
+                        ₱{parseFloat(formData.amount_per_beneficiary || 0).toLocaleString()} × {eligibleMeta.qualified_count} qualified beneficiaries = ₱{(parseFloat(formData.amount_per_beneficiary || 0) * eligibleMeta.qualified_count).toLocaleString()} estimated total
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Manual: Ilagay ang halaga na matatanggap ng bawat benepisyaryo
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Venue */}
               <div>
@@ -1442,16 +1619,35 @@ export default function DistributionPage() {
 
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-6 border border-purple-200">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-medium text-purple-600">Budget</p>
-                <DollarSign className="w-5 h-5 text-purple-600" />
+                <p className="text-sm font-medium text-purple-600">
+                  {isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type) ? 'Assistance Type' : 'Budget'}
+                </p>
+                {isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type) ? (
+                  <Package className="w-5 h-5 text-purple-600" />
+                ) : (
+                  <DollarSign className="w-5 h-5 text-purple-600" />
+                )}
               </div>
-              <p className="text-2xl font-bold text-purple-900">
-                ₱{parseFloat(selectedEvent.budget).toLocaleString()}
-              </p>
-              <p className="text-xs text-purple-600 mt-1">
-                ₱{parseFloat(selectedEvent.amount_per_beneficiary).toLocaleString()}/person
-              </p>
-                </div>
+              {isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type) ? (
+                <>
+                  <p className="text-lg font-bold text-purple-900 truncate" title={selectedEvent.item_name || getNonCashDetails(selectedEvent.Program?.name || selectedEvent.title)?.assistance_type}>
+                    {selectedEvent.item_name || getNonCashDetails(selectedEvent.Program?.name || selectedEvent.title)?.default_item || 'In-Kind Assistance'}
+                  </p>
+                  <p className="text-xs text-purple-700 font-semibold mt-1">
+                    {getNonCashDetails(selectedEvent.Program?.name || selectedEvent.title)?.badge || '📦 Non-Cash / In-Kind'}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-purple-900">
+                    ₱{parseFloat(selectedEvent.budget || 0).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-purple-600 mt-1">
+                    ₱{parseFloat(selectedEvent.amount_per_beneficiary || 0).toLocaleString()}/person
+                  </p>
+                </>
+              )}
+            </div>
               </div>
 
               {/* Progress Bar */}
@@ -1489,8 +1685,8 @@ export default function DistributionPage() {
                 </div>
               )}
 
-              {/* Retroactive Payment Summary Alert */}
-              {selectedEvent.retroPreview?.beneficiaries_with_retro > 0 && (
+              {/* Retroactive Payment Summary Alert (Cash Only) */}
+              {!isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type) && selectedEvent.retroPreview?.beneficiaries_with_retro > 0 && (
                 <div className={`p-4 rounded-xl border ${selectedEvent.retroPreview.budget_sufficient ? 'bg-indigo-50/80 border-indigo-200' : 'bg-rose-50 border-rose-300'}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 w-full">
@@ -1528,6 +1724,130 @@ export default function DistributionPage() {
                             <span className="font-bold text-slate-900">₱{parseFloat(selectedEvent.budget || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
                           </div>
                         </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Hybrid Disbursement Channels (Digital vs. Cash OTC) - Cash Only */}
+              {!isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type) && (selectedEvent.payoutSummary || selectedEvent.Transactions?.some(t => t.disbursement_type === 'digital' || t.Beneficiary?.payout_preference === 'digital')) && (
+                <div className="bg-gradient-to-r from-purple-50 via-slate-50 to-blue-50 rounded-2xl p-6 border border-purple-200/80 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-white shadow-xs">
+                        <CreditCard className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                          Hybrid Disbursement Channels
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold border border-purple-200">
+                            Digital & Physical Cash
+                          </span>
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          DSWD Standard: Automated digital crediting for verified accounts (GCash/Maya/Landbank) and physical OTC payout via RFID.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Disburse Digital Button for Admin */}
+                    {['admin', 'mswdo_admin'].includes(user?.role) && 
+                      ((selectedEvent.payoutSummary?.digital?.pending > 0) || 
+                       (selectedEvent.Transactions?.filter(t => (t.disbursement_type === 'digital' || t.Beneficiary?.payout_preference === 'digital') && t.status === 'pending').length > 0)) && 
+                      selectedEvent.status !== 'completed' && (
+                      <button
+                        onClick={() => handleDisburseDigital(selectedEvent.id)}
+                        disabled={disbursingDigital}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50 cursor-pointer"
+                      >
+                        {disbursingDigital ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Processing Digital Payouts...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-4 h-4 fill-current" />
+                            <span>Disburse Digital Payouts ({selectedEvent.payoutSummary?.digital?.pending ?? selectedEvent.Transactions?.filter(t => (t.disbursement_type === 'digital' || t.Beneficiary?.payout_preference === 'digital') && t.status === 'pending').length} Pending)</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Card 1: Digital Channel */}
+                    <div className="bg-white rounded-xl p-4 border border-purple-200 shadow-2xs">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center text-purple-700">
+                            <Smartphone className="w-4 h-4" />
+                          </div>
+                          <span className="font-bold text-sm text-slate-900">Digital Crediting</span>
+                        </div>
+                        <span className="text-xs font-bold px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md border border-purple-200">
+                          GCash / Maya / Landbank
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          <span className="text-[11px] text-slate-500 block">Qualified</span>
+                          <span className="text-base font-bold text-slate-900">{selectedEvent.payoutSummary.digital?.total || 0}</span>
+                        </div>
+                        <div className="bg-green-50 p-2 rounded-lg border border-green-100">
+                          <span className="text-[11px] text-green-700 block font-medium">Credited</span>
+                          <span className="text-base font-bold text-green-700">{selectedEvent.payoutSummary.digital?.released || 0}</span>
+                        </div>
+                        <div className="bg-amber-50 p-2 rounded-lg border border-amber-100">
+                          <span className="text-[11px] text-amber-700 block font-medium">Pending</span>
+                          <span className="text-base font-bold text-amber-700">{selectedEvent.payoutSummary.digital?.pending || 0}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between text-xs pt-2 border-t border-slate-100">
+                        <span className="text-slate-500">Total Credited Amount:</span>
+                        <span className="font-bold text-purple-700">
+                          ₱{parseFloat(selectedEvent.payoutSummary.digital?.amount_released || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Card 2: Physical Cash OTC Channel */}
+                    <div className="bg-white rounded-xl p-4 border border-blue-200 shadow-2xs">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700">
+                            <Building2 className="w-4 h-4" />
+                          </div>
+                          <span className="font-bold text-sm text-slate-900">Physical Claiming</span>
+                        </div>
+                        <span className="text-xs font-bold px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md border border-blue-200">
+                          Cash OTC via RFID
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          <span className="text-[11px] text-slate-500 block">Total</span>
+                          <span className="text-base font-bold text-slate-900">{selectedEvent.payoutSummary.cash_otc?.total || 0}</span>
+                        </div>
+                        <div className="bg-green-50 p-2 rounded-lg border border-green-100">
+                          <span className="text-[11px] text-green-700 block font-medium">Claimed</span>
+                          <span className="text-base font-bold text-green-700">{selectedEvent.payoutSummary.cash_otc?.released || 0}</span>
+                        </div>
+                        <div className="bg-amber-50 p-2 rounded-lg border border-amber-100">
+                          <span className="text-[11px] text-amber-700 block font-medium">Unclaimed</span>
+                          <span className="text-base font-bold text-amber-700">{selectedEvent.payoutSummary.cash_otc?.pending || 0}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between text-xs pt-2 border-t border-slate-100">
+                        <span className="text-slate-500">Total Claimed Amount:</span>
+                        <span className="font-bold text-blue-700">
+                          ₱{parseFloat(selectedEvent.payoutSummary.cash_otc?.amount_released || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -1578,72 +1898,144 @@ export default function DistributionPage() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">#</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Beneficiary</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">ID</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Category</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Regular</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Retro Pay</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Total Payout</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase">Status</th>
-                        </tr>
+                        {(() => {
+                          const isSelectedNonCash = isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type);
+                          return (
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">#</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Beneficiary</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">ID</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Category</th>
+                              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase">
+                                {isSelectedNonCash ? 'Type' : 'Method'}
+                              </th>
+                              {isSelectedNonCash ? (
+                                <>
+                                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Package / Item Name</th>
+                                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase">Quantity</th>
+                                </>
+                              ) : (
+                                <>
+                                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Regular</th>
+                                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Retro Pay</th>
+                                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Total Payout</th>
+                                </>
+                              )}
+                              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase">Status</th>
+                            </tr>
+                          );
+                        })()}
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {selectedEvent.Transactions.map((txn, index) => (
-                          <tr key={txn.id} className={`hover:bg-slate-50 ${
-                            (selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])) && txn.status !== 'released'
-                              ? 'bg-amber-50/70 border-l-4 border-l-amber-500'
-                              : txn.status === 'pending'
-                              ? 'bg-amber-50/30'
-                              : ''
-                          }`}>
-                            <td className="px-4 py-3 text-slate-500">{index + 1}</td>
-                            <td className="px-4 py-3">
-                              <p className="font-semibold text-slate-900">
-                                {txn.Beneficiary?.first_name} {txn.Beneficiary?.last_name}
-                              </p>
-                              <p className="text-xs text-slate-600">{txn.Beneficiary?.Barangay?.barangay_name}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="font-mono text-xs">{txn.Beneficiary?.beneficiary_id_code}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
-                                txn.Beneficiary?.category?.includes('4Ps') ? 'bg-blue-100 text-blue-700' :
-                                txn.Beneficiary?.category?.includes('Senior') ? 'bg-green-100 text-green-700' :
-                                txn.Beneficiary?.category?.includes('PWD') ? 'bg-purple-100 text-purple-700' :
-                                'bg-slate-100 text-slate-700'
-                              }`}>
-                                {txn.Beneficiary?.category || 'N/A'}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <span className="text-slate-700 font-medium">
-                                ₱{parseFloat(txn.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              {parseFloat(txn.retro_amount || 0) > 0 ? (
-                                <span className="inline-flex items-center gap-1 font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-xs border border-indigo-200">
-                                  ⚡ +₱{parseFloat(txn.retro_amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                                  <span className="text-[10px] text-indigo-500 font-normal">({txn.retro_periods}p)</span>
+                        {selectedEvent.Transactions.map((txn, index) => {
+                          const isSelectedNonCash = isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type);
+                          return (
+                            <tr key={txn.id} className={`hover:bg-slate-50 ${
+                              (selectedEvent.status === 'completed' || (selectedEvent.distribution_date && String(selectedEvent.distribution_date).split('T')[0] < new Date().toISOString().split('T')[0])) && txn.status !== 'released'
+                                ? 'bg-amber-50/70 border-l-4 border-l-amber-500'
+                                : txn.status === 'pending'
+                                ? 'bg-amber-50/30'
+                                : ''
+                            }`}>
+                              <td className="px-4 py-3 text-slate-500">{index + 1}</td>
+                              <td className="px-4 py-3">
+                                <p className="font-semibold text-slate-900">
+                                  {txn.Beneficiary?.first_name} {txn.Beneficiary?.last_name}
+                                </p>
+                                <p className="text-xs text-slate-600">{txn.Beneficiary?.Barangay?.barangay_name}</p>
+                              </td>
+                              <td className="px-4 py-3">
+                                <p className="font-mono text-xs">{txn.Beneficiary?.beneficiary_id_code}</p>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
+                                  txn.Beneficiary?.category?.includes('4Ps') ? 'bg-blue-100 text-blue-700' :
+                                  txn.Beneficiary?.category?.includes('Senior') ? 'bg-green-100 text-green-700' :
+                                  txn.Beneficiary?.category?.includes('PWD') ? 'bg-purple-100 text-purple-700' :
+                                  'bg-slate-100 text-slate-700'
+                                }`}>
+                                  {txn.Beneficiary?.category || 'N/A'}
                                 </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {isSelectedNonCash ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                    🎁 In-Kind
+                                  </span>
+                                ) : txn.disbursement_type === 'digital' || txn.Beneficiary?.payout_preference === 'digital' ? (
+                                  <div className="inline-flex flex-col items-center">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                      ⚡ {txn.payout_provider || txn.Beneficiary?.payout_provider || 'Digital'}
+                                    </span>
+                                    {txn.payout_reference_number && (
+                                      <span className="text-[10px] font-mono text-slate-500 mt-0.5 max-w-[130px] truncate" title={txn.payout_reference_number}>
+                                        {txn.payout_reference_number}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                    🏢 Cash OTC
+                                  </span>
+                                )}
+                              </td>
+                              {isSelectedNonCash ? (
+                                <>
+                                  <td className="px-4 py-3 text-left">
+                                    <span className="font-semibold text-slate-800 text-xs">
+                                      {txn.item_name || selectedEvent.item_name || getNonCashDetails(selectedEvent.Program?.name || selectedEvent.title)?.default_item || 'In-Kind Package'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                      {txn.item_quantity || selectedEvent.item_quantity || 1} {selectedEvent.item_unit || 'pkg'}
+                                    </span>
+                                  </td>
+                                </>
                               ) : (
-                                <span className="text-slate-400 text-xs">—</span>
+                                <>
+                                  <td className="px-4 py-3 text-right">
+                                    <span className="text-slate-700 font-medium">
+                                      ₱{parseFloat(txn.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    {parseFloat(txn.retro_amount || 0) > 0 ? (
+                                      <span className="inline-flex items-center gap-1 font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-xs border border-indigo-200">
+                                        ⚡ +₱{parseFloat(txn.retro_amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                        <span className="text-[10px] text-indigo-500 font-normal">({txn.retro_periods}p)</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 text-xs">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <p className="font-bold text-green-700">
+                                      ₱{(parseFloat(txn.amount || 0) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </td>
+                                </>
                               )}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <p className="font-bold text-green-700">
-                                ₱{(parseFloat(txn.amount || 0) + parseFloat(txn.retro_amount || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                              </p>
-                            </td>
                             <td className="px-4 py-3 text-center">
                               {txn.status === 'released' ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
-                                  <CheckCircle className="w-3.5 h-3.5" />
-                                  Released
-                                </span>
+                                txn.disbursement_type === 'digital' ? (
+                                  txn.beneficiary_acknowledged_at ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold border border-emerald-300" title={`Confirmed received by beneficiary on ${new Date(txn.beneficiary_acknowledged_at).toLocaleString()}`}>
+                                      <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                      ⚡ Credited & Confirmed ✓
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold" title="Credited to e-wallet, waiting for beneficiary in-app acknowledgment">
+                                      <CheckCircle className="w-3.5 h-3.5" />
+                                      ⚡ Credited (Pending Conf.)
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                    Released
+                                  </span>
+                                )
                               ) : txn.status === 'verified' ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
                                   <CheckCircle className="w-3.5 h-3.5" />
@@ -1654,6 +2046,24 @@ export default function DistributionPage() {
                                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
                                   Unclaimed
                                 </span>
+                              ) : (txn.disbursement_type === 'digital' || txn.Beneficiary?.payout_preference === 'digital') && txn.status === 'pending' ? (
+                                <div className="inline-flex flex-col items-center gap-1.5">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold border border-purple-200">
+                                    <Clock className="w-3.5 h-3.5 text-purple-600" />
+                                    Pending Digital
+                                  </span>
+                                  {['admin', 'mswdo_admin'].includes(user?.role) && selectedEvent.status !== 'completed' && (
+                                    <button
+                                      onClick={() => handleDisburseDigital(selectedEvent.id)}
+                                      disabled={disbursingDigital}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-md text-[11px] font-bold shadow-xs transition cursor-pointer"
+                                      title="Disburse digital payout via GCash/Bank"
+                                    >
+                                      <Zap className="w-3 h-3 fill-current" />
+                                      Disburse Now
+                                    </button>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">
                                   <Clock className="w-3.5 h-3.5" />
@@ -1661,8 +2071,9 @@ export default function DistributionPage() {
                                 </span>
                               )}
                             </td>
-                          </tr>
-                        ))}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1740,32 +2151,69 @@ export default function DistributionPage() {
                   <p className="text-xs text-red-500 mb-1">Not Qualified</p>
                   <p className="text-2xl font-bold text-red-600">{eligibleMeta.total - eligibleMeta.qualified_count}</p>
                 </div>
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
-                  <p className="text-xs text-purple-600 mb-1">Amount Each</p>
-                  <p className="text-xl font-bold text-purple-700">₱{parseFloat(formData.amount_per_beneficiary || 0).toLocaleString()}</p>
-                </div>
+                {(() => {
+                  const isModalProgNonCash = isNonCashProgram(programs.find(p => p.id === parseInt(formData.program_id))?.name, formData.benefit_type);
+                  return (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
+                      <p className="text-xs text-purple-600 mb-1">
+                        {isModalProgNonCash ? 'Assistance' : 'Amount Each'}
+                      </p>
+                      <p className="text-sm font-bold text-purple-700 truncate" title={formData.item_name || 'In-Kind'}>
+                        {isModalProgNonCash ? (formData.item_name || 'In-Kind Package') : `₱${parseFloat(formData.amount_per_beneficiary || 0).toLocaleString()}`}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
 
-              {/* Estimated Payout Calculation */}
-              {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 && (
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <p className="text-sm font-semibold text-purple-900 mb-3">Estimated Payout Calculation (Qualified Only):</p>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-xs text-purple-600 mb-1">Qualified Beneficiaries</p>
-                      <p className="text-2xl font-bold text-purple-900">{eligibleMeta.qualified_count}</p>
+              {/* Estimated Distribution / Payout Plan */}
+              {(() => {
+                const isModalProgNonCash = isNonCashProgram(programs.find(p => p.id === parseInt(formData.program_id))?.name, formData.benefit_type);
+                if (isModalProgNonCash) {
+                  return (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                      <p className="text-sm font-semibold text-purple-900 mb-3">In-Kind Distribution Plan (Walang Cash):</p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <p className="text-xs text-purple-600 mb-1">Qualified Beneficiaries</p>
+                          <p className="text-2xl font-bold text-purple-900">{eligibleMeta.qualified_count}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-purple-600 mb-1">Package / Item Name</p>
+                          <p className="text-base font-bold text-purple-900 truncate">{formData.item_name || 'In-Kind Package'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-purple-600 mb-1">Estimated Total Goods to Prepare</p>
+                          <p className="text-2xl font-bold text-purple-900">{(eligibleMeta.qualified_count * (parseInt(formData.item_quantity, 10) || 1))} units</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-purple-600 mb-1">Amount per Beneficiary</p>
-                      <p className="text-2xl font-bold text-purple-900">₱{parseFloat(formData.amount_per_beneficiary).toLocaleString()}</p>
+                  );
+                }
+
+                if (formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0) {
+                  return (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                      <p className="text-sm font-semibold text-purple-900 mb-3">Estimated Payout Calculation (Qualified Only):</p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <p className="text-xs text-purple-600 mb-1">Qualified Beneficiaries</p>
+                          <p className="text-2xl font-bold text-purple-900">{eligibleMeta.qualified_count}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-purple-600 mb-1">Amount per Beneficiary</p>
+                          <p className="text-2xl font-bold text-purple-900">₱{parseFloat(formData.amount_per_beneficiary).toLocaleString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-purple-600 mb-1">Estimated Total Budget Needed</p>
+                          <p className="text-2xl font-bold text-purple-900">₱{(eligibleMeta.qualified_count * parseFloat(formData.amount_per_beneficiary || 0)).toLocaleString()}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-purple-600 mb-1">Estimated Total Budget Needed</p>
-                      <p className="text-2xl font-bold text-purple-900">₱{(eligibleMeta.qualified_count * parseFloat(formData.amount_per_beneficiary || 0)).toLocaleString()}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
+                  );
+                }
+                return null;
+              })()}
 
               {/* Category Breakdown */}
               {eligibleBeneficiaries.length > 0 && (
@@ -1862,13 +2310,29 @@ export default function DistributionPage() {
             {/* Sticky Footer */}
             <div className="p-5 border-t border-slate-200 flex justify-between items-center bg-white rounded-b-xl">
               <div className="text-sm text-slate-600">
-                <span className="font-semibold text-green-600">{eligibleMeta.qualified_count}</span> qualified will receive{' '}
-                <span className="font-semibold">₱{parseFloat(formData.amount_per_beneficiary || 0).toLocaleString()}</span> each
-                {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 && (
-                  <span className="ml-2 text-slate-500">
-                    — Total: ₱{(eligibleMeta.qualified_count * parseFloat(formData.amount_per_beneficiary)).toLocaleString()}
-                  </span>
-                )}
+                {(() => {
+                  const isModalProgNonCash = isNonCashProgram(programs.find(p => p.id === parseInt(formData.program_id))?.name, formData.benefit_type);
+                  if (isModalProgNonCash) {
+                    return (
+                      <span>
+                        <span className="font-semibold text-green-600">{eligibleMeta.qualified_count}</span> qualified will each receive{' '}
+                        <span className="font-semibold text-purple-700">{formData.item_name || 'In-Kind Package'}</span>
+                        {' '}(Total: {eligibleMeta.qualified_count * (parseInt(formData.item_quantity, 10) || 1)} units)
+                      </span>
+                    );
+                  }
+                  return (
+                    <span>
+                      <span className="font-semibold text-green-600">{eligibleMeta.qualified_count}</span> qualified will receive{' '}
+                      <span className="font-semibold">₱{parseFloat(formData.amount_per_beneficiary || 0).toLocaleString()}</span> each
+                      {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 && (
+                        <span className="ml-2 text-slate-500">
+                          — Total: ₱{(eligibleMeta.qualified_count * parseFloat(formData.amount_per_beneficiary)).toLocaleString()}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })()}
               </div>
               <button
                 onClick={() => { setShowEligibleModal(false); setEligibleBeneficiaries([]); }}

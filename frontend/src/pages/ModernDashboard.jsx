@@ -114,17 +114,28 @@ export default function ModernDashboard() {
     ? summary.pendingApplications
     : pendingApplicationsList.length;
 
-  // MSWDO stats: primary focus on Senior & PWD, with 4Ps included
+  // MSWDO stats: includes 4Ps, Senior & PWD municipal oversight
   const stats = isMswdoAdmin ? [
+    {
+      title: '4Ps Beneficiaries',
+      value: summary?.fourPsCount || 0,
+      change: `${summary?.fourPsCount || 0} enrolled`,
+      trend: 'up',
+      icon: Users,
+      gradient: 'from-blue-600 to-indigo-700',
+      iconBg: 'bg-blue-100',
+      iconColor: 'text-blue-700',
+      onClick: () => navigate('/dashboard/beneficiaries')
+    },
     {
       title: 'Senior Citizens',
       value: summary?.seniorCitizensCount || 0,
       change: `${summary?.seniorCitizensCount || 0} approved`,
       trend: 'up',
       icon: Users,
-      gradient: 'from-blue-500 to-blue-600',
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-600',
+      gradient: 'from-red-500 to-rose-600',
+      iconBg: 'bg-red-100',
+      iconColor: 'text-red-600',
       onClick: () => navigate('/dashboard/beneficiaries')
     },
     {
@@ -133,20 +144,9 @@ export default function ModernDashboard() {
       change: `${summary?.pwdCount || 0} approved`,
       trend: 'up',
       icon: HandHeart,
-      gradient: 'from-purple-500 to-purple-600',
-      iconBg: 'bg-purple-100',
-      iconColor: 'text-purple-600',
-      onClick: () => navigate('/dashboard/beneficiaries')
-    },
-    {
-      title: '4Ps Beneficiaries',
-      value: summary?.fourPsCount || 0,
-      change: `${summary?.fourPsCount || 0} approved`,
-      trend: 'up',
-      icon: Target,
-      gradient: 'from-sky-500 to-blue-600',
-      iconBg: 'bg-sky-100',
-      iconColor: 'text-sky-600',
+      gradient: 'from-amber-500 to-yellow-600',
+      iconBg: 'bg-amber-100',
+      iconColor: 'text-amber-700',
       onClick: () => navigate('/dashboard/beneficiaries')
     },
     {
@@ -166,9 +166,9 @@ export default function ModernDashboard() {
       change: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
       trend: 'neutral',
       icon: Clock,
-      gradient: 'from-amber-500 to-amber-600',
-      iconBg: 'bg-amber-100',
-      iconColor: 'text-amber-600',
+      gradient: 'from-purple-500 to-purple-600',
+      iconBg: 'bg-purple-100',
+      iconColor: 'text-purple-600',
       onClick: () => navigate('/dashboard/beneficiaries?pending=true', { state: { openPending: true } })
     }
   ] : [
@@ -228,11 +228,7 @@ export default function ModernDashboard() {
     }])
   ];
 
-  const categoryData = isMswdoAdmin ? [
-    { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E30613' },
-    { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#FFD100' },
-    { name: '4Ps Program', value: summary?.fourPsCount || 0, color: '#00338D' }
-  ] : [
+  const categoryData = [
     { name: '4Ps Program', value: summary?.fourPsCount || 0, color: '#00338D' },
     { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E30613' },
     { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#FFD100' }
@@ -427,7 +423,7 @@ export default function ModernDashboard() {
       )}
 
       {/* Stats Grid */}
-      <div className={`grid grid-cols-1 md:grid-cols-2 ${isMswdoAdmin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-6`}>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (

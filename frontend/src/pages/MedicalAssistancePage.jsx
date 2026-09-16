@@ -122,6 +122,7 @@ export default function MedicalAssistancePage() {
   const [currentAppId, setCurrentAppId] = useState(null);
   const [selectedCategoryGroup, setSelectedCategoryGroup] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('Medicines Assistance');
+  const [targetAgency, setTargetAgency] = useState('DSWD'); // 'DSWD' | 'MSWDO'
   
   // Patient details
   const [patientName, setPatientName] = useState('');
@@ -230,6 +231,7 @@ export default function MedicalAssistancePage() {
   const populateFormFromApp = (app) => {
     setCurrentAppId(app.id);
     setSelectedCategory(app.category);
+    setTargetAgency(app.agency || 'DSWD');
     setPatientName(app.patient_name || '');
     setPatientGender(app.patient_gender || 'Male');
     setPatientDob(app.patient_dob || '');
@@ -335,6 +337,7 @@ export default function MedicalAssistancePage() {
         hospital_confinement_status: hospitalConfinementStatus,
         had_surgical_operation: hadSurgicalOperation,
         total_amount_requested: parseFloat(totalAmountRequested) || 0,
+        agency: targetAgency,
       };
 
       const res = await medicalAssistanceApi.saveDraft(payload);
@@ -617,6 +620,62 @@ export default function MedicalAssistancePage() {
                       {grp.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Target Office / Agency Selector */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <label className="block text-xs font-black text-slate-800 uppercase tracking-wider">
+                  Target Office / Kaninong Tanggapan Ipapadala ang Request:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setTargetAgency('DSWD')}
+                    className={`p-3.5 rounded-2xl border-2 text-left transition-all ${
+                      targetAgency === 'DSWD'
+                        ? 'border-blue-600 bg-blue-50/80 shadow-sm ring-1 ring-blue-500/30'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                        🏛️ DSWD Office (National)
+                      </span>
+                      {targetAgency === 'DSWD' && (
+                        <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-bold">
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                      Department of Social Welfare and Development — handled directly by DSWD Admin (National AICS, 4Ps, Crisis assistance).
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTargetAgency('MSWDO')}
+                    className={`p-3.5 rounded-2xl border-2 text-left transition-all ${
+                      targetAgency === 'MSWDO'
+                        ? 'border-emerald-600 bg-emerald-50/80 shadow-sm ring-1 ring-emerald-500/30'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                        🏢 MSWDO Office (Municipal)
+                      </span>
+                      {targetAgency === 'MSWDO' && (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold">
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                      Municipal Social Welfare and Development Office — handled directly by MSWDO Admin (Senior Citizens, PWD, Municipal aid).
+                    </p>
+                  </button>
                 </div>
               </div>
 

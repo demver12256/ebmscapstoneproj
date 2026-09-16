@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Calendar, Filter, X, Download, FileSpreadsheet, Printer, Eye, CheckCircle, AlertCircle, TrendingUp, Users } from 'lucide-react';
+import { FileText, Calendar, Filter, X, Download, FileSpreadsheet, Printer, Eye, CheckCircle, AlertCircle, TrendingUp, Users, Shield, ClipboardList } from 'lucide-react';
 import { reportsApi, programApi, barangayApi, beneficiaryApi, distributionApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -44,11 +44,16 @@ function BeneficiariesModal({ distribution, onClose }) {
 
   const filteredTransactions = transactions.filter(txn => {
     if (filter === 'all') return true;
+    if (filter === 'released') return txn.status === 'released';
+    if (filter === 'pending') return txn.status !== 'released';
     return txn.status === filter;
   });
 
   const releasedCount = transactions.filter(t => t.status === 'released').length;
-  const pendingCount = transactions.filter(t => t.status === 'pending').length;
+  const pendingCount = Math.max(
+    transactions.filter(t => t.status !== 'released').length,
+    (distribution.beneficiaries || 0) - releasedCount
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50" onClick={onClose}>
@@ -501,6 +506,21 @@ export default function ReportsPage() {
           setTotalPages(Math.ceil(allData.length / limit) || 1);
         }
         setTableData(enrollList);
+      } else if (rType === 'assistance') {
+        const res = await reportsApi.getTableAssistanceRequests(params);
+        setTableData(res.data.data || []);
+        setTableTotal(res.data.pagination?.total || 0);
+        setTotalPages(res.data.pagination?.totalPages || 1);
+      } else if (rType === 'attendance') {
+        const res = await reportsApi.getTableAttendance(params);
+        setTableData(res.data.data || []);
+        setTableTotal(res.data.pagination?.total || 0);
+        setTotalPages(res.data.pagination?.totalPages || 1);
+      } else if (rType === 'audit-logs') {
+        const res = await reportsApi.getTableAuditLogs(params);
+        setTableData(res.data.data || []);
+        setTableTotal(res.data.pagination?.total || 0);
+        setTotalPages(res.data.pagination?.totalPages || 1);
       } else {
         // Default: distribution (also used for 'distribution' type and 'all')
         const distRes = await reportsApi.recentDistributions(params);
@@ -591,6 +611,93 @@ export default function ReportsPage() {
             </>
           ),
         };
+      case 'assistance':
+        return {
+          title: 'Assistance Requests Report',
+          exportType: 'assistance-requests',
+          emptyMsg: 'No assistance requests found matching the filters',
+          columns: ['ID', 'Beneficiary', 'Category', 'Type', 'Subject', 'Barangay', 'Status', 'Priority', 'Date'],
+          renderRow: (row) => (
+            <>
+              <td className="px-6 py-4 text-sm text-slate-500 font-mono">{row.id}</td>
+              <td className="px-6 py-4 text-sm font-medium text-slate-900">{row.beneficiary_name}</td>
+              <td className="px-6 py-4 text-sm text-slate-700">{row.category || '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-700">{row.type || '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-700 max-w-[200px] truncate">{row.subject || '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-700">{row.barangay_name || '—'}</td>
+              <td className="px-6 py-4">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
+                  row.status === 'Completed' ? 'bg-green-100 text-green-700' :
+                  row.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
+                  row.status === 'Rejected' ? 'bg-red-100 text-red-700' :
+                  row.status === 'Under Review' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-blue-100 text-blue-700'
+                }`}>{row.status}</span>
+              </td>
+              <td className="px-6 py-4">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  row.priority === 'Urgent' ? 'bg-red-100 text-red-700' :
+                  row.priority === 'Normal' ? 'bg-blue-100 text-blue-700' :
+                  'bg-slate-100 text-slate-600'
+                }`}>{row.priority}</span>
+              </td>
+              <td className="px-6 py-4 text-sm text-slate-600 whitespace-nowrap">{row.created_at ? new Date(row.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
+            </>
+          ),
+        };
+      case 'attendance':
+        return {
+          title: 'Attendance Report',
+          exportType: 'attendance',
+          emptyMsg: 'No attendance records found matching the filters',
+          columns: ['ID', 'Beneficiary', 'Category', 'Event Name', 'Date', 'Time In', 'Status', 'Remarks'],
+          renderRow: (row) => (
+            <>
+              <td className="px-6 py-4 text-sm text-slate-500 font-mono">{row.id}</td>
+              <td className="px-6 py-4 text-sm font-medium text-slate-900">{row.beneficiary_name}</td>
+              <td className="px-6 py-4 text-sm text-slate-700">{row.category || '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-700">{row.event_name || '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-700 whitespace-nowrap">{row.attendance_date ? new Date(row.attendance_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-700">{row.time_in || '—'}</td>
+              <td className="px-6 py-4">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
+                  row.status === 'Present' ? 'bg-green-100 text-green-700' :
+                  row.status === 'Late' ? 'bg-yellow-100 text-yellow-700' :
+                  row.status === 'Absent' ? 'bg-red-100 text-red-700' :
+                  'bg-slate-100 text-slate-600'
+                }`}>{row.status}</span>
+              </td>
+              <td className="px-6 py-4 text-sm text-slate-600 max-w-[150px] truncate">{row.remarks || '—'}</td>
+            </>
+          ),
+        };
+      case 'audit-logs':
+        return {
+          title: 'Audit / System Logs',
+          exportType: 'audit-logs',
+          emptyMsg: 'No audit logs found',
+          columns: ['ID', 'User', 'Email', 'Role', 'Action', 'Module', 'Timestamp'],
+          renderRow: (row) => (
+            <>
+              <td className="px-6 py-4 text-sm text-slate-500 font-mono">{row.id}</td>
+              <td className="px-6 py-4 text-sm font-medium text-slate-900">{row.user_name || 'System'}</td>
+              <td className="px-6 py-4 text-sm text-slate-600">{row.user_email || '—'}</td>
+              <td className="px-6 py-4">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
+                  row.user_role === 'admin' ? 'bg-blue-100 text-blue-700' :
+                  row.user_role === 'mswdo_admin' ? 'bg-purple-100 text-purple-700' :
+                  row.user_role === 'staff' ? 'bg-amber-100 text-amber-700' :
+                  'bg-slate-100 text-slate-600'
+                }`}>{row.user_role}</span>
+              </td>
+              <td className="px-6 py-4 text-sm text-slate-700 max-w-[250px] truncate">{row.action}</td>
+              <td className="px-6 py-4">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">{row.module}</span>
+              </td>
+              <td className="px-6 py-4 text-sm text-slate-600 whitespace-nowrap">{row.timestamp ? new Date(row.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+            </>
+          ),
+        };
       default: // '' or 'distribution'
         return {
           title: reportType === 'distribution' ? 'Distribution Report' : 'Recent Distributions',
@@ -623,7 +730,7 @@ export default function ReportsPage() {
                           ? 'text-amber-700 font-bold'
                           : 'text-slate-500'
                       }`}>
-                        {row.pending_count} {row.status === 'completed' || (row.date && String(row.date).split('T')[0] < new Date().toISOString().split('T')[0]) ? 'unclaimed' : 'pending'}
+                        {Math.max(row.pending_count ?? 0, (row.beneficiaries || 0) - (row.released_count || 0))} {row.status === 'completed' || (row.date && String(row.date).split('T')[0] < new Date().toISOString().split('T')[0]) ? 'unclaimed' : 'pending'}
                       </div>
                     </button>
                     
@@ -732,6 +839,18 @@ function generateClientCSV(headers, rowsData) {
           const res = await reportsApi.exportEnrollments(params);
           blob = res.data;
           filename = 'enrollment-report.csv';
+        } else if (type === 'assistance-requests') {
+          const res = await reportsApi.exportAssistanceRequests(params);
+          blob = res.data;
+          filename = 'assistance-requests-report.csv';
+        } else if (type === 'attendance') {
+          const res = await reportsApi.exportAttendance(params);
+          blob = res.data;
+          filename = 'attendance-report.csv';
+        } else if (type === 'audit-logs') {
+          const res = await reportsApi.exportAuditLogs(params);
+          blob = res.data;
+          filename = 'audit-logs.csv';
         }
       } catch (backendErr) {
         // Fallback to client-side CSV generation if backend endpoint returns 404
@@ -844,6 +963,45 @@ function generateClientCSV(headers, rowsData) {
           <td>${e.status || ''}</td>
           <td>${e.created_at ? new Date(e.created_at).toLocaleDateString('en-US') : '—'}</td>
         </tr>`).join('');
+    } else if (reportType === 'assistance') {
+      tableHeaders = '<th>ID</th><th>Beneficiary</th><th>Category</th><th>Type</th><th>Subject</th><th>Barangay</th><th>Status</th><th>Priority</th><th>Date</th>';
+      rowsHTML = tableData.map(r => `
+        <tr>
+          <td>${r.id || ''}</td>
+          <td>${r.beneficiary_name || ''}</td>
+          <td>${r.category || '—'}</td>
+          <td>${r.type || ''}</td>
+          <td>${r.subject || ''}</td>
+          <td>${r.barangay_name || '—'}</td>
+          <td>${r.status || ''}</td>
+          <td>${r.priority || ''}</td>
+          <td>${r.created_at ? new Date(r.created_at).toLocaleDateString('en-US') : '—'}</td>
+        </tr>`).join('');
+    } else if (reportType === 'attendance') {
+      tableHeaders = '<th>ID</th><th>Beneficiary</th><th>Category</th><th>Event Name</th><th>Date</th><th>Time In</th><th>Status</th><th>Remarks</th>';
+      rowsHTML = tableData.map(r => `
+        <tr>
+          <td>${r.id || ''}</td>
+          <td>${r.beneficiary_name || ''}</td>
+          <td>${r.category || '—'}</td>
+          <td>${r.event_name || ''}</td>
+          <td>${r.attendance_date ? new Date(r.attendance_date).toLocaleDateString('en-US') : ''}</td>
+          <td>${r.time_in || '—'}</td>
+          <td>${r.status || ''}</td>
+          <td>${r.remarks || ''}</td>
+        </tr>`).join('');
+    } else if (reportType === 'audit-logs') {
+      tableHeaders = '<th>ID</th><th>User</th><th>Email</th><th>Role</th><th>Action</th><th>Module</th><th>Timestamp</th>';
+      rowsHTML = tableData.map(log => `
+        <tr>
+          <td>${log.id || ''}</td>
+          <td>${log.user_name || 'System'}</td>
+          <td>${log.user_email || '—'}</td>
+          <td>${log.user_role || '—'}</td>
+          <td>${log.action || ''}</td>
+          <td>${log.module || ''}</td>
+          <td>${log.timestamp ? new Date(log.timestamp).toLocaleString('en-US') : '—'}</td>
+        </tr>`).join('');
     } else {
       tableHeaders = '<th>ID</th><th>Title</th><th>Program</th><th>Barangay</th><th>Date</th><th>Beneficiaries</th><th>Amount</th><th>Status</th>';
       rowsHTML = tableData.map(d => `
@@ -949,6 +1107,9 @@ function generateClientCSV(headers, rowsData) {
     { icon: '📊', title: 'Distribution Report', desc: 'Summary of all distribution events', color: 'bg-green-50 hover:bg-green-100 border-green-200', exportType: 'distributions', fileName: 'distribution-report.csv' },
     { icon: '📝', title: 'Program Report', desc: 'Overview of benefit programs', color: 'bg-purple-50 hover:bg-purple-100 border-purple-200', exportType: 'programs', fileName: 'program-report.csv' },
     { icon: '📋', title: 'Enrollment Report', desc: 'Active enrollments per program', color: 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200', exportType: 'enrollments', fileName: 'enrollment-report.csv' },
+    { icon: '🆘', title: 'Assistance Requests', desc: 'All assistance request records', color: 'bg-orange-50 hover:bg-orange-100 border-orange-200', exportType: 'assistance-requests', fileName: 'assistance-requests-report.csv' },
+    { icon: '📅', title: 'Attendance Report', desc: 'Attendance records from events', color: 'bg-teal-50 hover:bg-teal-100 border-teal-200', exportType: 'attendance', fileName: 'attendance-report.csv' },
+    ...(user?.role === 'admin' ? [{ icon: '🔐', title: 'Audit / System Logs', desc: 'System activity and audit trail', color: 'bg-slate-50 hover:bg-slate-100 border-slate-300', exportType: 'audit-logs', fileName: 'audit-logs.csv' }] : []),
   ];
 
   const totalBeneficiaries = (summary.fourPsCount || 0) + (summary.seniorCitizensCount || 0) + (summary.pwdCount || 0);
@@ -1019,6 +1180,9 @@ function generateClientCSV(headers, rowsData) {
               <option value="distribution">Distribution Reports</option>
               <option value="program">Program Reports</option>
               <option value="enrollment">Enrollment Reports</option>
+              <option value="assistance">Assistance Requests</option>
+              <option value="attendance">Attendance Reports</option>
+              {user?.role === 'admin' && <option value="audit-logs">Audit / System Logs</option>}
             </select>
           </div>
 

@@ -355,6 +355,7 @@ export default function LandingPage() {
   const [regSex, setRegSex] = useState('Male');
   const [regBirthdate, setRegBirthdate] = useState('');
   const [regCategory, setRegCategory] = useState('4Ps Household Beneficiaries');
+  const [regHouseholdNumber, setRegHouseholdNumber] = useState('');
   const [regContactNumber, setRegContactNumber] = useState('');
   const [regIpClassification, setRegIpClassification] = useState('Non-IP');
   const [regPassword, setRegPassword] = useState('');
@@ -368,6 +369,20 @@ export default function LandingPage() {
   const [pendingRegData, setPendingRegData] = useState(null);
   const [otpSending, setOtpSending] = useState(false);
   const [devOtp, setDevOtp] = useState(null);
+
+  // Forgot Password Flow States
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotStep, setForgotStep] = useState(1); // 1: enter email/username, 2: enter otp & new password
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotTargetEmail, setForgotTargetEmail] = useState('');
+  const [forgotMaskedEmail, setForgotMaskedEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotDevOtp, setForgotDevOtp] = useState(null);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState(null);
+  const [forgotSuccess, setForgotSuccess] = useState(null);
 
   // Check URL query param
   useEffect(() => {
@@ -401,6 +416,79 @@ export default function LandingPage() {
       setError(err.response?.data?.message || err.message || 'Unable to login');
     }
   };
+
+  const handleForgotSendOtp = async (e) => {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotSuccess(null);
+    setForgotDevOtp(null);
+
+    const cleanId = (forgotIdentifier || '').trim();
+    if (!cleanId) {
+      setForgotError('Pakiusap ilagay ang iyong Username o Email Address.');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const res = await authApi.sendForgotPasswordOtp({ identifier: cleanId });
+      if (res.data?.success) {
+        setForgotTargetEmail(res.data.email);
+        setForgotMaskedEmail(res.data.masked_email || res.data.email);
+        if (res.data.dev_otp) {
+          setForgotDevOtp(res.data.dev_otp);
+        }
+        setForgotStep(2);
+      }
+    } catch (err) {
+      setForgotError(err.response?.data?.message || err.message || 'Hindi maipadala ang verification code.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleForgotReset = async (e) => {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotSuccess(null);
+
+    if (!forgotOtp.trim()) {
+      setForgotError('Pakiusap ilagay ang 6-digit verification code.');
+      return;
+    }
+    if (forgotNewPassword.length < 6) {
+      setForgotError('Ang bagong password ay dapat hindi bababa sa 6 characters.');
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setForgotError('Hindi magkatugma ang bagong password at kumpirmasyon nito.');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const res = await authApi.resetPassword({
+        email: forgotTargetEmail,
+        otp: forgotOtp.trim(),
+        new_password: forgotNewPassword,
+      });
+      if (res.data?.success) {
+        setForgotSuccess(res.data.message || 'Matagumpay na napalitan ang iyong password!');
+        setTimeout(() => {
+          setShowForgotModal(false);
+          setShowLoginModal(true);
+          setEmail(forgotTargetEmail);
+          setPassword('');
+          setError(null);
+        }, 2200);
+      }
+    } catch (err) {
+      setForgotError(err.response?.data?.message || err.message || 'Hindi ma-reset ang password.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
 
   const handleGoogleSuccess = useCallback(async (credential) => {
     setError(null);
@@ -455,6 +543,11 @@ export default function LandingPage() {
       .filter(Boolean)
       .join(', ');
 
+    if (regCategory === '4Ps Household Beneficiaries' && !regHouseholdNumber.trim()) {
+      setRegError('Mangyaring ilagay ang inyong 4Ps Household Number.');
+      return;
+    }
+
     const regData = {
       first_name: regFirstName.trim(),
       last_name: regLastName.trim(),
@@ -466,6 +559,7 @@ export default function LandingPage() {
       sex: regSex,
       birthdate: regBirthdate || undefined,
       category: regCategory,
+      household_id_number: regCategory === '4Ps Household Beneficiaries' ? regHouseholdNumber.trim() : undefined,
       ip_classification: regIpClassification,
       sitio: regSitio ? regSitio.trim() : '',
       address: fullCombinedAddress,
@@ -504,6 +598,7 @@ export default function LandingPage() {
         setRegSex('Male');
         setRegBirthdate('');
         setRegCategory('4Ps Household Beneficiaries');
+        setRegHouseholdNumber('');
         setRegContactNumber('');
         setRegIpClassification('Non-IP');
         setRegPassword('');
@@ -545,6 +640,7 @@ export default function LandingPage() {
       setRegSex('Male');
       setRegBirthdate('');
       setRegCategory('4Ps Household Beneficiaries');
+      setRegHouseholdNumber('');
       setRegContactNumber('');
       setRegIpClassification('Non-IP');
       setRegPassword('');
@@ -1364,6 +1460,20 @@ export default function LandingPage() {
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                       Password
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowLoginModal(false);
+                        setShowForgotModal(true);
+                        setForgotStep(1);
+                        setForgotIdentifier(email || '');
+                        setForgotError(null);
+                        setForgotSuccess(null);
+                      }}
+                      className="text-xs text-[#00338D] hover:underline font-bold"
+                    >
+                      Forgot password?
+                    </button>
                   </div>
                   <div className="relative">
                     <Input
@@ -1606,6 +1716,31 @@ export default function LandingPage() {
                   </div>
                 </div>
 
+                {/* 4Ps Household Number: Required for 4Ps, serves as their Beneficiary Number */}
+                {regCategory === '4Ps Household Beneficiaries' && (
+                  <div className="rounded-xl bg-blue-50/80 border border-blue-200 p-3.5 space-y-1.5 animate-fadeIn">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-[#00338D] uppercase">
+                        4Ps Household Number <span className="text-red-500">*</span>
+                      </label>
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200">
+                        Ito ang iyong magiging Beneficiary Number
+                      </span>
+                    </div>
+                    <Input
+                      type="text"
+                      value={regHouseholdNumber}
+                      onChange={(e) => setRegHouseholdNumber(e.target.value)}
+                      placeholder="e.g. 175201001-0001"
+                      className="w-full bg-white font-mono font-bold text-slate-800"
+                      required
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      Ipasok ang opisyal na 4Ps Household ID Number mula sa inyong Pantawid Pamilya ID card o certificate.
+                    </p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
@@ -1711,6 +1846,192 @@ export default function LandingPage() {
           onResend={handleResendOtp}
         />
       )}
+
+      {/* ━━━ FORGOT PASSWORD MODAL ━━━ */}
+      {showForgotModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 sm:p-8 relative max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200 border border-slate-100">
+            {/* Close Button */}
+            <button
+              onClick={() => setShowForgotModal(false)}
+              className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="inline-flex p-3 rounded-2xl bg-blue-50 text-[#00338D] mb-3 border border-blue-100 shadow-2xs">
+                <Lock className="w-7 h-7" />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
+                {forgotStep === 1 ? 'Forgot Password' : 'Reset Your Password'}
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                {forgotStep === 1
+                  ? 'Ilagay ang iyong Username o Email upang makatanggap ng 6-digit verification code.'
+                  : `I-type ang code na ipinadala sa ${forgotMaskedEmail} at ilagay ang bagong password.`}
+              </p>
+            </div>
+
+            {forgotError && (
+              <div className="mb-4 rounded-xl bg-red-50 p-3 border border-red-200 flex items-center gap-2 text-xs font-semibold text-[#E30613]">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{forgotError}</span>
+              </div>
+            )}
+
+            {forgotSuccess && (
+              <div className="mb-4 rounded-xl bg-emerald-50 p-3 border border-emerald-200 flex items-center gap-2 text-xs font-semibold text-emerald-700">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                <span>{forgotSuccess}</span>
+              </div>
+            )}
+
+            {/* STEP 1: Enter Username or Email */}
+            {forgotStep === 1 && (
+              <form onSubmit={handleForgotSendOtp} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Username o Email Address
+                  </label>
+                  <Input
+                    type="text"
+                    value={forgotIdentifier}
+                    onChange={(e) => setForgotIdentifier(e.target.value)}
+                    placeholder="hal. maria_santos o maria@gmail.com"
+                    className="w-full"
+                    required
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="w-full bg-[#00338D] hover:bg-[#002566] text-white py-3.5 font-bold rounded-xl shadow-xs text-sm"
+                >
+                  {forgotLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Hinahanap ang Account...
+                    </span>
+                  ) : (
+                    'Ipadala ang Verification Code'
+                  )}
+                </Button>
+
+                <p className="text-center text-xs text-slate-600 pt-2">
+                  Naalala mo na ang iyong password?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForgotModal(false);
+                      setShowLoginModal(true);
+                      setForgotError(null);
+                    }}
+                    className="text-[#00338D] font-bold hover:underline"
+                  >
+                    Bumalik sa Sign In
+                  </button>
+                </p>
+              </form>
+            )}
+
+            {/* STEP 2: Enter OTP & New Password */}
+            {forgotStep === 2 && (
+              <form onSubmit={handleForgotReset} className="space-y-4">
+                {forgotDevOtp && (
+                  <div className="rounded-xl bg-amber-50 p-3 border border-amber-200 text-xs font-bold text-amber-900">
+                    🔧 Dev Mode OTP Code: <span className="font-mono text-base font-black text-[#00338D]">{forgotDevOtp}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    6-Digit Verification Code
+                  </label>
+                  <Input
+                    type="text"
+                    maxLength={6}
+                    value={forgotOtp}
+                    onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, ''))}
+                    placeholder="123456"
+                    className="w-full text-center font-mono text-lg tracking-widest font-bold"
+                    required
+                  />
+                  <span className="text-[11px] text-slate-400 mt-1 block">
+                    I-check ang iyong email inbox o spam folder.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Bagong Password
+                  </label>
+                  <Input
+                    type="password"
+                    value={forgotNewPassword}
+                    onChange={(e) => setForgotNewPassword(e.target.value)}
+                    placeholder="Hindi bababa sa 6 characters"
+                    className="w-full"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Kumpirmahin ang Bagong Password
+                  </label>
+                  <Input
+                    type="password"
+                    value={forgotConfirmPassword}
+                    onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                    placeholder="Ulitin ang bagong password"
+                    className="w-full"
+                    required
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={forgotLoading || Boolean(forgotSuccess)}
+                  className="w-full bg-[#00338D] hover:bg-[#002566] text-white py-3.5 font-bold rounded-xl shadow-xs text-sm"
+                >
+                  {forgotLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Ina-update ang Password...
+                    </span>
+                  ) : (
+                    'I-save ang Bagong Password'
+                  )}
+                </Button>
+
+                <div className="flex items-center justify-between text-xs pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotStep(1);
+                      setForgotError(null);
+                    }}
+                    className="text-slate-500 hover:text-slate-800 font-semibold"
+                  >
+                    ← Mag-iba ng Account
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleForgotSendOtp}
+                    disabled={forgotLoading}
+                    className="text-[#00338D] font-bold hover:underline"
+                  >
+                    Ipadala muli ang code
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
 
     </div>
   );

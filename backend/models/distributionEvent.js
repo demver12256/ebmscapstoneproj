@@ -90,6 +90,45 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATE,
         allowNull: true,
       },
+      // ── Non-Cash / In-Kind Program Support ──
+      benefit_type: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'Cash',
+        comment: 'Cash, In-Kind, Service',
+      },
+      item_name: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Description of non-cash goods or service (e.g. Food Pack, Wheelchair, Seminar)',
+      },
+      item_quantity: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1,
+        comment: 'Quantity per beneficiary',
+      },
+      item_unit: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: 'pack',
+        comment: 'Unit of measure: pack, kit, unit, session, sack',
+      },
+      agency: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'DSWD',
+        comment: 'Agency scope: DSWD or MSWDO',
+      },
+      created_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'users',
+          key: 'id',
+        },
+        comment: 'User ID of the creator',
+      },
     },
     {
       tableName: 'distribution_events',

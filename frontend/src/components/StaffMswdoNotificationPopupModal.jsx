@@ -16,6 +16,7 @@ import {
   Building2,
   QrCode,
   Users,
+  CreditCard,
 } from 'lucide-react';
 
 export default function StaffMswdoNotificationPopupModal() {
@@ -137,8 +138,9 @@ export default function StaffMswdoNotificationPopupModal() {
   if (!isOpen || modalItems.length === 0) return null;
 
   const currentItem = modalItems[currentIndex] || modalItems[0];
-  const isMswdoNotice = currentItem?.reference_type === 'announcement_mswdo' || isMswdo;
-  const isStaffAssignment = isStaff && (currentItem?.reference_type === 'announcement_staff' || !isMswdo);
+  const isPayoutVerification = currentItem?.reference_type === 'payout_verification' || currentItem?.title?.toLowerCase().includes('payout');
+  const isMswdoNotice = (currentItem?.reference_type === 'announcement_mswdo' || isMswdo) && !isPayoutVerification;
+  const isStaffAssignment = isStaff && (currentItem?.reference_type === 'announcement_staff' || !isMswdo) && !isPayoutVerification;
 
   return (
     <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -146,9 +148,11 @@ export default function StaffMswdoNotificationPopupModal() {
         {/* Header Banner */}
         <div
           className={`p-6 text-white relative ${
-            isMswdoNotice
-              ? 'bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900'
-              : 'bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-900'
+            isPayoutVerification
+              ? 'bg-gradient-to-r from-purple-950 via-indigo-900 to-slate-900'
+              : isMswdoNotice
+                ? 'bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900'
+                : 'bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-900'
           }`}
         >
           {/* Close button */}
@@ -163,10 +167,14 @@ export default function StaffMswdoNotificationPopupModal() {
           <div className="flex items-center gap-3.5 pr-8">
             <div
               className={`p-3 rounded-2xl shadow-lg shrink-0 ${
-                isMswdoNotice ? 'bg-amber-400 text-slate-950' : 'bg-yellow-400 text-slate-950'
+                isPayoutVerification
+                  ? 'bg-purple-500 text-white shadow-purple-900/50'
+                  : isMswdoNotice ? 'bg-amber-400 text-slate-950' : 'bg-yellow-400 text-slate-950'
               }`}
             >
-              {isMswdoNotice ? (
+              {isPayoutVerification ? (
+                <CreditCard className="w-6 h-6 animate-bounce text-yellow-300" />
+              ) : isMswdoNotice ? (
                 <Building2 className="w-6 h-6 animate-bounce" />
               ) : (
                 <Megaphone className="w-6 h-6 animate-bounce" />
@@ -175,12 +183,16 @@ export default function StaffMswdoNotificationPopupModal() {
             <div className="space-y-0.5">
               <span
                 className={`text-[11px] font-black uppercase tracking-wider block px-2.5 py-0.5 rounded-full w-fit ${
-                  isMswdoNotice
-                    ? 'bg-amber-400/20 text-yellow-300 border border-amber-300/30'
-                    : 'bg-yellow-400/20 text-yellow-300 border border-yellow-300/30'
+                  isPayoutVerification
+                    ? 'bg-purple-400/20 text-purple-200 border border-purple-400/30'
+                    : isMswdoNotice
+                      ? 'bg-amber-400/20 text-yellow-300 border border-amber-300/30'
+                      : 'bg-yellow-400/20 text-yellow-300 border border-yellow-300/30'
                 }`}
               >
-                {isMswdoNotice ? '🏛️ MSWDO Coordination Notice' : '📢 Barangay Activity Assignment'}
+                {isPayoutVerification
+                  ? '💳 Digital Payout Verification'
+                  : isMswdoNotice ? '🏛️ MSWDO Coordination Notice' : '📢 Barangay Activity Assignment'}
               </span>
               <h2 className="text-xl font-black text-white tracking-tight leading-snug line-clamp-2">
                 {currentItem?.title}
@@ -197,6 +209,11 @@ export default function StaffMswdoNotificationPopupModal() {
               <span className="bg-blue-100 text-blue-800 font-bold px-2.5 py-0.5 rounded-md border border-blue-200">
                 🔵 OFFICIAL DSWD NOTICE
               </span>
+              {isPayoutVerification && (
+                <span className="bg-purple-100 text-purple-900 font-bold px-2.5 py-0.5 rounded-md border border-purple-200">
+                  ⚡ Bagong E-Wallet Registration
+                </span>
+              )}
               {isMswdoNotice && (
                 <span className="bg-purple-100 text-purple-900 font-bold px-2 py-0.5 rounded-md border border-purple-200">
                   MSWDO Admin Copy
@@ -224,6 +241,15 @@ export default function StaffMswdoNotificationPopupModal() {
           </div>
 
           {/* Instruction Note */}
+          {isPayoutVerification && (
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-950 flex items-start gap-2">
+              <CreditCard className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>Paalala sa Opisyal:</strong> I-verify ang nakarehistrong pangalan at account number ng benepisyaryo bago mag-disburse upang maiwasan ang maling pagpapadala ng ayuda.
+              </span>
+            </div>
+          )}
+
           {isStaffAssignment && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 flex items-start gap-2">
               <Users className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
@@ -268,12 +294,25 @@ export default function StaffMswdoNotificationPopupModal() {
             </div>
           ) : (
             <div className="text-xs font-semibold text-slate-400">
-              Bagong Abiso mula sa DSWD
+              {isPayoutVerification ? 'Bagong Payout Account Registration' : 'Bagong Abiso mula sa DSWD'}
             </div>
           )}
 
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
             {/* Quick Navigation Button */}
+            {isPayoutVerification && (
+              <button
+                onClick={() => {
+                  handleMarkAsRead();
+                  navigate('/dashboard/beneficiaries?payout_status=unverified', { state: { payout_status: 'unverified' } });
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white transition shadow-sm"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>I-verify sa Beneficiary Records</span>
+              </button>
+            )}
+
             {isStaffAssignment && (
               <button
                 onClick={() => {
