@@ -141,8 +141,7 @@ router.get('/me', authorize('beneficiary'), async (req, res, next) => {
             required: false,
             include: [{ model: BenefitProgram, as: 'Program', attributes: ['id', 'name', 'code', 'benefit_type', 'agency'], required: false }]
           }],
-          order: [['created_at', 'DESC']],
-          limit: 10
+          order: [['created_at', 'DESC']]
         }
       ]
     });
@@ -188,8 +187,7 @@ router.get('/me', authorize('beneficiary'), async (req, res, next) => {
                 required: false,
                 include: [{ model: BenefitProgram, as: 'Program', attributes: ['id', 'name', 'code', 'benefit_type', 'agency'], required: false }]
               }],
-              order: [['created_at', 'DESC']],
-              limit: 10
+              order: [['created_at', 'DESC']]
             }
           ]
         });

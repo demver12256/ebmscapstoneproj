@@ -2,7 +2,7 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
-const { sequelize, Beneficiary, BenefitProgram, DistributionEvent, DistributionTransaction, Barangay, Enrollment, AssistanceRequest, Attendance, Announcement, AuditLog, User } = require('../db');
+const { sequelize, Beneficiary, BenefitProgram, DistributionEvent, DistributionTransaction, Barangay, Enrollment, AssistanceRequest, Attendance, Announcement, AnnouncementRecipient, AuditLog, User } = require('../db');
 const { isMswdoRole, MSWDO_CATEGORY_FILTER, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory } = require('../utils/roles');
 
 const router = express.Router();
@@ -1003,61 +1003,82 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
     const barangayId = req.user.barangay_id;
     const { page = 1, limit = 10 } = req.query;
 
-    const where = {};
-    // Agency scoping via announcement creator
+    const announcementScopeWhere = {};
     if (isMswdoRole(req.user.role)) {
       const mswdoAnnouncements = await Announcement.findAll({
         where: { created_by_user_id: req.user.id },
         attributes: ['id'],
       });
-      where.announcement_id = { [Op.in]: mswdoAnnouncements.map(a => a.id) };
-    } else if (req.user.role === 'admin') {
-      // DSWD admin: show attendance from announcements created by DSWD admins
-      const dswdAdmins = await User.findAll({ where: { role: 'admin' }, attributes: ['id'] });
-      const dswdAnnouncements = await Announcement.findAll({
-        where: { created_by_user_id: { [Op.in]: dswdAdmins.map(u => u.id) } },
-        attributes: ['id'],
-      });
-      where.announcement_id = { [Op.in]: dswdAnnouncements.map(a => a.id) };
+      announcementScopeWhere.id = { [Op.in]: mswdoAnnouncements.map(a => a.id) };
     }
 
-    // Barangay staff: filter by beneficiary barangay
     const benWhere = {};
     if (isBarangayScoped && barangayId) {
       benWhere.barangay_id = barangayId;
     }
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    const { count, rows } = await Attendance.findAndCountAll({
-      where,
+    const attendanceWhere = {};
+    if (Object.keys(announcementScopeWhere).length > 0) {
+      attendanceWhere.announcement_id = { [Op.in]: (await Announcement.findAll({ where: announcementScopeWhere, attributes: ['id'] })).map(a => a.id) };
+    }
+
+    const attendanceRows = await Attendance.findAll({
+      where: attendanceWhere,
       include: [
         { model: Beneficiary, attributes: ['id', 'first_name', 'last_name', 'category'], where: Object.keys(benWhere).length > 0 ? benWhere : undefined, required: Object.keys(benWhere).length > 0 },
-        { model: Announcement, as: 'Announcement', attributes: ['id', 'title'], required: false },
+        { model: Announcement, as: 'Announcement', attributes: ['id', 'title', 'event_date'], required: false },
       ],
       order: [['attendance_date', 'DESC'], ['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset,
     });
 
-    const data = rows.map(r => ({
-      id: r.id,
-      beneficiary_name: r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : 'N/A',
-      category: r.Beneficiary?.category || '—',
-      event_name: r.event_name || r.Announcement?.title || 'N/A',
-      attendance_date: r.attendance_date,
-      time_in: r.time_in || '—',
-      status: r.status,
-      remarks: r.remarks || '—',
-    }));
+    const absentWhere = { attendance_status: 'Absent' };
+    if (Object.keys(announcementScopeWhere).length > 0) {
+      absentWhere.announcement_id = { [Op.in]: (await Announcement.findAll({ where: announcementScopeWhere, attributes: ['id'] })).map(a => a.id) };
+    }
+
+    const absentRows = await AnnouncementRecipient.findAll({
+      where: absentWhere,
+      include: [
+        { model: Beneficiary, as: 'Beneficiary', attributes: ['id', 'first_name', 'last_name', 'category'], where: Object.keys(benWhere).length > 0 ? benWhere : undefined, required: Object.keys(benWhere).length > 0 },
+        { model: Announcement, attributes: ['id', 'title', 'event_date'], required: false },
+      ],
+      order: [['scanned_at', 'DESC'], ['id', 'DESC']],
+    });
+
+    const mapped = [
+      ...attendanceRows.map(r => ({
+        id: r.id,
+        beneficiary_name: r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : 'N/A',
+        category: r.Beneficiary?.category || '—',
+        event_name: r.event_name || r.Announcement?.title || 'N/A',
+        attendance_date: r.attendance_date || r.Announcement?.event_date || null,
+        time_in: r.time_in || '—',
+        status: r.status,
+        remarks: r.remarks || '—',
+      })),
+      ...absentRows.map(r => ({
+        id: `a-${r.id}`,
+        beneficiary_name: r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : 'N/A',
+        category: r.Beneficiary?.category || '—',
+        event_name: r.Announcement?.title || 'N/A',
+        attendance_date: r.Announcement?.event_date || null,
+        time_in: '—',
+        status: 'Absent',
+        remarks: 'Marked absent',
+      })),
+    ].sort((a, b) => new Date(b.attendance_date || 0) - new Date(a.attendance_date || 0));
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const paginated = mapped.slice(offset, offset + parseInt(limit));
 
     res.json({
       success: true,
-      data,
+      data: paginated,
       pagination: {
-        total: count,
+        total: mapped.length,
         page: parseInt(page),
         limit: parseInt(limit),
-        totalPages: Math.ceil(count / parseInt(limit)) || 1
+        totalPages: Math.ceil(mapped.length / parseInt(limit)) || 1
       }
     });
   } catch (error) {
@@ -1164,46 +1185,70 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
     const barangayId = req.user.barangay_id;
 
-    const where = {};
+    const announcementScopeWhere = {};
     if (isMswdoRole(req.user.role)) {
       const mswdoAnnouncements = await Announcement.findAll({
         where: { created_by_user_id: req.user.id },
         attributes: ['id'],
       });
-      where.announcement_id = { [Op.in]: mswdoAnnouncements.map(a => a.id) };
-    } else if (req.user.role === 'admin') {
-      const dswdAdmins = await User.findAll({ where: { role: 'admin' }, attributes: ['id'] });
-      const dswdAnnouncements = await Announcement.findAll({
-        where: { created_by_user_id: { [Op.in]: dswdAdmins.map(u => u.id) } },
-        attributes: ['id'],
-      });
-      where.announcement_id = { [Op.in]: dswdAnnouncements.map(a => a.id) };
+      announcementScopeWhere.id = { [Op.in]: mswdoAnnouncements.map(a => a.id) };
     }
 
     const benWhere = {};
     if (isBarangayScoped && barangayId) benWhere.barangay_id = barangayId;
 
+    const attendanceWhere = {};
+    if (Object.keys(announcementScopeWhere).length > 0) {
+      attendanceWhere.announcement_id = { [Op.in]: (await Announcement.findAll({ where: announcementScopeWhere, attributes: ['id'] })).map(a => a.id) };
+    }
+
     const records = await Attendance.findAll({
-      where,
+      where: attendanceWhere,
       include: [
         { model: Beneficiary, attributes: ['first_name', 'last_name', 'category'], where: Object.keys(benWhere).length > 0 ? benWhere : undefined, required: Object.keys(benWhere).length > 0 },
-        { model: Announcement, as: 'Announcement', attributes: ['title'], required: false },
+        { model: Announcement, as: 'Announcement', attributes: ['title', 'event_date'], required: false },
       ],
       order: [['attendance_date', 'DESC']],
     });
 
-    const headers = ['ID', 'Beneficiary Name', 'Category', 'Event Name', 'Date', 'Time In', 'Status', 'Remarks'];
-    const rows = records.map(r => [
-      r.id,
-      r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : '',
-      r.Beneficiary?.category || '',
-      r.event_name || r.Announcement?.title || '',
-      r.attendance_date || '',
-      r.time_in || '',
-      r.status,
-      r.remarks || '',
-    ]);
+    const absentWhere = { attendance_status: 'Absent' };
+    if (Object.keys(announcementScopeWhere).length > 0) {
+      absentWhere.announcement_id = { [Op.in]: (await Announcement.findAll({ where: announcementScopeWhere, attributes: ['id'] })).map(a => a.id) };
+    }
 
+    const absentRecords = await AnnouncementRecipient.findAll({
+      where: absentWhere,
+      include: [
+        { model: Beneficiary, as: 'Beneficiary', attributes: ['first_name', 'last_name', 'category'], where: Object.keys(benWhere).length > 0 ? benWhere : undefined, required: Object.keys(benWhere).length > 0 },
+        { model: Announcement, attributes: ['title', 'event_date'], required: false },
+      ],
+      order: [['scanned_at', 'DESC']],
+    });
+
+    const rows = [
+      ...records.map(r => [
+        r.id,
+        r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : '',
+        r.Beneficiary?.category || '',
+        r.event_name || r.Announcement?.title || '',
+        r.attendance_date || r.Announcement?.event_date || '',
+        r.time_in || '',
+        r.status,
+        r.remarks || '',
+      ]),
+      ...absentRecords.map(r => [
+        `a-${r.id}`,
+        r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : '',
+        r.Beneficiary?.category || '',
+        r.Announcement?.title || '',
+        r.Announcement?.event_date || '',
+        '',
+        'Absent',
+        'Marked absent',
+      ])
+    ];
+
+    const headers = ['ID', 'Beneficiary Name', 'Category', 'Event Name', 'Date', 'Time In', 'Status', 'Remarks'];
     const csv = toCSV(headers, rows);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="attendance-report.csv"');

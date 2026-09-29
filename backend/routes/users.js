@@ -3,6 +3,16 @@ const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { User, Beneficiary, AuditLog, Message, SMSNotification, BeneficiaryDocument } = require('../db');
 
+const normalizeBeneficiaryCategory = (category) => {
+  const value = String(category || '').trim();
+  if (!value) return 'Persons with Disabilities (PWD)';
+  const lower = value.toLowerCase();
+  if (lower.includes('4ps') || lower.includes('pantawid')) return '4Ps Household Beneficiaries';
+  if (lower.includes('senior')) return 'Senior Citizens (Social Pension)';
+  if (lower.includes('pwd') || lower.includes('disabil')) return 'Persons with Disabilities (PWD)';
+  return value;
+};
+
 const router = express.Router();
 router.use(authenticate);
 router.use(authorize('admin', 'staff'));
@@ -28,7 +38,7 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    let { first_name, last_name, username, email, password, contact_number, address, barangay_id, role } = req.body;
+    let { first_name, last_name, username, email, password, contact_number, address, barangay_id, role, category, household_id_number } = req.body;
 
     if (req.user.role === 'staff') {
       // Staff can only create beneficiaries for their own barangay
@@ -38,9 +48,33 @@ router.post('/', async (req, res, next) => {
 
     const trimmedUsername = username ? String(username).trim() : null;
     const trimmedEmail = email && String(email).trim() !== '' ? String(email).trim().toLowerCase() : null;
+    const normalizedCategory = normalizeBeneficiaryCategory(category);
+    const trimmedHouseholdId = household_id_number ? String(household_id_number).trim() : null;
 
     if (!first_name || !last_name || (!trimmedUsername && !trimmedEmail) || !password || !role) {
       return res.status(400).json({ success: false, message: 'First name, last name, username or email, password, and role are required' });
+    }
+
+    if (role === 'beneficiary' && !category) {
+      return res.status(400).json({ success: false, message: 'Please select the beneficiary category (4Ps, Senior, or PWD).' });
+    }
+
+    if (normalizedCategory.toLowerCase().includes('4ps') && !trimmedHouseholdId) {
+      return res.status(400).json({ success: false, message: 'Household Number is required for 4Ps Household Beneficiaries.' });
+    }
+
+    if (normalizedCategory.toLowerCase().includes('4ps') && trimmedHouseholdId) {
+      const existingHousehold = await Beneficiary.findOne({
+        where: {
+          [require('sequelize').Op.or]: [
+            { household_id_number: trimmedHouseholdId },
+            { beneficiary_id_code: trimmedHouseholdId }
+          ]
+        }
+      });
+      if (existingHousehold) {
+        return res.status(409).json({ success: false, message: 'This 4Ps Household Number is already registered in the system.' });
+      }
     }
 
     if (trimmedUsername) {
@@ -70,6 +104,7 @@ router.post('/', async (req, res, next) => {
     });
 
     if (role === 'beneficiary') {
+      const is4Ps = normalizedCategory.toLowerCase().includes('4ps');
       await Beneficiary.create({
         user_id: user.id,
         first_name,
@@ -77,8 +112,13 @@ router.post('/', async (req, res, next) => {
         sex: 'Other',
         birthdate: '2000-01-01',
         barangay_id: barangay_id,
-        category: 'Non-IP',
-        contact_number
+        category: normalizedCategory,
+        ip_classification: 'Non-IP',
+        contact_number,
+        address,
+        status: 'Pending Review',
+        household_id_number: is4Ps ? trimmedHouseholdId : null,
+        beneficiary_id_code: is4Ps ? trimmedHouseholdId : null,
       });
     }
 

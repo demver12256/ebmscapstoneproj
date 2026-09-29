@@ -411,7 +411,8 @@ router.post('/google', async (req, res, next) => {
 router.post('/login', async (req, res, next) => {
   try {
     const { email, username, identifier, password } = req.body;
-    const loginIdentifier = (identifier || username || email || '').trim();
+    const rawIdentifier = String(identifier ?? username ?? email ?? '').trim();
+    const loginIdentifier = rawIdentifier.includes('@') ? rawIdentifier.toLowerCase() : rawIdentifier;
 
     if (!loginIdentifier || !password) {
       return res.status(400).json({ success: false, message: 'Username/Email and password are required' });
@@ -686,9 +687,8 @@ router.post('/change-password', authenticate, async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
-    // Verify current password
-    const bcrypt = require('bcryptjs');
-    const isMatch = await bcrypt.compare(current_password, user.password);
+    // Verify current password using the same bcrypt setup as the rest of the app
+    const isMatch = await user.comparePassword(current_password);
     if (!isMatch) {
       return res.status(400).json({ success: false, message: 'Incorrect current password. Pakisubukan muli.' });
     }

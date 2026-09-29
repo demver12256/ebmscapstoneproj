@@ -161,6 +161,17 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/beneficiaries')
     },
     {
+      title: 'Approved Beneficiaries',
+      value: summary?.approvedCount || totalBeneficiaries,
+      change: 'Verified records',
+      trend: 'up',
+      icon: CheckCircle,
+      gradient: 'from-emerald-500 to-emerald-600',
+      iconBg: 'bg-emerald-100',
+      iconColor: 'text-emerald-600',
+      onClick: () => navigate('/dashboard/beneficiaries')
+    },
+    {
       title: 'Pending Approvals',
       value: pendingCount,
       change: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
@@ -204,6 +215,17 @@ export default function ModernDashboard() {
       iconBg: 'bg-green-100',
       iconColor: 'text-green-600',
       onClick: () => navigate('/dashboard/distributions')
+    },
+    {
+      title: 'Approved Beneficiaries',
+      value: summary?.approvedCount || totalBeneficiaries,
+      change: 'Verified records',
+      trend: 'up',
+      icon: CheckCircle,
+      gradient: 'from-emerald-500 to-emerald-600',
+      iconBg: 'bg-emerald-100',
+      iconColor: 'text-emerald-600',
+      onClick: () => navigate('/dashboard/beneficiaries')
     },
     ...(['admin','mswdo_admin'].includes(user?.role) ? [{
       title: 'Pending Beneficiaries',
@@ -310,361 +332,320 @@ export default function ModernDashboard() {
   };
 
   return (
-    <div className="space-y-8 p-6 sm:p-8 bg-[#F8FAFC] min-h-screen">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200/80 pb-6">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${isMswdoAdmin ? 'bg-purple-50 text-purple-700 border-purple-200' : ['admin','mswdo_admin'].includes(user?.role) ? 'bg-blue-50 text-[#00338D] border-blue-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100'}`}>
-              {isMswdoAdmin ? '🏥 MSWDO — Senior & PWD Focus' : ['admin','mswdo_admin'].includes(user?.role) ? '👑 Admin Console' : '🏢 Staff Portal'}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">• Bongabong, Or. Mindoro</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Welcome back, <span className="text-[#00338D]">{user?.first_name || 'User'}</span>
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">{isMswdoAdmin ? 'MSWDO focus: Senior Citizens and Persons with Disabilities (PWD) welfare.' : 'Here is the real-time summary of beneficiaries, programs, and payouts.'}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={loadDashboard}
-            className="px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors shadow-2xs flex items-center gap-2"
-          >
-            <Activity className="w-4 h-4 text-slate-500" />
-            Refresh Data
-          </button>
-          <button 
-            onClick={() => navigate('/dashboard/reports')}
-            className="px-5 py-2.5 rounded-xl bg-[#00338D] hover:bg-[#002566] text-white text-xs font-bold transition shadow-xs flex items-center gap-2"
-          >
-            <FileText className="w-4 h-4" />
-            View Reports
-          </button>
-        </div>
-      </div>
-
-      {/* UPCOMING ANNOUNCEMENTS & ACTIVITY FACILITATION WIDGET */}
-      {!['admin','mswdo_admin'].includes(user?.role) && announcements.filter(a => a.status === 'published').length > 0 && (
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-dswd-blue text-white rounded-2xl p-6 shadow-xl space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-400 text-slate-950 rounded-xl">
-                <Megaphone className="w-5 h-5 stroke-[2.5]" />
-              </div>
-              <div>
-                <h2 className="text-lg font-black tracking-tight">Upcoming Activity Announcements</h2>
-                <p className="text-xs text-blue-200">Scheduled events requiring RFID beneficiary attendance facilitation</p>
-              </div>
-            </div>
-            <Link
-              to="/dashboard/announcements"
-              className="text-xs font-bold text-yellow-300 hover:text-yellow-200 underline flex items-center gap-1"
-            >
-              View All ({announcements.filter(a => a.status === 'published').length}) <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {announcements.filter(a => a.status === 'published').slice(0, 2).map((ann) => (
-              <div
-                key={ann.id}
-                className="bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-4 flex flex-col justify-between gap-3 hover:bg-white/15 transition"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="bg-yellow-400/20 text-yellow-300 font-extrabold px-2 py-0.5 rounded text-[10px] uppercase">
-                      {ann.priority} PRIORITY
-                    </span>
-                    <span className="text-blue-200 text-[11px]">
-                      Expected: <strong className="text-white">{ann.recipient_count || 0} Beneficiaries</strong>
-                    </span>
-                  </div>
-                  <h3 className="font-extrabold text-white text-base leading-snug">{ann.title}</h3>
-                  <p className="text-xs text-blue-100 line-clamp-2">{ann.message}</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50/80 p-4 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-[1600px] space-y-6">
+        <div className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/80 shadow-[0_20px_60px_-15px_rgba(15,23,42,0.18)] backdrop-blur-sm">
+          <div className="border-b border-slate-200/80 bg-gradient-to-r from-[#0B1F4D] via-[#00338D] to-[#0E52C1] px-6 py-6 sm:px-8">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${isMswdoAdmin ? 'border-white/35 bg-white/15 text-white' : ['admin','mswdo_admin'].includes(user?.role) ? 'border-white/35 bg-white/15 text-white' : 'border-white/35 bg-white/15 text-white'}`}>
+                    {isMswdoAdmin ? 'MSWDO FOCUS' : ['admin','mswdo_admin'].includes(user?.role) ? 'ADMIN CONSOLE' : 'STAFF PORTAL'}
+                  </span>
+                  <span className="text-xs text-blue-100">• Bongabong, Or. Mindoro</span>
                 </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10 text-xs text-amber-200">
-                  <div className="space-y-0.5">
-                    {ann.event_date && (
-                      <div className="flex items-center gap-1 font-semibold text-slate-100">
-                        <Calendar className="w-3.5 h-3.5 text-yellow-400" />
-                        <span>{ann.event_date} {ann.event_time && `at ${ann.event_time}`}</span>
-                      </div>
-                    )}
-                    {ann.venue && (
-                      <div className="flex items-center gap-1 text-slate-300">
-                        <MapPin className="w-3.5 h-3.5 text-red-400" />
-                        <span className="truncate max-w-[200px]">{ann.venue}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {(user?.role === 'staff' || user?.role === 'barangay') ? (
-                    <button
-                      onClick={() => navigate(`/dashboard/announcement-scanner?id=${ann.id}`)}
-                      className="bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black px-3.5 py-1.5 rounded-lg text-xs shadow transition flex items-center gap-1.5 transform active:scale-95"
-                    >
-                      <Smartphone className="w-3.5 h-3.5 stroke-[2.5]" />
-                      Start Attendance
-                    </button>
-                  ) : (
-                    <Link
-                      to="/dashboard/announcements"
-                      className="bg-white/15 hover:bg-white/25 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs transition flex items-center gap-1.5"
-                    >
-                      View Details
-                    </Link>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <button
-              key={index}
-              onClick={stat.onClick}
-              className="group relative bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-xl hover:border-blue-200 transition-all duration-300 overflow-hidden text-left w-full"
-            >
-              {/* Background Gradient Overlay */}
-              <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}></div>
-              
-              <div className="relative">
-                <div className="flex items-start justify-between mb-4">
-                  <div className={`p-3 rounded-xl ${stat.iconBg}`}>
-                    <Icon className={`w-6 h-6 ${stat.iconColor}`} />
-                  </div>
-                  <div className={`flex items-center gap-1 text-sm font-semibold ${
-                    stat.trend === 'up' ? 'text-green-600' : 
-                    stat.trend === 'down' ? 'text-red-600' : 
-                    'text-slate-500'
-                  }`}>
-                    {stat.trend !== 'neutral' && (
-                      <TrendingUp className={`w-4 h-4 ${stat.trend === 'down' ? 'rotate-180' : ''}`} />
-                    )}
-                    {stat.change}
-                  </div>
-                </div>
-                
                 <div>
-                  <p className="text-sm text-slate-600 font-medium mb-1">{stat.title}</p>
-                  <p className="text-3xl font-bold text-slate-900">{stat.value}</p>
-                </div>
-
-                {/* Hover Arrow */}
-                <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ArrowRight className="w-5 h-5 text-blue-600" />
+                  <h1 className="text-2xl font-black tracking-tight text-white sm:text-4xl">
+                    Welcome back, <span className="text-blue-100">{user?.first_name || 'User'}</span>
+                  </h1>
+                  <p className="mt-2 max-w-2xl text-sm text-blue-100/90 sm:text-base">
+                    {isMswdoAdmin ? 'MSWDO focus: Senior Citizens and Persons with Disabilities (PWD) welfare.' : 'Here is the real-time overview of beneficiaries, programs, payouts, and operational activity.'}
+                  </p>
                 </div>
               </div>
-            </button>
-          );
-        })}
-      </div>
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Monthly Distribution Trend */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Monthly Distribution Trend</h3>
-              <p className="text-sm text-slate-500 mt-1">Track distribution performance over time</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-              <span className="text-sm text-slate-600 font-medium">Amount</span>
-            </div>
-          </div>
-          
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={monthlyDistributionData}>
-              <defs>
-                <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-              <XAxis 
-                dataKey="month" 
-                stroke="#64748B"
-                style={{ fontSize: '12px', fontWeight: '500' }}
-              />
-              <YAxis 
-                stroke="#64748B"
-                style={{ fontSize: '12px', fontWeight: '500' }}
-                tickFormatter={(value) => `₱${Number(value).toLocaleString()}`}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Area 
-                type="monotone" 
-                dataKey="amount" 
-                stroke="#3B82F6" 
-                strokeWidth={3}
-                fillOpacity={1} 
-                fill="url(#colorAmount)" 
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Category Distribution */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-          <div className="mb-6">
-            <h3 className="text-lg font-bold text-slate-900">Category Distribution</h3>
-            <p className="text-sm text-slate-500 mt-1">Beneficiary breakdown</p>
-          </div>
-          
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie
-                data={categoryData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={80}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {categoryData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: '#1E293B', 
-                  border: 'none', 
-                  borderRadius: '12px',
-                  color: '#fff'
-                }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-
-          <div className="mt-6 space-y-3">
-            {categoryData.map((cat, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }}></div>
-                  <span className="text-sm font-medium text-slate-700">{cat.name}</span>
-                </div>
-                <span className="text-sm font-bold text-slate-900">{cat.value}</span>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={loadDashboard}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-white/15"
+                >
+                  <Activity className="h-4 w-4" />
+                  Refresh Data
+                </button>
+                <button
+                  onClick={() => navigate('/dashboard/reports')}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-xs font-bold text-[#00338D] shadow-md transition hover:bg-blue-50"
+                >
+                  <FileText className="h-4 w-4" />
+                  View Reports
+                </button>
               </div>
-            ))}
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Recent Activity & Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Activity */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-slate-900">Recent Activity</h3>
-            <button 
-              onClick={() => navigate('/dashboard')}
-              className="text-sm text-blue-600 font-semibold hover:text-blue-700 flex items-center gap-1"
-            >
-              View All
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-          
-          {recentActivity.length > 0 ? (
-            <div className="space-y-4">
-              {recentActivity.map((activity, index) => {
-                const Icon = activity.icon;
-                return (
-                  <div key={index} className="flex items-center gap-4 p-4 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer">
-                    <div className={`p-2 rounded-lg ${activity.color.replace('text-', 'bg-').replace('600', '100')}`}>
-                      <Icon className={`w-5 h-5 ${activity.color}`} />
+          <div className="space-y-6 p-4 sm:p-6 lg:p-7">
+            {!['admin','mswdo_admin'].includes(user?.role) && announcements.filter(a => a.status === 'published').length > 0 && (
+              <div className="rounded-[24px] bg-gradient-to-r from-slate-900 via-indigo-950 to-[#103A8F] p-5 text-white shadow-[0_20px_50px_-20px_rgba(59,130,246,0.8)]">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-amber-400 p-2 text-slate-950">
+                      <Megaphone className="h-5 w-5" />
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-slate-900">{activity.name}</p>
-                      <p className="text-xs text-slate-500">{activity.action}</p>
+                    <div>
+                      <h2 className="text-lg font-black tracking-tight">Upcoming Activity Announcements</h2>
+                      <p className="text-xs text-blue-200">Scheduled events requiring attendance facilitation</p>
                     </div>
-                    <span className="text-xs text-slate-400 font-medium">{activity.time}</span>
                   </div>
+                  <Link
+                    to="/dashboard/announcements"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-amber-300 underline-offset-2 hover:underline"
+                  >
+                    View All ({announcements.filter(a => a.status === 'published').length}) <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {announcements.filter(a => a.status === 'published').slice(0, 2).map((ann) => (
+                    <div
+                      key={ann.id}
+                      className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-md transition hover:bg-white/10"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="rounded-full bg-amber-400/15 px-2 py-1 font-bold uppercase tracking-wide text-amber-200">
+                          {ann.priority} priority
+                        </span>
+                        <span className="text-blue-100">
+                          {ann.recipient_count || 0} beneficiaries
+                        </span>
+                      </div>
+                      <h3 className="mt-3 text-base font-extrabold leading-snug text-white">{ann.title}</h3>
+                      <p className="mt-2 text-xs leading-5 text-blue-100/90">{ann.message}</p>
+
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-xs">
+                        <div className="space-y-1 text-slate-200">
+                          {ann.event_date && (
+                            <div className="flex items-center gap-1.5 font-medium">
+                              <Calendar className="h-3.5 w-3.5 text-amber-300" />
+                              <span>{ann.event_date} {ann.event_time && `at ${ann.event_time}`}</span>
+                            </div>
+                          )}
+                          {ann.venue && (
+                            <div className="flex items-center gap-1.5 text-slate-300">
+                              <MapPin className="h-3.5 w-3.5 text-red-300" />
+                              <span>{ann.venue}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {(user?.role === 'staff' || user?.role === 'barangay') ? (
+                          <button
+                            onClick={() => navigate(`/dashboard/announcement-scanner?id=${ann.id}`)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-amber-400 to-yellow-500 px-3 py-1.5 text-[11px] font-black text-slate-950 shadow-md transition hover:brightness-105"
+                          >
+                            <Smartphone className="h-3.5 w-3.5" />
+                            Start Attendance
+                          </button>
+                        ) : (
+                          <Link
+                            to="/dashboard/announcements"
+                            className="rounded-lg bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-white/15"
+                          >
+                            View Details
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              {stats.map((stat, index) => {
+                const Icon = stat.icon;
+                return (
+                  <button
+                    key={index}
+                    onClick={stat.onClick}
+                    className="group relative h-full min-h-[180px] overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 text-left shadow-[0_10px_30px_-18px_rgba(30,41,59,0.5)] transition duration-300 hover:-translate-y-1 hover:border-blue-200 hover:shadow-[0_18px_40px_-18px_rgba(37,99,235,0.35)]"
+                  >
+                    <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-0 transition-opacity duration-300 group-hover:opacity-[0.06]`}></div>
+                    <div className="relative flex h-full flex-col">
+                      <div className="mb-4 flex items-start justify-between gap-2">
+                        <div className={`rounded-2xl p-3 ${stat.iconBg}`}>
+                          <Icon className={`h-5 w-5 ${stat.iconColor}`} />
+                        </div>
+                        <div className={`inline-flex items-center gap-1 text-[11px] font-semibold ${stat.trend === 'up' ? 'text-emerald-600' : stat.trend === 'down' ? 'text-red-600' : 'text-slate-500'}`}>
+                          {stat.trend !== 'neutral' && <TrendingUp className={`h-3.5 w-3.5 ${stat.trend === 'down' ? 'rotate-180' : ''}`} />}
+                          {stat.change}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-slate-600">{stat.title}</p>
+                        <p className="text-[2rem] font-extrabold leading-none tracking-tight text-slate-900">{stat.value}</p>
+                      </div>
+
+                      <div className="mt-auto flex items-center justify-end pt-3 text-blue-600 opacity-0 transition group-hover:opacity-100">
+                        <ArrowRight className="h-4 w-4" />
+                      </div>
+                    </div>
+                  </button>
                 );
               })}
             </div>
-          ) : (
-            <div className="text-center py-12 text-slate-500">
-              <Activity className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No recent activity</p>
-            </div>
-          )}
-        </div>
 
-        {/* Quick Actions */}
-        <div className="bg-gradient-to-br from-[#00338D] to-[#0A192F] rounded-2xl p-6 shadow-md text-white border border-blue-900/30">
-          <div className="flex items-center gap-2 mb-6">
-            <Zap className="w-5 h-5 text-[#FFD100]" />
-            <h3 className="text-base font-bold text-white tracking-wide">Quick Operations</h3>
-          </div>
-          
-          <div className="space-y-2.5">
-            {[
-              { label: 'New Distribution Event', icon: PesoIcon, path: '/dashboard/distributions' },
-              ...(['admin','mswdo_admin'].includes(user?.role) ? [
-                { label: 'Review Applications', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' }
-              ] : [
-                { label: 'Distribution Scanner', icon: Smartphone, path: '/dashboard/rfid-scanner' }
-              ]),
-              { label: 'Manage Programs', icon: Target, path: '/dashboard/programs' },
-              { label: 'View Reports & Audit', icon: FileText, path: '/dashboard/reports' }
-            ].map((action, index) => {
-              const Icon = action.icon;
-              return (
-                <button
-                  key={index}
-                  onClick={() => navigate(action.path)}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-sm transition text-left group"
-                >
-                  <Icon className="w-4 h-4 text-blue-200" />
-                  <span className="text-xs sm:text-sm font-semibold flex-1 text-white">{action.label}</span>
-                  <ArrowRight className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              );
-            })}
-          </div>
-
-          {['admin','mswdo_admin'].includes(user?.role) && (
-            <div className="mt-6 p-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10">
-              <div className="flex items-center gap-2 mb-2">
-                <Award className="w-4 h-4 text-[#FFD100]" />
-                <span className="text-xs font-bold text-white">Application Verification Progress</span>
-              </div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="flex-1 bg-white/20 rounded-full h-2 overflow-hidden">
-                  <div 
-                    className="bg-[#FFD100] h-full rounded-full transition-all duration-500"
-                    style={{ 
-                      width: `${applications.length > 0 ? 
-                        Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) 
-                        : 100}%` 
-                    }}
-                  ></div>
+            <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+              <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_12px_32px_-20px_rgba(15,23,42,0.42)] sm:p-6">
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">Monthly Distribution Trend</h3>
+                    <p className="mt-1 text-sm text-slate-500">Performance over time</p>
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1">
+                    <span className="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+                    <span className="text-xs font-semibold text-blue-700">Amount</span>
+                  </div>
                 </div>
-                <span className="text-xs font-bold text-[#FFD100]">
-                  {applications.length > 0 ? 
-                    Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) 
-                    : 100}%
-                </span>
+
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={monthlyDistributionData}>
+                      <defs>
+                        <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#2563EB" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#2563EB" stopOpacity={0.04} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                      <XAxis dataKey="month" tickLine={false} axisLine={false} stroke="#64748B" style={{ fontSize: '12px', fontWeight: 600 }} />
+                      <YAxis tickLine={false} axisLine={false} stroke="#64748B" style={{ fontSize: '12px', fontWeight: 600 }} tickFormatter={(value) => `₱${Number(value).toLocaleString()}`} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Area type="monotone" dataKey="amount" stroke="#2563EB" strokeWidth={3} fillOpacity={1} fill="url(#colorAmount)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-              <p className="text-[11px] text-blue-200">
-                {applications.length > 0 ? 
-                  `${Math.max(0, applications.length - (summary?.pendingApplications || 0))} of ${applications.length} applications processed` 
-                  : 'All applications processed!'}
-              </p>
+
+              <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_12px_32px_-20px_rgba(15,23,42,0.42)] sm:p-6">
+                <div className="mb-5">
+                  <h3 className="text-lg font-black text-slate-900">Category Distribution</h3>
+                  <p className="mt-1 text-sm text-slate-500">Beneficiary mix</p>
+                </div>
+
+                <div className="h-[200px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={categoryData} cx="50%" cy="50%" innerRadius={58} outerRadius={82} paddingAngle={5} dataKey="value">
+                        {categoryData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ backgroundColor: '#1E293B', borderRadius: '12px', border: 'none', color: '#fff' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {categoryData.map((cat, index) => (
+                    <div key={index} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: cat.color }} />
+                        <span className="text-sm font-medium text-slate-700">{cat.name}</span>
+                      </div>
+                      <span className="text-sm font-bold text-slate-900">{cat.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
+
+            <div className="grid gap-6 xl:grid-cols-[1.5fr_0.9fr]">
+              <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_12px_32px_-20px_rgba(15,23,42,0.42)] sm:p-6">
+                <div className="mb-5 flex items-center justify-between">
+                  <h3 className="text-lg font-black text-slate-900">Recent Activity</h3>
+                  <button onClick={() => navigate('/dashboard')} className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 transition hover:text-blue-700">
+                    View all <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {recentActivity.length > 0 ? (
+                  <div className="space-y-3">
+                    {recentActivity.map((activity, index) => {
+                      const Icon = activity.icon;
+                      return (
+                        <div key={index} className="flex items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50/80 p-3 transition hover:bg-slate-100/90">
+                          <div className={`rounded-xl p-2 ${activity.color.replace('text-', 'bg-').replace('600', '100')}`}>
+                            <Icon className={`h-5 w-5 ${activity.color}`} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-slate-900">{activity.name}</p>
+                            <p className="text-xs text-slate-500">{activity.action}</p>
+                          </div>
+                          <span className="text-xs font-medium text-slate-400">{activity.time}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex min-h-[180px] flex-col items-center justify-center text-center text-slate-500">
+                    <Activity className="mb-3 h-12 w-12 opacity-30" />
+                    <p className="text-sm">No recent activity</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[26px] bg-gradient-to-br from-[#00338D] via-[#0A235E] to-[#0F1E41] p-5 text-white shadow-[0_20px_40px_-18px_rgba(15,23,42,0.9)] sm:p-6">
+                <div className="mb-5 flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-amber-300" />
+                  <h3 className="text-base font-black tracking-wide text-white">Quick Operations</h3>
+                </div>
+
+                <div className="space-y-2.5">
+                  {[
+                    { label: 'New Distribution Event', icon: PesoIcon, path: '/dashboard/distributions' },
+                    ...(['admin','mswdo_admin'].includes(user?.role) ? [
+                      { label: 'Review Applications', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' }
+                    ] : [
+                      { label: 'Distribution Scanner', icon: Smartphone, path: '/dashboard/rfid-scanner' }
+                    ]),
+                    { label: 'Manage Programs', icon: Target, path: '/dashboard/programs' },
+                    { label: 'View Reports & Audit', icon: FileText, path: '/dashboard/reports' }
+                  ].map((action, index) => {
+                    const Icon = action.icon;
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => navigate(action.path)}
+                        className="group flex w-full items-center gap-3 rounded-xl bg-white/8 px-3 py-3 text-left transition hover:bg-white/12"
+                      >
+                        <div className="rounded-lg bg-white/10 p-2">
+                          <Icon className="h-4 w-4 text-blue-100" />
+                        </div>
+                        <span className="flex-1 text-xs font-semibold sm:text-sm text-white">{action.label}</span>
+                        <ArrowRight className="h-4 w-4 text-white opacity-0 transition group-hover:opacity-100" />
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {['admin','mswdo_admin'].includes(user?.role) && (
+                  <div className="mt-5 rounded-2xl border border-white/10 bg-white/8 p-4 backdrop-blur-sm">
+                    <div className="mb-2 flex items-center gap-2">
+                      <Award className="h-4 w-4 text-amber-300" />
+                      <span className="text-xs font-bold text-white">Application Verification Progress</span>
+                    </div>
+                    <div className="mb-2 flex items-center gap-3">
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/15">
+                        <div
+                          className="h-full rounded-full bg-amber-300 transition-all duration-500"
+                          style={{
+                            width: `${applications.length > 0 ? Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) : 100}%`
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-amber-300">
+                        {applications.length > 0 ? Math.max(0, Math.min(100, Math.round(((applications.length - (summary?.pendingApplications || 0)) / applications.length) * 100))) : 100}%
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-blue-100">
+                      {applications.length > 0 ? `${Math.max(0, applications.length - (summary?.pendingApplications || 0))} of ${applications.length} applications processed` : 'All applications processed!'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

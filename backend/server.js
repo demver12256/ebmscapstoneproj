@@ -37,6 +37,7 @@ const allowedOrigins = [
 
 app.use(
   helmet({
+    contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginEmbedderPolicy: false,
     crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
@@ -127,8 +128,39 @@ app.use('/api/medical-assistance', (req, res, next) => {
   }
 });
 
+app.get('/.well-known/appspecific/com.chrome.devtools.json', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.status(200).json({});
+});
+
 app.get('/api', (req, res) => {
   res.json({ message: 'Welcome to EBMS API' });
+});
+
+app.get('/api/data', (req, res) => {
+  const sampleData = [
+    { id: 1, name: 'Sample Item 1', description: 'This item is returned by the mobile app demo endpoint.' },
+    { id: 2, name: 'Sample Item 2', description: 'The backend route /api/data is now available for the app.' },
+  ];
+
+  res.json(sampleData);
+});
+
+app.post('/api/data', (req, res) => {
+  const { name, description } = req.body || {};
+
+  if (!name || !description) {
+    return res.status(400).json({ message: 'Name and description are required.' });
+  }
+
+  const createdItem = {
+    id: Date.now(),
+    name,
+    description,
+  };
+
+  return res.status(201).json(createdItem);
 });
 
 app.get('/api/health', (req, res) => {

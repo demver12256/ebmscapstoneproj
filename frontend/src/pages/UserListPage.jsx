@@ -7,6 +7,38 @@ import { useAuth } from '../context/AuthContext';
 import { UserPlus, X, Users } from 'lucide-react';
 
 const ROLES = ['staff', 'barangay', 'beneficiary'];
+const BENEFICIARY_CATEGORY_OPTIONS = [
+  { value: '4Ps Household Beneficiaries', label: '4Ps Household Beneficiaries' },
+  { value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' },
+  { value: 'Persons with Disabilities (PWD)', label: 'Persons with Disabilities (PWD)' },
+];
+
+const getRequiredDocuments = (category) => {
+  const base = [{ name: 'Valid Government ID / National ID', required: true }];
+  if (!category) return base;
+  if (category.includes('4Ps')) {
+    return [
+      ...base,
+      { name: 'PSA Birth Certificate', required: true },
+      { name: 'Barangay Certificate of Residency or Indigency', required: true },
+      { name: 'Certificate of Enrollment (if applicable)', required: false },
+    ];
+  }
+  if (category.includes('Senior')) {
+    return [
+      ...base,
+      { name: 'Social Pension Application Form', required: true },
+      { name: 'OSCA ID or Senior Citizen Card (if available)', required: false },
+      { name: 'PSA Birth Certificate (if needed)', required: false },
+    ];
+  }
+  return [
+    ...base,
+    { name: 'Medical Certificate', required: true },
+    { name: 'PWD Application Form', required: true },
+    { name: 'PSA Birth Certificate (if needed)', required: false },
+  ];
+};
 
 export default function UserListPage() {
   const { user: currentUser } = useAuth();
@@ -21,11 +53,14 @@ export default function UserListPage() {
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
+    username: '',
     email: '',
     password: '',
     contact_number: '',
     role: 'staff',
     barangay_id: '',
+    category: '',
+    household_id_number: '',
   });
 
   // Pre-fill form details depending on role
@@ -35,12 +70,14 @@ export default function UserListPage() {
         ...prev,
         role: 'beneficiary',
         barangay_id: currentUser.barangay_id || '',
+        category: prev.category || '',
       }));
     } else {
       setForm((prev) => ({
         ...prev,
         role: 'staff',
         barangay_id: '',
+        category: prev.category || '',
       }));
     }
   }, [currentUser]);
@@ -79,9 +116,13 @@ export default function UserListPage() {
     setFormError(null);
     setSubmitting(true);
     try {
+      const is4Ps = form.role === 'beneficiary' && form.category && form.category.toLowerCase().includes('4ps');
+
       await userApi.create({
         ...form,
-        barangay_id: form.barangay_id ? Number(form.barangay_id) : null
+        barangay_id: form.barangay_id ? Number(form.barangay_id) : null,
+        category: form.role === 'beneficiary' ? form.category : undefined,
+        household_id_number: is4Ps ? form.household_id_number.trim() : undefined,
       });
       setShowModal(false);
       setForm({
@@ -93,6 +134,8 @@ export default function UserListPage() {
         contact_number: '',
         role: currentUser?.role === 'staff' ? 'beneficiary' : 'staff',
         barangay_id: currentUser?.role === 'staff' ? currentUser.barangay_id || '' : '',
+        category: '',
+        household_id_number: '',
       });
       await loadUsers();
     } catch (err) {
@@ -253,6 +296,52 @@ export default function UserListPage() {
               </div>
               <Input label="Password" name="password" type="password" value={form.password} onChange={handleChange} required autoComplete="new-password" />
               <Input label="Contact Number" name="contact_number" value={form.contact_number} onChange={handleChange} autoComplete="off" />
+
+              {(form.role === 'beneficiary' || currentUser?.role === 'staff') && (
+                <>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Beneficiary Category
+                    <select
+                      name="category"
+                      value={form.category}
+                      onChange={handleChange}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      required={form.role === 'beneficiary'}
+                    >
+                      <option value="">Select category</option>
+                      {BENEFICIARY_CATEGORY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {form.category && form.category.toLowerCase().includes('4ps') && (
+                    <Input
+                      label="Household Number"
+                      name="household_id_number"
+                      value={form.household_id_number}
+                      onChange={handleChange}
+                      placeholder="e.g. HH-2024-001"
+                      required
+                      autoComplete="off"
+                    />
+                  )}
+
+                  {form.category && (
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-700 mb-2">Required documents</p>
+                      <ul className="space-y-1 text-xs text-slate-700">
+                        {getRequiredDocuments(form.category).map((doc) => (
+                          <li key={doc.name} className="flex items-start gap-2">
+                            <span className={`mt-0.5 h-1.5 w-1.5 rounded-full ${doc.required ? 'bg-indigo-600' : 'bg-slate-400'}`}></span>
+                            <span>{doc.name}{doc.required ? '' : ' (optional)'}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
               
               {currentUser && ['admin','mswdo_admin'].includes(currentUser.role) && (
                 <>

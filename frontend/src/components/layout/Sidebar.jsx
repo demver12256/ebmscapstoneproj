@@ -125,8 +125,8 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-white px-5 py-6 lg:flex lg:flex-col lg:justify-between h-screen sticky top-0">
-      <div className="space-y-8 overflow-y-auto pr-1">
+    <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white px-4 py-6 lg:flex lg:flex-col lg:justify-between h-screen sticky top-0 self-start overflow-y-auto">
+      <div className="space-y-8 pr-1">
         {/* DSWD Brand Header */}
         <div className="flex items-center gap-3">
           <svg className="w-10 h-10 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">

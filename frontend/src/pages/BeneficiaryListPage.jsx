@@ -632,19 +632,19 @@ export default function BeneficiaryListPage() {
   });
 
   return (
-    <div className="space-y-8">
+    <div className="mx-auto max-w-[1220px] space-y-6 px-1 pb-8 pt-2 sm:px-2 lg:px-3">
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
-        <div className="space-y-1">
+      <div className="flex flex-col gap-4 rounded-[24px] bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 p-4 text-white shadow-xl sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <Users className="w-8 h-8 text-yellow-300" />
-            <h1 className="text-3xl font-black tracking-tight">Official Beneficiary Records</h1>
+            <Users className="h-7 w-7 shrink-0 text-yellow-300 sm:h-8 sm:w-8" />
+            <h1 className="text-xl font-black tracking-tight sm:text-2xl xl:text-[2rem]">Official Beneficiary Records</h1>
           </div>
-          <p className="text-blue-100 text-sm max-w-2xl">
+          <p className="max-w-2xl text-xs text-blue-100 sm:text-sm">
             {showArchivedOnly ? 'Viewing archived beneficiary records.' : 'Manage verified municipal beneficiary records, track program enrollment, and audit beneficiary statuses.'}
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* View Pending Beneficiaries Button - Admin Only */}
           {['admin','mswdo_admin'].includes(user?.role) && (
             <button
@@ -688,10 +688,10 @@ export default function BeneficiaryListPage() {
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Barangay</label>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md sm:p-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="min-w-0">
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Barangay</label>
             <select
               value={selectedBarangayId}
               onChange={(e) => setSelectedBarangayId(e.target.value)}
@@ -709,8 +709,8 @@ export default function BeneficiaryListPage() {
             </select>
           </div>
 
-          <div className="flex-1">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Category</label>
+          <div className="min-w-0">
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Category</label>
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
@@ -725,8 +725,8 @@ export default function BeneficiaryListPage() {
             </select>
           </div>
 
-          <div className="flex-1">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Classification</label>
+          <div className="min-w-0">
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Classification</label>
             <select
               value={selectedIpClassification}
               onChange={(e) => setSelectedIpClassification(e.target.value)}
@@ -738,8 +738,8 @@ export default function BeneficiaryListPage() {
             </select>
           </div>
 
-          <div className="flex-1">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Disbursement Channel</label>
+          <div className="min-w-0">
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Disbursement Channel</label>
             <select
               value={selectedPayoutStatus}
               onChange={(e) => setSelectedPayoutStatus(e.target.value)}
@@ -755,18 +755,18 @@ export default function BeneficiaryListPage() {
       </div>
 
       {/* Stats (Grid: 4 Cards for Admin / 3 Cards for Staff) */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${['admin','mswdo_admin'].includes(user?.role) ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">
-          <p className="text-sm font-medium text-slate-600 mb-2">Total Records</p>
-          <p className="text-3xl font-bold text-blue-600">{loading ? '...' : filteredBeneficiaries.length}</p>
+      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${['admin','mswdo_admin'].includes(user?.role) ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+        <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 p-4 sm:p-6">
+          <p className="mb-2 text-sm font-medium text-slate-600">Total Records</p>
+          <p className="text-2xl font-bold text-blue-600 sm:text-3xl">{loading ? '...' : filteredBeneficiaries.length}</p>
         </div>
-        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-6 border border-red-200">
-          <p className="text-sm font-medium text-slate-600 mb-2">Active</p>
-          <p className="text-3xl font-bold text-red-600">{loading ? '...' : filteredBeneficiaries.filter(b => b.User?.status === 'active').length}</p>
+        <div className="rounded-xl border border-red-200 bg-gradient-to-br from-red-50 to-red-100 p-4 sm:p-6">
+          <p className="mb-2 text-sm font-medium text-slate-600">Active</p>
+          <p className="text-2xl font-bold text-red-600 sm:text-3xl">{loading ? '...' : filteredBeneficiaries.filter(b => b.User?.status === 'active').length}</p>
         </div>
-        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-6 border border-emerald-200">
-          <p className="text-sm font-medium text-slate-600 mb-2">Inactive</p>
-          <p className="text-3xl font-bold text-emerald-600">{loading ? '...' : filteredBeneficiaries.filter(b => b.User?.status === 'inactive').length}</p>
+        <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 p-4 sm:p-6">
+          <p className="mb-2 text-sm font-medium text-slate-600">Inactive</p>
+          <p className="text-2xl font-bold text-emerald-600 sm:text-3xl">{loading ? '...' : filteredBeneficiaries.filter(b => b.User?.status === 'inactive').length}</p>
         </div>
         
         {/* Pending Beneficiaries Stat Box - Admin Only */}
@@ -788,7 +788,7 @@ export default function BeneficiaryListPage() {
       </div>
 
       {/* Table Container */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
         {loading ? (
           <div className="p-8 text-center">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -800,12 +800,14 @@ export default function BeneficiaryListPage() {
             <p className="text-sm text-slate-600">No beneficiaries found</p>
           </div>
         ) : (
-          <Table 
-            columns={columns} 
-            data={filteredBeneficiaries} 
-            itemsPerPage={5}
-            onRowClick={handleViewBeneficiary}
-          />
+          <div className="overflow-x-auto">
+            <Table 
+              columns={columns} 
+              data={filteredBeneficiaries} 
+              itemsPerPage={5}
+              onRowClick={handleViewBeneficiary}
+            />
+          </div>
         )}
       </div>
 
