@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { 
-  Package, Plus, Calendar, MapPin, Users, DollarSign, 
+  Package, Plus, Calendar, MapPin, Users, 
   Eye, Edit, Trash2, CheckCircle, XCircle, Clock,
   Play, Square, AlertCircle, TrendingUp, Filter, RefreshCw, Archive, Download, AlertTriangle,
   Zap, CreditCard, Smartphone, Building2
@@ -9,6 +9,8 @@ import * as XLSX from 'xlsx';
 import { distributionApi, programApi, barangayApi, userApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { isNonCashProgram, getNonCashDetails } from '../utils/nonCashPrograms';
+import { usePagination } from '../hooks/usePagination';
+import Pagination from '../components/ui/Pagination';
 
 export default function DistributionPage() {
   const { user } = useAuth();
@@ -63,6 +65,8 @@ export default function DistributionPage() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [eligibleBeneficiaries, setEligibleBeneficiaries] = useState([]);
   const [eligibleMeta, setEligibleMeta] = useState({ total: 0, qualified_count: 0, program_name: '' });
+  const transactionPagination = usePagination(selectedEvent?.Transactions || [], 10);
+  const eligiblePagination = usePagination(eligibleBeneficiaries, 10);
   const [disbursingDigital, setDisbursingDigital] = useState(false);
 
   // Status badge configuration
@@ -538,7 +542,7 @@ export default function DistributionPage() {
       const totalBudget = parseFloat(eventData.budget || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 
       const worksheetData = [
-        ['EBMS BENEFIT DISTRIBUTION REPORT'],
+        ['BeniAid BENEFIT DISTRIBUTION REPORT'],
         ['Event Title:', eventData.title],
         ['Program:', programName],
         ['Barangay:', barangayName],
@@ -861,7 +865,7 @@ export default function DistributionPage() {
           <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-6 border border-purple-200">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-medium text-purple-600">Total Released</p>
-              <DollarSign className="w-5 h-5 text-purple-600" />
+              <span className="w-5 h-5 text-purple-600 flex items-center justify-center text-xl font-semibold leading-none">₱</span>
             </div>
             <p className="text-2xl font-bold text-purple-900">
               ₱{parseFloat(stats.transactions?.total_amount_released || 0).toLocaleString()}
@@ -1625,7 +1629,7 @@ export default function DistributionPage() {
                 {isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type) ? (
                   <Package className="w-5 h-5 text-purple-600" />
                 ) : (
-                  <DollarSign className="w-5 h-5 text-purple-600" />
+                  <span className="w-5 h-5 text-purple-600 flex items-center justify-center text-xl font-semibold leading-none">₱</span>
                 )}
               </div>
               {isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type) ? (
@@ -1927,7 +1931,7 @@ export default function DistributionPage() {
                         })()}
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {selectedEvent.Transactions.map((txn, index) => {
+                        {transactionPagination.paginatedData.map((txn, index) => {
                           const isSelectedNonCash = isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type);
                           return (
                             <tr key={txn.id} className={`hover:bg-slate-50 ${
@@ -1937,7 +1941,7 @@ export default function DistributionPage() {
                                 ? 'bg-amber-50/30'
                                 : ''
                             }`}>
-                              <td className="px-4 py-3 text-slate-500">{index + 1}</td>
+                              <td className="px-4 py-3 text-slate-500">{transactionPagination.startIndex + index + 1}</td>
                               <td className="px-4 py-3">
                                 <p className="font-semibold text-slate-900">
                                   {txn.Beneficiary?.first_name} {txn.Beneficiary?.last_name}
@@ -2076,6 +2080,17 @@ export default function DistributionPage() {
                         })}
                       </tbody>
                     </table>
+                    <div className="border-t border-slate-200 px-4 py-3">
+                      <Pagination
+                        currentPage={transactionPagination.currentPage}
+                        totalPages={transactionPagination.totalPages}
+                        onPageChange={transactionPagination.goToPage}
+                        totalItems={transactionPagination.totalItems}
+                        itemsPerPage={10}
+                        startIndex={transactionPagination.startIndex}
+                        endIndex={transactionPagination.endIndex}
+                      />
+                    </div>
                   </div>
                 ) : (
                   <div className="p-8 text-center text-slate-500">
@@ -2262,9 +2277,9 @@ export default function DistributionPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {eligibleBeneficiaries.map((b, index) => (
+                      {eligiblePagination.paginatedData.map((b, index) => (
                         <tr key={b.id || b.beneficiary_id} className={`transition-colors ${b.status === 'Approved' ? 'hover:bg-green-50' : 'bg-slate-50 opacity-70 hover:bg-slate-100'}`}>
-                          <td className="px-4 py-3 text-slate-500 font-medium">{index + 1}</td>
+                          <td className="px-4 py-3 text-slate-500 font-medium">{eligiblePagination.startIndex + index + 1}</td>
                           <td className="px-4 py-3">
                             <p className="font-semibold text-slate-900">{b.last_name}, {b.first_name} {b.middle_name || ''}</p>
                             <p className="text-xs text-slate-500 font-mono">{b.beneficiary_id_code || '—'}</p>
@@ -2303,6 +2318,17 @@ export default function DistributionPage() {
                       ))}
                     </tbody>
                   </table>
+                    <div className="border-t border-slate-200 px-4 py-3">
+                      <Pagination
+                        currentPage={eligiblePagination.currentPage}
+                        totalPages={eligiblePagination.totalPages}
+                        onPageChange={eligiblePagination.goToPage}
+                        totalItems={eligiblePagination.totalItems}
+                        itemsPerPage={10}
+                        startIndex={eligiblePagination.startIndex}
+                        endIndex={eligiblePagination.endIndex}
+                      />
+                    </div>
                 </div>
               )}
             </div>

@@ -35,6 +35,28 @@ const allowedOrigins = [
   'http://127.0.0.1:3001',
 ].filter(Boolean);
 
+const isLocalNetworkFrontend = (origin) => {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' || !['3000', '3001'].includes(url.port)) return false;
+
+    const host = url.hostname.toLowerCase();
+    if (host === 'localhost' || host.endsWith('.local')) return true;
+
+    const octets = host.split('.').map(Number);
+    if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+      return false;
+    }
+
+    return octets[0] === 10 ||
+      (octets[0] === 192 && octets[1] === 168) ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      octets[0] === 127;
+  } catch {
+    return false;
+  }
+};
+
 app.use(
   helmet({
     contentSecurityPolicy: false,
@@ -46,7 +68,7 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || allowedOrigins.includes(origin) || isLocalNetworkFrontend(origin)) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
@@ -123,6 +145,14 @@ app.use('/api/medical-assistance', (req, res, next) => {
   try {
     delete require.cache[require.resolve('./routes/medicalAssistance')];
     return require('./routes/medicalAssistance')(req, res, next);
+  } catch (err) {
+    return next(err);
+  }
+});
+app.use('/api/interventions', (req, res, next) => {
+  try {
+    delete require.cache[require.resolve('./routes/interventions')];
+    return require('./routes/interventions')(req, res, next);
   } catch (err) {
     return next(err);
   }

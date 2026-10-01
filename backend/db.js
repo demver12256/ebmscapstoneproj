@@ -47,6 +47,7 @@ const Otp = require('./models/otp')(sequelize, DataTypes);
 const AssistanceRequest = require('./models/assistanceRequest')(sequelize, DataTypes);
 const MedicalAssistanceApplication = require('./models/medicalAssistanceApplication')(sequelize, DataTypes);
 const MedicalAssistanceDocument = require('./models/medicalAssistanceDocument')(sequelize, DataTypes);
+const Intervention = require('./models/intervention')(sequelize, DataTypes);
 
 // ── User ↔ Barangay ──
 User.belongsTo(Barangay, { foreignKey: 'barangay_id' });
@@ -149,6 +150,15 @@ MedicalAssistanceApplication.belongsTo(User, { as: 'ReleasedBy', foreignKey: 're
 MedicalAssistanceApplication.hasMany(MedicalAssistanceDocument, { foreignKey: 'application_id', as: 'Documents', onDelete: 'CASCADE' });
 MedicalAssistanceDocument.belongsTo(MedicalAssistanceApplication, { foreignKey: 'application_id', onDelete: 'CASCADE' });
 
+// ── Intervention Associations ──
+Intervention.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
+Beneficiary.hasMany(Intervention, { foreignKey: 'beneficiary_id', as: 'Interventions', onDelete: 'CASCADE' });
+Intervention.belongsTo(User, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+User.hasMany(Intervention, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+Intervention.belongsTo(Barangay, { foreignKey: 'barangay_id' });
+Barangay.hasMany(Intervention, { foreignKey: 'barangay_id' });
+Intervention.belongsTo(User, { as: 'Verifier', foreignKey: 'verified_by' });
+
 const connectDatabase = async () => {
   await sequelize.authenticate();
   try {
@@ -185,4 +195,5 @@ module.exports = {
   AssistanceRequest,
   MedicalAssistanceApplication,
   MedicalAssistanceDocument,
+  Intervention,
 };

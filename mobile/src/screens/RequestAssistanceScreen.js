@@ -12,6 +12,7 @@ import {
   Alert,
   Modal,
 } from 'react-native';
+import DocumentPicker from 'react-native-document-picker';
 import { assistanceRequestApi } from '../services/api';
 import { getRequirementsForType } from '../utils/assistanceRequirements';
 
@@ -70,8 +71,33 @@ const formatDate = (dateStr) => {
   }
 };
 
+const formatFileSize = (bytes) => {
+  if (!Number.isFinite(bytes) || bytes < 0) return 'Size unavailable';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const getSupportedMimeType = (file) => {
+  const extension = String(file.name || '').split('.').pop()?.toLowerCase();
+  const mimeByExtension = {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+  };
+  const extensionMimeType = mimeByExtension[extension];
+  const declaredMimeType = file.type && file.type !== 'application/octet-stream' ? file.type : null;
+  if (extensionMimeType && declaredMimeType && extensionMimeType !== declaredMimeType) return null;
+  const mimeType = declaredMimeType || extensionMimeType;
+  return ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(mimeType)
+    ? mimeType
+    : null;
+};
+
 export default function RequestAssistanceScreen({ onBack, user, profile, onRefreshPopups }) {
-  const [selectedAgency, setSelectedAgency] = useState('MSWDO'); // DSWD | MSWDO
+  const [selectedAgency, setSelectedAgency] = useState('DSWD');
   const [selectedType, setSelectedType] = useState('Medical Assistance');
   const [amount, setAmount] = useState('');
   const [subject, setSubject] = useState('');
@@ -84,12 +110,11 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
   // Document attachments state
   const [requirementFiles, setRequirementFiles] = useState({});
   const [activeAttachReq, setActiveAttachReq] = useState(null);
-  const [customFileName, setCustomFileName] = useState('');
 
   const activeBen = profile || {};
   const displayName = `${activeBen.first_name || user?.first_name || 'Beneficiary'} ${activeBen.last_name || user?.last_name || ''}`.trim();
-  const categoryName = activeBen.category || 'Persons with Disabilities (PWD)';
-  const barangayName = activeBen.barangay_name || activeBen.barangay || 'Aplaya';
+  const categoryName = activeBen.category || 'Category not set';
+  const barangayName = activeBen.barangay_name || activeBen.Barangay?.barangay_name || activeBen.barangay || 'Not available';
 
   const currentRequirements = getRequirementsForType(selectedType);
   const reqList = currentRequirements?.requirements || [];
@@ -112,18 +137,40 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
     loadRequests();
   }, [loadRequests]);
 
-  const handleAttachFile = (reqId, fileName, sizeStr = '240 KB') => {
-    setRequirementFiles((prev) => ({
-      ...prev,
-      [reqId]: {
-        name: fileName,
-        sizeStr,
-        size: 245000,
-        type: fileName.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg',
-      },
-    }));
-    setActiveAttachReq(null);
-    setCustomFileName('');
+  const handleAttachFile = async (requirement) => {
+    try {
+      const selectedFile = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.pdf, DocumentPicker.types.images],
+        copyTo: 'cachesDirectory',
+      });
+      const mimeType = getSupportedMimeType(selectedFile);
+      const fileUri = selectedFile.fileCopyUri || selectedFile.uri;
+
+      if (!mimeType || !fileUri) {
+        Alert.alert('Hindi suportadong file', 'PDF, JPG, PNG, o WEBP lamang ang maaaring i-attach.');
+        return;
+      }
+      if (selectedFile.size > 10 * 1024 * 1024) {
+        Alert.alert('Masyadong malaking file', 'Hanggang 10 MB lamang ang bawat dokumento.');
+        return;
+      }
+
+      setRequirementFiles((prev) => ({
+        ...prev,
+        [requirement.id]: {
+          uri: fileUri,
+          name: selectedFile.name || `document-${requirement.id}`,
+          size: selectedFile.size,
+          sizeStr: formatFileSize(selectedFile.size),
+          type: mimeType,
+        },
+      }));
+      setActiveAttachReq(null);
+    } catch (error) {
+      if (!DocumentPicker.isCancel(error)) {
+        Alert.alert('Hindi mabuksan ang file', error?.message || 'Subukan ulit pumili ng dokumento.');
+      }
+    }
   };
 
   const handleRemoveFile = (reqId) => {
@@ -148,34 +195,33 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
       setSubmitting(true);
 
       const attachedEntries = Object.entries(requirementFiles);
-      const attachmentsList = attachedEntries.map(([reqId, file]) => {
+      const payload = new FormData();
+      payload.append('agency', selectedAgency);
+      payload.append('type', selectedType);
+      payload.append('subject', subject.trim());
+      payload.append('description', description.trim());
+
+      const attachmentMetadata = attachedEntries.map(([reqId, file]) => {
         const reqMeta = reqList.find((r) => r.id === reqId);
-        return {
-          requirementId: reqId,
-          requirementName: reqMeta?.filipinoName || reqMeta?.name || reqId,
+        const fieldName = `attachment_${reqId}`;
+        payload.append(fieldName, {
+          uri: file.uri,
           name: file.name,
-          url: `/uploads/documents/assistance/${file.name}`,
-          size: file.size || 150000,
+          type: file.type,
+        });
+        return {
+          fieldName,
+          reqId,
+          reqName: reqMeta?.filipinoName || reqMeta?.name || reqId,
+          originalName: file.name,
         };
       });
-
-      const payload = {
-        agency: selectedAgency,
-        type: selectedType,
-        subject: subject.trim(),
-        description: description.trim(),
-        amount_requested: amount ? parseFloat(amount) : null,
-        attachment_url: attachmentsList.length > 0 ? JSON.stringify(attachmentsList) : null,
-      };
+      if (attachmentMetadata.length > 0) {
+        payload.append('attachment_metadata', JSON.stringify(attachmentMetadata));
+      }
 
       const res = await assistanceRequestApi.create(payload);
       if (res.data?.success || res.status === 200 || res.status === 201) {
-        Alert.alert(
-          'Matagumpay!',
-          `Ang iyong aplikasyon para sa tulong ay naisumite na sa tanggapan ng ${selectedAgency}${
-            attachedEntries.length > 0 ? ` na may ${attachedEntries.length} kalakip na dokumento.` : '.'
-          } Maaari mong subaybayan ang katayuan sa "Aking mga Request".`
-        );
         setSubject('');
         setDescription('');
         setAmount('');
@@ -217,7 +263,7 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
           <Text style={styles.headerKicker}>SOCIAL WELFARE PORTAL</Text>
           <Text style={styles.headerTitle}>Request Assistance</Text>
           <Text style={styles.headerSubtitle}>
-            Pumili ng tanggapan (DSWD o MSWDO) at magsumite ng kahilingan sa ayuda.
+            Magsumite ng kahilingan sa ayuda para sa pagsusuri ng DSWD.
           </Text>
 
           <View style={styles.tabButtonsRow}>
@@ -256,17 +302,17 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
             {/* SECTION 1: KANINONG TANGGAPAN IPAPADALA (Image 2) */}
             <View style={styles.sectionHeadingRow}>
               <Text style={styles.sectionHeading}>1. KANINONG TANGGAPAN IPAPADALA ANG REQUEST?</Text>
-              <Text style={styles.sectionHeadingSub}>Pumili kung DSWD o MSWDO</Text>
+              <Text style={styles.sectionHeadingSub}>Ang kahilingan ay ipapadala sa DSWD.</Text>
             </View>
 
             {/* Policy Banner (Image 2) */}
             <View style={styles.policyCard}>
               <View style={styles.policyTopRow}>
                 <Text style={{ fontSize: 16 }}>⚖️</Text>
-                <Text style={styles.policyTitle}>Patakaran sa Paghiling (Cross-Agency Policy):</Text>
+                <Text style={styles.policyTitle}>Patakaran sa Paghiling (DSWD):</Text>
               </View>
               <Text style={styles.policyText}>
-                Maaaring mag-request ang mga benepisyaryo (kabilang ang 4Ps, Senior Citizens, at PWD) sa <Text style={{ fontWeight: 'bold' }}>DSWD</Text> o <Text style={{ fontWeight: 'bold' }}>MSWDO</Text>. Subalit, kung nakapag-request ka na ng partikular na uri ng tulong sa DSWD (hal. Medical Assistance), bawal na itong i-request sa MSWDO (at vice-versa) habang ito ay aktibo o naaprubahan na.
+                Maaaring mag-request ng tulong sa DSWD ang mga benepisyaryo, kabilang ang 4Ps, Senior Citizens, at PWD. Susuriin ng DSWD ang kahilingan at mga kinakailangang dokumento bago ito aprubahan.
               </Text>
             </View>
 
@@ -299,7 +345,8 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
                 <Text style={styles.agencyFooter}>Direktang susuriin ng DSWD Admin</Text>
               </TouchableOpacity>
 
-              {/* MSWDO Card */}
+              {/* MSWDO option removed from the beneficiary request form. */}
+              {false && (
               <TouchableOpacity
                 style={[styles.agencyCard, selectedAgency === 'MSWDO' && styles.agencyCardSelected]}
                 onPress={() => setSelectedAgency('MSWDO')}
@@ -325,6 +372,7 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
 
                 <Text style={styles.agencyFooter}>Direktang susuriin ng MSWDO Admin</Text>
               </TouchableOpacity>
+              )}
             </View>
 
             {/* SECTION 2: URI NG TULONG (ASSISTANCE TYPE) (Image 2) */}
@@ -508,8 +556,8 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
 
               {/* Paalala Box (exact text from picture) */}
               <View style={styles.paalalaBox}>
-                <Text style={styles.paalalaText}>
-                  <Text style={{ fontWeight: 'bold' }}>💡 Paalala:</Text> Hindi kailangang makumpleto agad ang lahat ng online attachments upang maipasa ang request. Maaaring i-submit ang application at dalhin ang pisikal na kopya ng mga dokumento sa tanggapan ng {selectedAgency} ({selectedAgency === 'DSWD' ? 'Department of Social Welfare' : 'Municipal Social Welfare'}) kapag ipinatawag para sa verification at releasing.
+                  <Text style={styles.paalalaText}>
+                  <Text style={{ fontWeight: 'bold' }}>💡 Paalala:</Text> Hindi kailangang makumpleto agad ang lahat ng online attachments upang maipasa ang request. Maaaring i-submit ang application at dalhin ang pisikal na kopya ng mga dokumento sa tanggapan ng {selectedAgency} (Department of Social Welfare and Development) kapag ipinatawag para sa verification at releasing.
                 </Text>
               </View>
             </View>
@@ -537,13 +585,13 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
               <View style={styles.emptyCard}>
                 <Text style={{ fontSize: 36, marginBottom: 8 }}>📋</Text>
                 <Text style={styles.emptyTitle}>Walang Nakaraang Kahilingan</Text>
-                <Text style={styles.emptySub}>Wala ka pang naisusumiteng request sa DSWD o MSWDO.</Text>
+                <Text style={styles.emptySub}>Wala ka pang naisusumiteng request sa DSWD.</Text>
               </View>
             ) : (
               myRequests.map((req, index) => (
                 <View key={req.id || index} style={styles.historyCard}>
                   <View style={styles.historyTopRow}>
-                    <Text style={styles.historyAgency}>{req.agency || 'MSWDO'}</Text>
+                    <Text style={styles.historyAgency}>{req.agency || 'DSWD'}</Text>
                     <View style={styles.historyStatusPill}>
                       <Text style={styles.historyStatusText}>{req.status || 'Pending'}</Text>
                     </View>
@@ -583,52 +631,15 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
               Kinakailangan: <Text style={{ fontWeight: 'bold', color: '#0f172a' }}>{activeAttachReq?.filipinoName || activeAttachReq?.name}</Text>
             </Text>
 
-            <Text style={styles.modalSectionLabel}>MAMILI NG FILE NA I-AATTACH:</Text>
-
-            {/* Quick Preset Options */}
-            <View style={styles.presetFilesList}>
-              {[
-                { name: `${activeAttachReq?.id || 'dokumento'}_scanned.pdf`, sizeStr: '320 KB', icon: '📄' },
-                { name: `${activeAttachReq?.id || 'dokumento'}_larawan.jpg`, sizeStr: '1.4 MB', icon: '🖼️' },
-                { name: `Official_${activeAttachReq?.id || 'document'}_2026.pdf`, sizeStr: '512 KB', icon: '📑' },
-              ].map((sample, sIdx) => (
-                <TouchableOpacity
-                  key={sIdx}
-                  style={styles.presetItem}
-                  onPress={() => handleAttachFile(activeAttachReq.id, sample.name, sample.sizeStr)}
-                >
-                  <Text style={{ fontSize: 18, marginRight: 8 }}>{sample.icon}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.presetName}>{sample.name}</Text>
-                    <Text style={styles.presetSize}>{sample.sizeStr} • Handa nang i-upload</Text>
-                  </View>
-                  <Text style={styles.presetSelectText}>Piliin ›</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={[styles.modalSectionLabel, { marginTop: 12 }]}>O MAG-TYPE NG CUSTOM FILE NAME:</Text>
-            <View style={styles.customFileRow}>
-              <TextInput
-                style={styles.customFileInput}
-                placeholder="hal. Reseta_Hospital_DrCruz.pdf"
-                placeholderTextColor="#94a3b8"
-                value={customFileName}
-                onChangeText={setCustomFileName}
-              />
-              <TouchableOpacity
-                style={styles.customFileBtn}
-                onPress={() => {
-                  if (!customFileName.trim()) {
-                    Alert.alert('Maglagay ng pangalan', 'Pakilagay ang pangalan ng file.');
-                    return;
-                  }
-                  handleAttachFile(activeAttachReq.id, customFileName.trim(), '250 KB');
-                }}
-              >
-                <Text style={styles.customFileBtnText}>I-attach</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.modalSectionLabel}>PUMILI NG TOTOONG FILE SA IYONG PHONE:</Text>
+            <TouchableOpacity
+              style={styles.customFileBtn}
+              onPress={() => handleAttachFile(activeAttachReq)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.customFileBtnText}>Pumili ng PDF o larawan</Text>
+            </TouchableOpacity>
+            <Text style={styles.presetSize}>PDF, JPG, PNG, o WEBP hanggang 10 MB bawat file.</Text>
 
             <TouchableOpacity
               style={styles.modalCancelBtn}
@@ -1079,6 +1090,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   attachedFileName: {
+    flex: 1,
+    marginRight: 8,
     fontSize: 11,
     color: '#15803d',
     fontWeight: '700',
@@ -1182,50 +1195,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 8,
   },
-  presetFilesList: {
-    gap: 8,
-    marginBottom: 12,
-  },
-  presetItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  presetName: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
   presetSize: {
     fontSize: 10.5,
     color: '#64748b',
     marginTop: 2,
-  },
-  presetSelectText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#2563eb',
-    marginLeft: 8,
-  },
-  customFileRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  customFileInput: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 12,
-    color: '#0f172a',
   },
   customFileBtn: {
     backgroundColor: '#0f172a',

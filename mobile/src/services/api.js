@@ -6,9 +6,14 @@ const apiClient = axios.create({
   ...API_CONFIG,
 });
 
+let authToken = null;
+
 const setAuthToken = (token) => {
-  if (token) {
-    apiClient.defaults.headers.common.Authorization = `Bearer ${token}`;
+  authToken = token || null;
+  if (authToken) {
+    apiClient.defaults.headers.common.Authorization = authToken.startsWith('Bearer ')
+      ? authToken
+      : `Bearer ${authToken}`;
   } else {
     delete apiClient.defaults.headers.common.Authorization;
   }
@@ -23,9 +28,12 @@ apiClient.interceptors.response.use(
 
 apiClient.interceptors.request.use(
   (config) => {
-    const token = apiClient.defaults.headers.common.Authorization;
-    if (token && !config.headers.Authorization) {
-      config.headers.Authorization = token;
+    const token = authToken || apiClient.defaults.headers.common.Authorization;
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = token.startsWith('Bearer ')
+        ? token
+        : `Bearer ${token}`;
     }
     return config;
   },
@@ -52,8 +60,9 @@ const api = {
         password,
       });
       const payload = response.data;
-      if (payload?.token) {
-        setAuthToken(payload.token);
+      const token = payload?.token || payload?.data?.token;
+      if (token) {
+        setAuthToken(token);
       }
       return payload;
     } catch (error) {
@@ -117,7 +126,25 @@ export const medicalAssistanceApi = {
 
 export const assistanceRequestApi = {
   list: () => apiClient.get('/assistance-requests'),
-  create: (data) => apiClient.post('/assistance-requests', data),
+  create: (data) => {
+    if (typeof FormData !== 'undefined' && data instanceof FormData) {
+      return apiClient.post('/assistance-requests', data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    }
+    return apiClient.post('/assistance-requests', data);
+  },
+};
+
+export const interventionApi = {
+  listMine: () => apiClient.get('/interventions/me'),
+  submit: (data) => apiClient.post('/interventions/submit', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  update: (id, data) => apiClient.put(`/interventions/me/${id}`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  remove: (id) => apiClient.delete(`/interventions/me/${id}`),
 };
 
 export const messageApi = {

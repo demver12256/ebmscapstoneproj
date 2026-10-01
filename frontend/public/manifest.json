@@ -1,14 +1,23 @@
 {
-  "short_name": "EBMS",
-  "name": "EBMS - Beneficiary Management System",
+  "short_name": "BeniAid",
+  "name": "BeniAid - Beneficiary Management Portal",
+  "description": "BeniAid social welfare and beneficiary management application for Bongabong.",
   "icons": [
     {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
+      "src": "icons/dswd-logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/dswd-logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0f172a"

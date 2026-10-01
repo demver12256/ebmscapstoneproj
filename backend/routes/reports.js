@@ -411,18 +411,21 @@ router.get('/recent-distributions', authorize('admin', 'staff', 'barangay'), asy
       });
       const pendingCount = Math.max(nonReleasedCount, Math.max(0, totalBeneficiaries - releasedCount));
       
-      // Get pending / unclaimed beneficiaries with names (limit to 5 for preview)
-      const pendingTransactions = await DistributionTransaction.findAll({
-        where: { distribution_event_id: e.id, status: { [Op.ne]: 'released' } },
+      // Get all beneficiaries for the report, while keeping the UI preview limited to 5.
+      const allTransactions = await DistributionTransaction.findAll({
+        where: { distribution_event_id: e.id },
         include: [
-          { 
-            model: Beneficiary, 
+          {
+            model: Beneficiary,
             attributes: ['id', 'first_name', 'middle_name', 'last_name', 'beneficiary_id_code']
           }
         ],
-        limit: 5,
         order: [['id', 'ASC']]
       });
+
+      const pendingTransactions = allTransactions
+        .filter((txn) => txn.status !== 'released')
+        .slice(0, 5);
       
       const pendingBeneficiaries = pendingTransactions.map(txn => ({
         id: txn.Beneficiary?.id,
@@ -445,6 +448,9 @@ router.get('/recent-distributions', authorize('admin', 'staff', 'barangay'), asy
         released_count: releasedCount,
         pending_count: pendingCount,
         pending_beneficiaries: pendingBeneficiaries,
+        beneficiary_names: allTransactions
+          .map((txn) => txn.Beneficiary ? `${txn.Beneficiary.first_name} ${txn.Beneficiary.middle_name ? txn.Beneficiary.middle_name + ' ' : ''}${txn.Beneficiary.last_name}`.trim() : null)
+          .filter(Boolean),
         amount: parseFloat(e.total_amount_released),
         status: e.status,
       };

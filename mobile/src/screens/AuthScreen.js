@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -66,8 +67,8 @@ export default function AuthScreen({ onLoginSuccess }) {
   const [mode, setMode] = useState('login');
 
   // ── Login State ──
-  const [loginIdentifier, setLoginIdentifier] = useState('admin@ebms.local');
-  const [loginPassword, setLoginPassword] = useState('Admin@123');
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
@@ -155,7 +156,7 @@ export default function AuthScreen({ onLoginSuccess }) {
       }
 
       if (onLoginSuccess) {
-        onLoginSuccess(payload.user);
+        onLoginSuccess(payload.user, payload.token);
       }
     } catch (err) {
       setLoginError(err?.response?.data?.message || err?.message || 'Hindi nahanap ang account (User not found) o mali ang password.');
@@ -168,7 +169,7 @@ export default function AuthScreen({ onLoginSuccess }) {
   const handleGoogleSignInClick = () => {
     Alert.alert(
       'Google Sign-In',
-      'Google Identity Services is active on the EBMS web portal. Para sa mobile app, maaari kang mag-sign in gamit ang inyong registered Username o Email sa itaas, o gamitin ang demo accounts.',
+      'Google Identity Services is active on the BeniAid web portal. Para sa mobile app, maaari kang mag-sign in gamit ang inyong registered Username o Email sa itaas, o gamitin ang demo accounts.',
       [
         {
           text: 'Gamitin ang Admin Demo',
@@ -276,14 +277,13 @@ export default function AuthScreen({ onLoginSuccess }) {
       try {
         await authApi.registerBeneficiary(regData);
         setRegSuccess('✓ Matagumpay na nagawa ang account! Lilipat sa login...');
-        const savedUsername = regUsername.trim();
 
         // Reset form
         resetRegForm();
 
         setTimeout(() => {
           setRegSuccess('');
-          setLoginIdentifier(savedUsername);
+          setLoginIdentifier('');
           setLoginPassword('');
           setLoginError('');
           setMode('login');
@@ -323,13 +323,12 @@ export default function AuthScreen({ onLoginSuccess }) {
 
       setShowOtpModal(false);
       setDevOtp('');
-      const savedUser = pendingRegData.username || pendingRegData.email;
       resetRegForm();
       setRegSuccess('✓ Matagumpay na nagawa ang account! Lilipat sa login...');
 
       setTimeout(() => {
         setRegSuccess('');
-        setLoginIdentifier(savedUser);
+        setLoginIdentifier('');
         setLoginPassword('');
         setLoginError('');
         setMode('login');
@@ -442,7 +441,7 @@ export default function AuthScreen({ onLoginSuccess }) {
         setForgotConfirmPassword('');
         setForgotSuccess('');
         setForgotError('');
-        setLoginIdentifier(forgotEmail || forgotIdentifier);
+        setLoginIdentifier('');
         setLoginPassword('');
         setMode('login');
       }, 2000);
@@ -473,10 +472,14 @@ export default function AuthScreen({ onLoginSuccess }) {
             <View style={styles.loginCard}>
               {/* Header Icon Wrap */}
               <View style={styles.iconWrap}>
-                <Text style={styles.iconBadge}>✓</Text>
+                <Image
+                  source={require('../assets/dswd-logo.jpg')}
+                  style={styles.authLogo}
+                  resizeMode="contain"
+                />
               </View>
 
-              <Text style={styles.title}>Sign in to DSWD EBMS</Text>
+              <Text style={styles.title}>Sign in to BeniAid</Text>
               <Text style={styles.subtitle}>Access your municipal benefits, RFID records &amp; assistance</Text>
 
               {loginError ? (
@@ -1068,7 +1071,7 @@ export default function AuthScreen({ onLoginSuccess }) {
           )}
 
           <Text style={styles.footerNote}>
-            © 2026 Municipality of Bongabong • DSWD Social Welfare &amp; Development
+            © 2026 Municipality of Bongabong • BeniAid Social Welfare &amp; Development
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1250,6 +1253,12 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: '700',
     color: '#1d4ed8',
+  },
+  authLogo: {
+    width: 58,
+    height: 58,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
   },
   title: {
     textAlign: 'center',

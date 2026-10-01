@@ -4,6 +4,7 @@ import { Search, Bell, Moon, Sun, ChevronDown, CheckCheck, Users, MessageSquare,
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { notificationApi, beneficiaryApi, messageApi, assistanceRequestApi, authApi } from '../../services/api';
 import { useDarkMode } from '../../hooks/useDarkMode';
+import { API_ORIGIN } from '../../config/api';
 
 export default function Header() {
   const { user, logout } = useAuth();
@@ -308,8 +309,7 @@ export default function Header() {
   };
 
   const getBackendBaseUrl = () => {
-    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-    return apiUrl.replace('/api', '');
+    return API_ORIGIN;
   };
 
   // Fetch beneficiary profile picture
@@ -383,8 +383,9 @@ export default function Header() {
           ⌘K
         </kbd>
       </div>
-      <div className="sm:hidden text-lg font-bold text-dswd-blue tracking-tight">
-        DSWD EBMS
+      <div className="sm:hidden flex items-center gap-2 text-lg font-bold text-dswd-blue tracking-tight">
+        <img src="/dswd-logo.jpg" alt="DSWD logo" className="h-8 w-8 rounded-lg object-contain bg-white" />
+        <span>BeniAid</span>
       </div>
 
       {/* Right Side Header Items */}

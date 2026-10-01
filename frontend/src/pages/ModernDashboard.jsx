@@ -114,75 +114,8 @@ export default function ModernDashboard() {
     ? summary.pendingApplications
     : pendingApplicationsList.length;
 
-  // MSWDO stats: includes 4Ps, Senior & PWD municipal oversight
-  const stats = isMswdoAdmin ? [
-    {
-      title: '4Ps Beneficiaries',
-      value: summary?.fourPsCount || 0,
-      change: `${summary?.fourPsCount || 0} enrolled`,
-      trend: 'up',
-      icon: Users,
-      gradient: 'from-blue-600 to-indigo-700',
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-700',
-      onClick: () => navigate('/dashboard/beneficiaries')
-    },
-    {
-      title: 'Senior Citizens',
-      value: summary?.seniorCitizensCount || 0,
-      change: `${summary?.seniorCitizensCount || 0} approved`,
-      trend: 'up',
-      icon: Users,
-      gradient: 'from-red-500 to-rose-600',
-      iconBg: 'bg-red-100',
-      iconColor: 'text-red-600',
-      onClick: () => navigate('/dashboard/beneficiaries')
-    },
-    {
-      title: 'PWD Beneficiaries',
-      value: summary?.pwdCount || 0,
-      change: `${summary?.pwdCount || 0} approved`,
-      trend: 'up',
-      icon: HandHeart,
-      gradient: 'from-amber-500 to-yellow-600',
-      iconBg: 'bg-amber-100',
-      iconColor: 'text-amber-700',
-      onClick: () => navigate('/dashboard/beneficiaries')
-    },
-    {
-      title: 'Total Beneficiaries',
-      value: totalBeneficiaries,
-      change: `${totalBeneficiaries} total`,
-      trend: 'up',
-      icon: Users,
-      gradient: 'from-emerald-500 to-emerald-600',
-      iconBg: 'bg-emerald-100',
-      iconColor: 'text-emerald-600',
-      onClick: () => navigate('/dashboard/beneficiaries')
-    },
-    {
-      title: 'Approved Beneficiaries',
-      value: summary?.approvedCount || totalBeneficiaries,
-      change: 'Verified records',
-      trend: 'up',
-      icon: CheckCircle,
-      gradient: 'from-emerald-500 to-emerald-600',
-      iconBg: 'bg-emerald-100',
-      iconColor: 'text-emerald-600',
-      onClick: () => navigate('/dashboard/beneficiaries')
-    },
-    {
-      title: 'Pending Approvals',
-      value: pendingCount,
-      change: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
-      trend: 'neutral',
-      icon: Clock,
-      gradient: 'from-purple-500 to-purple-600',
-      iconBg: 'bg-purple-100',
-      iconColor: 'text-purple-600',
-      onClick: () => navigate('/dashboard/beneficiaries?pending=true', { state: { openPending: true } })
-    }
-  ] : [
+  // Use the same summary cards for DSWD and MSWDO administrators.
+  const stats = [
     {
       title: 'Total Beneficiaries',
       value: totalBeneficiaries,
@@ -450,30 +383,29 @@ export default function ModernDashboard() {
               </div>
             )}
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
               {stats.map((stat, index) => {
                 const Icon = stat.icon;
                 return (
                   <button
                     key={index}
                     onClick={stat.onClick}
-                    className="group relative h-full min-h-[180px] overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 text-left shadow-[0_10px_30px_-18px_rgba(30,41,59,0.5)] transition duration-300 hover:-translate-y-1 hover:border-blue-200 hover:shadow-[0_18px_40px_-18px_rgba(37,99,235,0.35)]"
+                    className="group relative h-full min-h-[220px] overflow-hidden rounded-[28px] border border-slate-200/90 bg-white p-5 text-left shadow-[0_12px_30px_-18px_rgba(30,41,59,0.38)] transition duration-300 hover:-translate-y-1 hover:border-blue-200 hover:shadow-[0_18px_38px_-18px_rgba(37,99,235,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
-                    <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-0 transition-opacity duration-300 group-hover:opacity-[0.06]`}></div>
                     <div className="relative flex h-full flex-col">
-                      <div className="mb-4 flex items-start justify-between gap-2">
-                        <div className={`rounded-2xl p-3 ${stat.iconBg}`}>
-                          <Icon className={`h-5 w-5 ${stat.iconColor}`} />
+                      <div className="mb-5 flex items-start justify-between gap-2">
+                        <div className={`rounded-[18px] p-4 ${stat.iconBg}`}>
+                          <Icon className={`h-6 w-6 ${stat.iconColor}`} />
                         </div>
-                        <div className={`inline-flex items-center gap-1 text-[11px] font-semibold ${stat.trend === 'up' ? 'text-emerald-600' : stat.trend === 'down' ? 'text-red-600' : 'text-slate-500'}`}>
-                          {stat.trend !== 'neutral' && <TrendingUp className={`h-3.5 w-3.5 ${stat.trend === 'down' ? 'rotate-180' : ''}`} />}
+                        <div className={`inline-flex items-center gap-1 text-xs font-semibold ${stat.trend === 'up' ? 'text-emerald-600' : stat.trend === 'down' ? 'text-red-600' : 'text-slate-500'}`}>
+                          {stat.trend !== 'neutral' && <TrendingUp className={`h-4 w-4 ${stat.trend === 'down' ? 'rotate-180' : ''}`} />}
                           {stat.change}
                         </div>
                       </div>
 
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-slate-600">{stat.title}</p>
-                        <p className="text-[2rem] font-extrabold leading-none tracking-tight text-slate-900">{stat.value}</p>
+                      <div className="space-y-1.5">
+                        <p className="text-base font-semibold text-slate-700">{stat.title}</p>
+                        <p className="text-[2.5rem] font-extrabold leading-none tracking-tight text-slate-950">{stat.value}</p>
                       </div>
 
                       <div className="mt-auto flex items-center justify-end pt-3 text-blue-600 opacity-0 transition group-hover:opacity-100">

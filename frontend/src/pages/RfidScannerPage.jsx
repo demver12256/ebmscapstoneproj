@@ -105,7 +105,7 @@ export default function RfidScannerPage() {
       const unclaimedTxns = allTxns.filter(t => t.status === 'pending');
 
       const worksheetData = [
-        ['EBMS DISTRIBUTION SESSION REPORT'],
+        ['BeniAid DISTRIBUTION SESSION REPORT'],
         ['Event Title:', selectedEventData?.title || eventName],
         ['Program:', selectedEventData?.Program?.name || 'N/A'],
         ['Barangay:', selectedEventData?.Barangay?.barangay_name || 'N/A'],

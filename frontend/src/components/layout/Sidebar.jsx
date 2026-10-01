@@ -4,20 +4,21 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   Home, Users, MapPin, ListChecks, BarChart3, UserCog, MessageSquare,
   Smartphone, Package, FileText, Award, FileCheck, Bell, HelpCircle, Settings, Megaphone, HandHeart,
-  Stethoscope, CalendarCheck
+  Stethoscope, CalendarCheck, FileHeart
 } from 'lucide-react';
 
 const staffNavItems = [
   { path: '/dashboard', label: 'Dashboard', icon: Home, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
   { path: '/dashboard/beneficiaries', label: 'Beneficiaries', icon: Users, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
-  { path: '/dashboard/programs', label: 'Programs', icon: ListChecks, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
+  { path: '/dashboard/programs', label: 'Programs', icon: ListChecks, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/barangays', label: 'Barangays', icon: MapPin, roles: ['admin', 'mswdo_admin'] },
-  { path: '/dashboard/distributions', label: 'Distributions', icon: Package, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
+  { path: '/dashboard/distributions', label: 'Distributions', icon: Package, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
   { path: '/dashboard/rfid-scanner', label: 'Distribution Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
   { path: '/dashboard/rfid-attendance', label: 'Attendance Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
   { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, badge: 'messages', roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
-  { path: '/dashboard/assistance-requests', label: 'Assistance Requests', icon: HandHeart, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
+  { path: '/dashboard/assistance-requests', label: 'Assistance Requests', icon: HandHeart, roles: ['admin', 'staff', 'barangay'] },
+  { path: '/dashboard/interventions-management', label: 'Interventions', icon: FileHeart, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
   { path: '/dashboard/users', label: 'Users', icon: UserCog, roles: ['admin', 'mswdo_admin', 'staff'] },
 ];
@@ -27,6 +28,7 @@ const beneficiaryNavItems = [
   { path: '/dashboard/attendance', label: 'My Attendance', icon: CalendarCheck, requiresApproval: true, section: 'main' },
   { path: '/dashboard/my-benefits', label: 'My Assistance', icon: HandHeart, requiresApproval: true, section: 'main' },
   { path: '/dashboard/request-assistance', label: 'Request Assistance', icon: FileText, requiresApproval: true, section: 'main' },
+  { path: '/dashboard/my-interventions', label: 'My Interventions', icon: FileHeart, requiresApproval: true, section: 'main' },
   { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, badge: 'messages', requiresApproval: true, section: 'main' },
   { path: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: 'notifications', requiresApproval: true, section: 'main' },
 ];
@@ -129,17 +131,9 @@ export default function Sidebar() {
       <div className="space-y-8 pr-1">
         {/* DSWD Brand Header */}
         <div className="flex items-center gap-3">
-          <svg className="w-10 h-10 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M10 20C10 20 50 10 50 10C50 10 90 20 90 20V60C90 75 70 88 50 92C30 88 10 75 10 60V20Z" fill="#00338D" />
-            <path d="M10 50C10 50 30 55 50 55C70 55 90 50 90 50V60C90 75 70 88 50 92C30 88 10 75 10 60V50Z" fill="#E30613" />
-            <circle cx="50" cy="45" r="18" fill="#FFD100" />
-            <path d="M40 45C40 38 45 35 50 35C55 35 60 38 60 45C60 52 55 55 50 55C45 55 40 52 40 45Z" fill="#00338D" />
-            <circle cx="50" cy="40" r="5" fill="#FFD100" />
-            <circle cx="45" cy="48" r="4" fill="#FFD100" />
-            <circle cx="55" cy="48" r="4" fill="#FFD100" />
-          </svg>
+          <img src="/dswd-logo.jpg" alt="DSWD logo" className="w-10 h-10 shrink-0 rounded-xl object-contain bg-white" />
           <div>
-            <span className="text-2xl font-black tracking-tighter text-dswd-blue block leading-none">DSWD</span>
+            <span className="text-2xl font-black tracking-tighter text-dswd-blue block leading-none">BeniAid</span>
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mt-0.5">Beneficiary System</span>
           </div>
         </div>

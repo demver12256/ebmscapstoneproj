@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   TouchableWithoutFeedback,
   ScrollView,
@@ -17,17 +18,11 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.82, 320);
 
 const DswdShieldIcon = () => (
-  <View style={styles.shieldWrap}>
-    <View style={styles.shieldTop}>
-      <View style={styles.shieldBlueHalf} />
-      <View style={styles.shieldRedHalf} />
-    </View>
-    <View style={styles.shieldEmblem}>
-      <View style={styles.shieldYellowCircle}>
-        <View style={styles.shieldInnerDot} />
-      </View>
-    </View>
-  </View>
+  <Image
+    source={require('../assets/dswd-logo.jpg')}
+    style={styles.brandLogo}
+    resizeMode="contain"
+  />
 );
 
 const HeartEmblem = () => (
@@ -110,6 +105,7 @@ const SidebarDrawer = ({
     { key: 'dashboard', label: 'Dashboard', icon: '🏠' },
     { key: 'attendance', label: 'My Attendance', icon: '📅' },
     { key: 'assistance', label: 'My Assistance', icon: '🤲' },
+    { key: 'interventions', label: 'My Interventions', icon: '♥' },
     { key: 'requestAssistance', label: 'Request Assistance', icon: '📄' },
     { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount },
     { key: 'notifications', label: 'Notifications', icon: '🔔', badge: unreadNotifCount },
@@ -131,7 +127,7 @@ const SidebarDrawer = ({
                 <View style={styles.brandRow}>
                   <DswdShieldIcon />
                   <View style={styles.brandTextWrap}>
-                    <Text style={styles.brandTitle}>DSWD</Text>
+                    <Text style={styles.brandTitle}>BeniAid</Text>
                     <Text style={styles.brandSubtitle}>BENEFICIARY SYSTEM</Text>
                   </View>
                 </View>
@@ -306,6 +302,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+  },
+  brandLogo: {
+    width: 42,
+    height: 42,
+    marginRight: 10,
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
   },
   shieldTop: {
     width: 36,

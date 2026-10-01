@@ -30,11 +30,14 @@ import AssistanceScreen from './screens/AssistanceScreen';
 import RequestAssistanceScreen from './screens/RequestAssistanceScreen';
 import MessagesScreen from './screens/MessagesScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
+import InterventionsScreen from './screens/InterventionsScreen';
 import AuthScreen from './screens/AuthScreen';
 import SidebarDrawer from './components/SidebarDrawer';
 import BottomNavBar from './components/BottomNavBar';
 import NotificationPopupModal from './components/NotificationPopupModal';
+import { API_URL } from './config/api';
 
+const FILES_BASE_URL = API_URL.replace(/\/api\/?$/, '');
 
 const formatMoney = (value) => {
   const amount = Number(value || 0);
@@ -136,6 +139,7 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentNav, setCurrentNav] = useState('dashboard');
   const [activeModal, setActiveModal] = useState(null);
+  const [payoutMethodOpen, setPayoutMethodOpen] = useState(false);
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [notificationsList, setNotificationsList] = useState([]);
@@ -202,6 +206,11 @@ const App = () => {
       const unreadNotif = notifList
         .filter((n) => {
           if (n.is_read) return false;
+          const isAssistanceSubmissionConfirmation =
+            n.reference_type === 'assistance_request' &&
+            (n.title?.startsWith('Kahilingan sa Ayuda:') ||
+              n.message?.toLowerCase().includes('matagumpay na naisumite'));
+          if (isAssistanceSubmissionConfirmation) return false;
           if (
             (n.type === 'announcement' || n.reference_type === 'announcement') &&
             n.reference_type !== 'announcement_absence'
@@ -536,7 +545,10 @@ const App = () => {
   };
 
   const handleSavePayoutAccount = async () => {
-    if (!payoutForm.payout_provider || !payoutForm.payout_account_number) {
+    if (
+      payoutForm.payout_preference !== 'cash_otc' &&
+      (!payoutForm.payout_provider || !payoutForm.payout_account_number)
+    ) {
       Alert.alert('Missing field', 'Provider and account number are required.');
       return;
     }
@@ -547,6 +559,8 @@ const App = () => {
       const result = response?.data || {};
       if (result?.success) {
         Alert.alert('Success', result.message || 'Payout account updated.');
+        setPayoutMethodOpen(false);
+        setActiveModal(null);
         await loadBeneficiaryProfile();
       }
     } catch (err) {
@@ -593,7 +607,15 @@ const App = () => {
 
   if (user) {
     const displayName = `${profile?.first_name || user.first_name || 'Beneficiary'} ${profile?.last_name || user.last_name || ''}`.trim();
-    const statusLabel = profile?.status || 'APPROVED';
+    const statusLabel = profile?.status || 'Not available';
+    const isApproved = String(statusLabel).toLowerCase() === 'approved';
+    const activeEnrollment = (Array.isArray(profile?.Enrollments) ? profile.Enrollments : [])
+      .find((enrollment) => String(enrollment.status || '').toLowerCase() === 'active') || profile?.Enrollments?.[0];
+    const enrolledProgramName = activeEnrollment?.BenefitProgram?.name ||
+      activeEnrollment?.Program?.name || activeEnrollment?.program_name || 'No active program';
+    const beneficiaryCategory = profile?.category || 'Category not set';
+    const beneficiaryCode = profile?.beneficiary_id_code || profile?.household_id_number || 'Not assigned';
+    const beneficiaryBarangay = profile?.barangay_name || profile?.Barangay?.barangay_name || profile?.barangay?.barangay_name || profile?.barangay || 'Not available';
     const accountStatus = profile?.account_verification_status || 'verified';
     const extraAccounts = Array.isArray(profile?.extra_payout_accounts) ? profile.extra_payout_accounts : [];
 
@@ -659,6 +681,13 @@ const App = () => {
             />
           )}
 
+          {/* Intervention / Other Assistance Screen */}
+          {currentScreen === 'interventions' && (
+            <InterventionsScreen
+              onBack={() => handleNavSelect('dashboard')}
+            />
+          )}
+
           {/* Dashboard Home (Image 4) */}
           {currentScreen === 'dashboard' && (
             <SafeAreaView style={styles.dashboardPage}>
@@ -716,14 +745,14 @@ const App = () => {
             </View>
           </View>
 
-          {/* Approved Success Banner (Image 4) */}
-          <View style={styles.successBanner}>
+          {/* Show the approval message only when the API confirms approval. */}
+          {isApproved ? <View style={styles.successBanner}>
             <Text style={styles.successIcon}>✓</Text>
             <View style={styles.successTextWrap}>
               <Text style={styles.successTitle}>Congratulations! Your application has been {statusLabel.toUpperCase()}.</Text>
               <Text style={styles.successBody}>You are now an official beneficiary. You can now view your benefits and upcoming distributions.</Text>
             </View>
-          </View>
+          </View> : null}
 
           {/* 4 Status Cards Row (Image 4) */}
           <View style={styles.statusRow}>
@@ -734,8 +763,8 @@ const App = () => {
                 <Text style={styles.cardMiniTitleBlue}>My Status</Text>
               </View>
               <Text style={styles.cardMainBlue}>{statusLabel.toUpperCase()}</Text>
-              <Text style={styles.cardSmallBlue}>You are an official beneficiary.</Text>
-              <Text style={styles.cardSmallBlue}>Approved on {profile?.approved_at || '2026-08-07'}</Text>
+              <Text style={styles.cardSmallBlue}>{isApproved ? 'You are an official beneficiary.' : 'Beneficiary application status'}</Text>
+              <Text style={styles.cardSmallBlue}>{profile?.approved_at ? `Approved on ${formatDate(profile.approved_at)}` : 'Approval date not recorded'}</Text>
             </View>
 
             {/* Card 2: Beneficiary ID */}
@@ -743,11 +772,11 @@ const App = () => {
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.cardIcon}>📄</Text>
                 <Text style={styles.cardMiniTitle}>Beneficiary ID</Text>
-                <View style={styles.officialMemberBadge}>
+                {isApproved ? <View style={styles.officialMemberBadge}>
                   <Text style={styles.officialMemberText}>OFFICIAL MEMBER</Text>
-                </View>
+                </View> : null}
               </View>
-              <Text style={styles.cardSubHead}>{profile?.household_id_number || 'BEN-2026-0003'}</Text>
+              <Text style={styles.cardSubHead}>{beneficiaryCode}</Text>
               <TouchableOpacity onPress={() => Alert.alert('Copied', 'Beneficiary ID copied to clipboard.')}>
                 <Text style={styles.copyLink}>📋 Copy</Text>
               </TouchableOpacity>
@@ -759,8 +788,8 @@ const App = () => {
                 <Text style={styles.cardIcon}>⭐</Text>
                 <Text style={styles.cardMiniTitleAmber}>Enrolled Program</Text>
               </View>
-              <Text style={styles.cardSubHeadAmber}>{profile?.category || 'PDAO / PWD ID & Purchase Booklet Issuance'}</Text>
-              <Text style={styles.cardSmallAmber}>{profile?.program_category || 'Persons with Disabilities (PWD)'}</Text>
+              <Text style={styles.cardSubHeadAmber}>{enrolledProgramName}</Text>
+              <Text style={styles.cardSmallAmber}>{beneficiaryCategory}</Text>
             </View>
 
             {/* Card 4: Barangay */}
@@ -769,8 +798,8 @@ const App = () => {
                 <Text style={styles.cardIcon}>📍</Text>
                 <Text style={styles.cardMiniTitle}>Barangay</Text>
               </View>
-              <Text style={styles.cardSubHead}>{profile?.barangay_name || profile?.barangay || 'Aplaya'}</Text>
-              <Text style={styles.cardSmallGray}>{profile?.barangay_name || profile?.barangay || 'Aplaya'}</Text>
+              <Text style={styles.cardSubHead}>{beneficiaryBarangay}</Text>
+              <Text style={styles.cardSmallGray}>{beneficiaryBarangay}</Text>
             </View>
           </View>
 
@@ -782,7 +811,9 @@ const App = () => {
               </View>
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text style={styles.digitalAyudaTitle}>Digital Ayuda Account</Text>
+                  <Text style={styles.digitalAyudaTitle}>
+                    {payoutForm.payout_preference === 'cash_otc' ? 'Cash OTC Account' : 'Digital Ayuda Account'}
+                  </Text>
                   <View style={styles.verifiedTag}>
                     <Text style={styles.verifiedTagText}>✓ Verified</Text>
                   </View>
@@ -793,7 +824,10 @@ const App = () => {
               </View>
               <TouchableOpacity
                 style={styles.updateAccountBtn}
-                onPress={() => setActiveModal(activeModal === 'payout' ? null : 'payout')}
+                onPress={() => {
+                  setPayoutMethodOpen(false);
+                  setActiveModal(activeModal === 'payout' ? null : 'payout');
+                }}
               >
                 <Text style={styles.updateAccountBtnText}>✏️ I-update ang Account</Text>
               </TouchableOpacity>
@@ -801,12 +835,14 @@ const App = () => {
 
             <View style={styles.ayudaDetailsGrid}>
               <View style={styles.ayudaDetailCol}>
-                <Text style={styles.ayudaDetailLabel}>PROVIDER</Text>
-                <Text style={styles.ayudaDetailVal}>⚡ {profile?.payout_provider || payoutForm.payout_provider || 'GCash'}</Text>
+                <Text style={styles.ayudaDetailLabel}>PAYOUT METHOD</Text>
+                <Text style={styles.ayudaDetailVal}>
+                  {payoutForm.payout_preference === 'cash_otc' ? '🏢 Cash OTC / RFID' : `⚡ ${profile?.payout_provider || payoutForm.payout_provider || 'GCash'}`}
+                </Text>
               </View>
               <View style={styles.ayudaDetailCol}>
                 <Text style={styles.ayudaDetailLabel}>ACCOUNT NUMBER</Text>
-                <Text style={styles.ayudaDetailVal}>{profile?.payout_account_number || payoutForm.payout_account_number || '09534519448'}</Text>
+                <Text style={styles.ayudaDetailVal}>{payoutForm.payout_preference === 'cash_otc' ? 'Physical claiming' : profile?.payout_account_number || payoutForm.payout_account_number || '09534519448'}</Text>
               </View>
               <View style={styles.ayudaDetailCol}>
                 <Text style={styles.ayudaDetailLabel}>ACCOUNT NAME</Text>
@@ -820,6 +856,27 @@ const App = () => {
               </Text>
             </View>
           </View>
+
+          {/* Intervention / Other Assistance Card */}
+          {user?.role === 'beneficiary' && (
+            <View style={styles.interventionCard}>
+              <View style={styles.interventionIconBox}>
+                <Text style={styles.interventionIcon}>♥</Text>
+              </View>
+              <View style={styles.interventionCopy}>
+                <Text style={styles.interventionTitle}>Intervention / Ibang Tulong</Text>
+                <Text style={styles.interventionText}>
+                  I-report ang tulong mula sa PCSO, PhilHealth, LGU, NGO, o ibang ahensya.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.interventionButton}
+                onPress={() => handleNavSelect('interventions')}
+              >
+                <Text style={styles.interventionButtonText}>Buksan</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.quickSummaryHeader}>
             <Text style={styles.sectionLabel}>My Benefits Overview</Text>
@@ -842,94 +899,6 @@ const App = () => {
                 <Text style={styles.metricMeta}>{item.meta}</Text>
               </View>
             ))}
-          </View>
-
-          <View style={styles.panelCard}>
-            <Text style={styles.panelTitle}>Payout Settings</Text>
-            <Text style={styles.panelText}>Manage the digital payout account used for your cash grants and assistance disbursements.</Text>
-
-            <View style={styles.formBlock}>
-              <Text style={styles.formLabel}>Payout preference</Text>
-              <TextInput
-                style={styles.input}
-                value={payoutForm.payout_preference}
-                onChangeText={(value) => setPayoutForm((prev) => ({ ...prev, payout_preference: value }))}
-                placeholder="digital"
-              />
-
-              <Text style={styles.formLabel}>Provider</Text>
-              <TextInput
-                style={styles.input}
-                value={payoutForm.payout_provider}
-                onChangeText={(value) => setPayoutForm((prev) => ({ ...prev, payout_provider: value }))}
-                placeholder="GCash"
-              />
-
-              <Text style={styles.formLabel}>Account Number</Text>
-              <TextInput
-                style={styles.input}
-                value={payoutForm.payout_account_number}
-                keyboardType="numeric"
-                onChangeText={(value) => setPayoutForm((prev) => ({ ...prev, payout_account_number: value }))}
-                placeholder="09123456789"
-              />
-
-              <Text style={styles.formLabel}>Account Name</Text>
-              <TextInput
-                style={styles.input}
-                value={payoutForm.payout_account_name}
-                onChangeText={(value) => setPayoutForm((prev) => ({ ...prev, payout_account_name: value }))}
-                placeholder="Full name"
-              />
-
-              <Text style={styles.inlineStatus}>Account status: {accountStatus}</Text>
-
-              <TouchableOpacity style={styles.primaryButtonSmall} onPress={handleSavePayoutAccount} disabled={payoutSaving}>
-                {payoutSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.primaryButtonText}>Save payout account</Text>}
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.formBlock}>
-              <Text style={styles.sectionLabel}>Additional payout accounts</Text>
-              <TextInput
-                style={styles.input}
-                value={extraPayoutForm.provider}
-                onChangeText={(value) => setExtraPayoutForm((prev) => ({ ...prev, provider: value }))}
-                placeholder="Provider"
-              />
-              <TextInput
-                style={styles.input}
-                value={extraPayoutForm.account_number}
-                keyboardType="numeric"
-                onChangeText={(value) => setExtraPayoutForm((prev) => ({ ...prev, account_number: value }))}
-                placeholder="Account number"
-              />
-              <TextInput
-                style={styles.input}
-                value={extraPayoutForm.account_name}
-                onChangeText={(value) => setExtraPayoutForm((prev) => ({ ...prev, account_name: value }))}
-                placeholder="Account name"
-              />
-              <TouchableOpacity style={styles.secondaryButton} onPress={handleAddExtraPayoutAccount} disabled={extraSaving}>
-                {extraSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.secondaryButtonText}>Add extra account</Text>}
-              </TouchableOpacity>
-
-              {extraAccounts.length > 0 && (
-                <View style={styles.extraList}>
-                  {extraAccounts.map((account, index) => (
-                    <View key={`${account.provider}-${index}`} style={styles.extraItem}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.extraTitle}>{account.provider}</Text>
-                        <Text style={styles.extraMeta}>{account.account_number}</Text>
-                      </View>
-                      <TouchableOpacity onPress={() => handleRemoveExtraAccount(index)} style={styles.deleteButton}>
-                        <Text style={styles.deleteButtonText}>Remove</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
           </View>
 
           <View style={styles.benefitsPanel}>
@@ -1042,7 +1011,7 @@ const App = () => {
                 <TouchableOpacity
                   key={`${attachment.url || attachment.name}-${index}`}
                   style={styles.documentButton}
-                  onPress={() => attachment.url && Linking.openURL(attachment.url.startsWith('http') ? attachment.url : `http://localhost:5000${attachment.url}`)}
+                  onPress={() => attachment.url && Linking.openURL(attachment.url.startsWith('http') ? attachment.url : `${FILES_BASE_URL}${attachment.url}`)}
                 >
                   <Text style={styles.documentText}>{attachment.name || attachment.file_name || 'Attached document'} • Open file</Text>
                 </TouchableOpacity>
@@ -1085,16 +1054,130 @@ const App = () => {
           onMarkAsRead={handlePopupMarkAsRead}
           onUpdatePayout={() => {
             setShowPopupModal(false);
+            setPayoutMethodOpen(false);
             setActiveModal('payout');
           }}
         />
+
+        {/* Digital Payout Account modal */}
+        <Modal
+          visible={activeModal === 'payout'}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            setPayoutMethodOpen(false);
+            setActiveModal(null);
+          }}
+        >
+          <View style={styles.payoutModalOverlay}>
+            <View style={styles.payoutModalCard}>
+              <View style={styles.payoutModalHeader}>
+                <View style={styles.payoutModalIconBox}>
+                  <Text style={styles.payoutModalIcon}>▣</Text>
+                </View>
+                <View style={styles.payoutModalHeaderCopy}>
+                  <Text style={styles.payoutModalTitle}>Digital Payout Account</Text>
+                  <Text style={styles.payoutModalSubtitle}>I-rehistro ang iyong GCash, Maya, o Landbank Account</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    setPayoutMethodOpen(false);
+                    setActiveModal(null);
+                  }}
+                  style={styles.payoutModalClose}
+                >
+                  <Text style={styles.payoutModalCloseText}>×</Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView contentContainerStyle={styles.payoutModalBody} keyboardShouldPersistTaps="handled">
+                <Text style={styles.payoutModalLabel}>PARAAN NG PAGTANGGAP (PAYOUT PREFERENCE)</Text>
+                <TouchableOpacity
+                  style={styles.payoutSelect}
+                  onPress={() => setPayoutMethodOpen((value) => !value)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.payoutSelectText}>
+                    {payoutForm.payout_preference === 'cash_otc'
+                      ? '🏢 Cash OTC / Physical Claiming (RFID)'
+                      : '⚡ Digital (E-Wallet / Bank Account)'}
+                  </Text>
+                  <Text style={styles.payoutSelectChevron}>{payoutMethodOpen ? '⌃' : '⌄'}</Text>
+                </TouchableOpacity>
+
+                {payoutMethodOpen && (
+                  <View style={styles.payoutOptions}>
+                    <TouchableOpacity
+                      style={styles.payoutOption}
+                      onPress={() => {
+                        setPayoutForm((prev) => ({ ...prev, payout_preference: 'digital' }));
+                        setPayoutMethodOpen(false);
+                      }}
+                    >
+                      <Text style={styles.payoutOptionText}>⚡ Digital (E-Wallet / Bank Account)</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.payoutOption}
+                      onPress={() => {
+                        setPayoutForm((prev) => ({ ...prev, payout_preference: 'cash_otc' }));
+                        setPayoutMethodOpen(false);
+                      }}
+                    >
+                      <Text style={styles.payoutOptionText}>🏢 Cash OTC / Physical Claiming (RFID)</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {payoutForm.payout_preference === 'cash_otc' ? (
+                  <View style={styles.cashOtcNotice}>
+                    <Text style={styles.cashOtcTitle}>Cash OTC / Physical Claiming</Text>
+                    <Text style={styles.cashOtcText}>Gamitin ang iyong RFID card sa itinalagang payout location. Hindi kailangan ng e-wallet account.</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.payoutModalLabel}>PROVIDER</Text>
+                    <TextInput
+                      style={styles.payoutModalInput}
+                      value={payoutForm.payout_provider}
+                      onChangeText={(value) => setPayoutForm((prev) => ({ ...prev, payout_provider: value }))}
+                      placeholder="GCash, Maya, Landbank"
+                    />
+                    <Text style={styles.payoutModalLabel}>ACCOUNT NUMBER</Text>
+                    <TextInput
+                      style={styles.payoutModalInput}
+                      value={payoutForm.payout_account_number}
+                      keyboardType="phone-pad"
+                      onChangeText={(value) => setPayoutForm((prev) => ({ ...prev, payout_account_number: value }))}
+                      placeholder="09123456789"
+                    />
+                    <Text style={styles.payoutModalLabel}>ACCOUNT NAME</Text>
+                    <TextInput
+                      style={styles.payoutModalInput}
+                      value={payoutForm.payout_account_name}
+                      onChangeText={(value) => setPayoutForm((prev) => ({ ...prev, payout_account_name: value }))}
+                      placeholder="Full name"
+                    />
+                  </>
+                )}
+
+                <Text style={styles.payoutAccountStatus}>Account status: {accountStatus}</Text>
+                <TouchableOpacity style={styles.payoutSaveButton} onPress={handleSavePayoutAccount} disabled={payoutSaving}>
+                  {payoutSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.payoutSaveText}>Save payout account</Text>}
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
 
   return (
     <AuthScreen
-      onLoginSuccess={(loggedUser) => {
+      onLoginSuccess={(loggedUser, token) => {
+        if (token) {
+          api.setAuthToken(token);
+        }
         setUser(loggedUser);
         if (loggedUser?.role !== 'beneficiary') {
           setProfile(null);
@@ -1383,7 +1466,7 @@ const styles = StyleSheet.create({
   },
   dashboardContent: {
     padding: 18,
-    paddingBottom: 40,
+    paddingBottom: 110,
   },
   heroCard: {
     backgroundColor: '#0f172a',
@@ -1687,6 +1770,56 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '600',
   },
+  interventionCard: {
+    backgroundColor: '#eef2ff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  interventionIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 11,
+    backgroundColor: '#e0e7ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  interventionIcon: {
+    color: '#4338ca',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  interventionCopy: {
+    flex: 1,
+  },
+  interventionTitle: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  interventionText: {
+    color: '#475569',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  interventionButton: {
+    backgroundColor: '#4f46e5',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginLeft: 8,
+  },
+  interventionButtonText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   quickSummaryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1930,6 +2063,96 @@ const styles = StyleSheet.create({
   adminNavText: { color: '#e2e8f0', fontSize: 14, fontWeight: '700' },
 
   // Modal Styles
+  payoutModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.62)',
+    justifyContent: 'center',
+    padding: 18,
+  },
+  payoutModalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 22,
+    overflow: 'hidden',
+    maxHeight: '92%',
+    elevation: 12,
+  },
+  payoutModalHeader: {
+    backgroundColor: '#5b21b6',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  payoutModalIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  payoutModalIcon: { color: '#ffffff', fontSize: 28, fontWeight: '800' },
+  payoutModalHeaderCopy: { flex: 1 },
+  payoutModalTitle: { color: '#ffffff', fontSize: 18, fontWeight: '900' },
+  payoutModalSubtitle: { color: '#ede9fe', fontSize: 11, marginTop: 3 },
+  payoutModalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  payoutModalCloseText: { color: '#ffffff', fontSize: 28, lineHeight: 30, fontWeight: '300' },
+  payoutModalBody: { padding: 18, paddingBottom: 24 },
+  payoutModalLabel: {
+    color: '#334155',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 7,
+    marginTop: 8,
+  },
+  payoutSelect: {
+    minHeight: 54,
+    borderWidth: 2,
+    borderColor: '#9333ea',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  payoutSelectText: { color: '#0f172a', fontSize: 14, fontWeight: '800', flex: 1, paddingRight: 8 },
+  payoutSelectChevron: { color: '#0f172a', fontSize: 22, fontWeight: '700' },
+  payoutOptions: {
+    borderWidth: 1,
+    borderColor: '#94a3b8',
+    backgroundColor: '#ffffff',
+    marginTop: 2,
+    elevation: 5,
+  },
+  payoutOption: { paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  payoutOptionText: { color: '#0f172a', fontSize: 14 },
+  payoutModalInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#dbe3ee',
+    borderRadius: 12,
+    minHeight: 52,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    color: '#0f172a',
+    fontSize: 15,
+  },
+  cashOtcNotice: { backgroundColor: '#f8fafc', borderRadius: 12, padding: 14, marginTop: 14, borderWidth: 1, borderColor: '#e2e8f0' },
+  cashOtcTitle: { color: '#0f172a', fontSize: 14, fontWeight: '800' },
+  cashOtcText: { color: '#64748b', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  payoutAccountStatus: { color: '#0f766e', fontSize: 13, fontWeight: '800', marginTop: 18, marginBottom: 12 },
+  payoutSaveButton: { backgroundColor: '#172b3b', borderRadius: 12, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
+  payoutSaveText: { color: '#ffffff', fontSize: 16, fontWeight: '900' },
   modalFullPage: { flex: 1, backgroundColor: '#f8fafc' },
   modalHeaderDark: {
     backgroundColor: '#0f172a',

@@ -16,7 +16,8 @@ public class MainApplication extends Application implements ReactApplication {
       new DefaultReactNativeHost(this) {
         @Override
         public boolean getUseDeveloperSupport() {
-          return BuildConfig.DEBUG;
+          // The distributed APK must load its packaged JS bundle, not Metro.
+          return false;
         }
 
         @Override
@@ -57,6 +58,5 @@ public class MainApplication extends Application implements ReactApplication {
       // If you opted-in for the New Architecture, we load the native entry point for this app.
       DefaultNewArchitectureEntryPoint.load();
     }
-    ReactNativeFlipper.initializeFlipper(this, getReactNativeHost().getReactInstanceManager());
   }
 }

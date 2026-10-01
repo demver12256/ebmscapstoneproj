@@ -223,7 +223,8 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-screen place-items-center bg-slate-900 px-4 py-10 text-slate-100">
       <div className="w-full max-w-md rounded-[2rem] border border-slate-800 bg-slate-950/90 p-8 shadow-2xl shadow-slate-900/40 backdrop-blur-xl">
-        <h1 className="text-3xl font-semibold">EBMS Login</h1>
+        <img src="/dswd-logo.jpg" alt="DSWD logo" className="mb-5 h-16 w-16 rounded-2xl bg-white object-contain" />
+        <h1 className="text-3xl font-semibold">BeniAid Login</h1>
         <p className="mt-2 text-sm text-slate-400">Sign in to access the beneficiary management system.</p>
         <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
           <Input

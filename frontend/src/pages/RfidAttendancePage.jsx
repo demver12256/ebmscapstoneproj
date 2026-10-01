@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users, XCircle, Ban } from 'lucide-react';
 import { announcementApi } from '../services/api';
 import * as XLSX from 'xlsx';
+import { usePagination } from '../hooks/usePagination';
+import Pagination from '../components/ui/Pagination';
 
 // Helper to determine if announcement is active for attendance recording
 const isAnnouncementActiveForAttendance = (ann) => {
@@ -54,6 +56,7 @@ export default function RfidAttendancePage() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const rfidInputRef = useRef(null);
+  const recordPagination = usePagination(scannedRecords, 10);
 
   useEffect(() => {
     const fetchAnnouncements = async () => {
@@ -447,9 +450,9 @@ export default function RfidAttendancePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {scannedRecords.map((record, index) => (
+                {recordPagination.paginatedData.map((record, index) => (
                   <tr key={record.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">{index + 1}</td>
+                    <td className="px-4 py-3">{recordPagination.startIndex + index + 1}</td>
                     <td className="px-4 py-3 font-mono text-xs">{record.rfid}</td>
                     <td className="px-4 py-3 font-medium">{record.name}</td>
                     <td className="px-4 py-3 font-mono text-xs">{record.beneficiary_id_code}</td>
@@ -464,6 +467,17 @@ export default function RfidAttendancePage() {
                 ))}
               </tbody>
             </table>
+            <div className="border-t border-slate-200 px-4 py-3">
+              <Pagination
+                currentPage={recordPagination.currentPage}
+                totalPages={recordPagination.totalPages}
+                onPageChange={recordPagination.goToPage}
+                totalItems={recordPagination.totalItems}
+                itemsPerPage={10}
+                startIndex={recordPagination.startIndex}
+                endIndex={recordPagination.endIndex}
+              />
+            </div>
           </div>
         </div>
       )}

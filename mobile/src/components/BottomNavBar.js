@@ -11,6 +11,7 @@ const TABS = [
   { key: 'dashboard',     icon: '🏠',  label: 'Home'       },
   { key: 'attendance',    icon: '📅',  label: 'Attendance' },
   { key: 'assistance',    icon: '🤲',  label: 'Assistance' },
+  { key: 'interventions', icon: '♥',   label: 'Intervention' },
   { key: 'messages',      icon: '💬',  label: 'Messages'   },
   { key: 'notifications', icon: '🔔',  label: 'Alerts'     },
 ];

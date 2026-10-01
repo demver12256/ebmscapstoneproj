@@ -10,6 +10,8 @@ import {
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import ApprovedBeneficiaryDashboard from '../components/ApprovedBeneficiaryDashboard';
+import { usePagination } from '../hooks/usePagination';
+import Pagination from '../components/ui/Pagination';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -23,6 +25,7 @@ export default function DashboardPage() {
   const [monthly, setMonthly] = useState([]);
   const [activeTab, setActiveTab] = useState('queue'); // 'queue' or 'analytics'
   const [applications, setApplications] = useState([]);
+  const applicationPagination = usePagination(applications, 10);
   const [selectedApp, setSelectedApp] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [missingDocs, setMissingDocs] = useState([]);
@@ -977,7 +980,7 @@ export default function DashboardPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs">
-                        {applications.map((app) => (
+                        {applicationPagination.paginatedData.map((app) => (
                           <tr key={app.id} className="hover:bg-slate-50/50">
                             <td className="py-4 font-bold text-slate-900">{app.first_name} {app.last_name}</td>
                             <td className="py-4 font-semibold text-slate-500">{app.category || '—'}</td>
@@ -1004,6 +1007,17 @@ export default function DashboardPage() {
                         ))}
                       </tbody>
                     </table>
+                    <div className="border-t border-slate-200 px-1 py-3">
+                      <Pagination
+                        currentPage={applicationPagination.currentPage}
+                        totalPages={applicationPagination.totalPages}
+                        onPageChange={applicationPagination.goToPage}
+                        totalItems={applicationPagination.totalItems}
+                        itemsPerPage={10}
+                        startIndex={applicationPagination.startIndex}
+                        endIndex={applicationPagination.endIndex}
+                      />
+                    </div>
                   </div>
                 )}
               </div>

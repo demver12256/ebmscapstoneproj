@@ -152,23 +152,12 @@ export default function RequestAssistancePage() {
     }
   };
 
-  const otherAgency = targetAgency === 'DSWD' ? 'MSWDO' : 'DSWD';
-
-  // Check if current beneficiary already has an active or approved request for selectedType in the OTHER agency
-  const crossAgencyRequest = myRequests.find(
-    (r) => r.type === selectedType && r.agency === otherAgency && r.status !== 'Rejected'
-  );
-
-  // Check if current beneficiary already has a pending/under review request for selectedType in the SAME agency
+  // Check if current beneficiary already has a pending/under review request for selectedType in DSWD
   const sameAgencyPendingRequest = myRequests.find(
-    (r) => r.type === selectedType && r.agency === targetAgency && ['Pending', 'Under Review'].includes(r.status)
+    (r) => r.type === selectedType && r.agency === 'DSWD' && ['Pending', 'Under Review'].includes(r.status)
   );
 
   const currentRequirements = getRequirementsForType(selectedType);
-
-  const handleSelectAgency = (agency) => {
-    setTargetAgency(agency);
-  };
 
   const handleRequirementFileChange = (reqId, e) => {
     const file = e.target.files?.[0];
@@ -226,19 +215,10 @@ export default function RequestAssistancePage() {
       return;
     }
 
-    // Cross-agency non-duplication check
-    if (crossAgencyRequest) {
-      setToast({
-        type: 'error',
-        text: `Bawal ang duplicate request: Mayroon ka nang kahilingan para sa "${selectedType}" sa ${otherAgency} (Status: ${crossAgencyRequest.status}).`,
-      });
-      return;
-    }
-
     if (sameAgencyPendingRequest) {
       setToast({
         type: 'error',
-        text: `Mayroon ka nang kasalukuyang kahilingan para sa "${selectedType}" sa ${targetAgency} na kasalukuyang ${sameAgencyPendingRequest.status}.`,
+        text: `Mayroon ka nang kasalukuyang kahilingan para sa "${selectedType}" sa DSWD na kasalukuyang ${sameAgencyPendingRequest.status}.`,
       });
       return;
     }
@@ -267,7 +247,7 @@ export default function RequestAssistancePage() {
       }
 
       const formData = new FormData();
-      formData.append('agency', targetAgency);
+      formData.append('agency', 'DSWD');
       formData.append('type', selectedType);
       formData.append('subject', subject.trim());
       formData.append('description', fullDescription);
@@ -460,108 +440,31 @@ export default function RequestAssistancePage() {
       {/* ========================================================================= */}
       {activeTab === 'new-request' && (
         <form onSubmit={handleSubmitRequest} className="space-y-8">
-          {/* SECTION 1: TARGET OFFICE SELECTION */}
+          {/* SECTION 1: TARGET OFFICE - DSWD ONLY */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                1. Kaninong Tanggapan Ipapadala ang Request?
+                1. Tanggapan (Office)
               </label>
-              <span className="text-[11px] text-slate-400">Pumili kung DSWD o MSWDO</span>
             </div>
 
-            {/* Cross-Agency Non-Duplication Policy Note */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-start gap-2.5">
-              <span className="text-slate-400 font-bold">⚖️</span>
-              <div>
-                <span className="font-semibold text-slate-900 block mb-0.5">
-                  Patakaran sa Paghiling (Cross-Agency Policy):
-                </span>
-                Maaaring mag-request ang mga benepisyaryo (kabilang ang 4Ps, Senior Citizens, at PWD) sa <strong>DSWD</strong> o <strong>MSWDO</strong>. Subalit, <strong>kung nakapag-request ka na ng partikular na uri ng tulong sa DSWD (hal. Medical Assistance), bawal na itong i-request sa MSWDO (at vice-versa)</strong> habang ito ay aktibo o naaprubahan na.
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {/* CARD: DSWD */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => handleSelectAgency('DSWD')}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectAgency('DSWD'); }}
-                className={`p-5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer ${
-                  targetAgency === 'DSWD'
-                    ? 'border-slate-900 bg-white ring-2 ring-slate-900 shadow-sm'
-                    : 'border-slate-200 bg-white hover:border-slate-300'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-700">
-                        <Landmark className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs font-bold text-slate-900">
-                        DSWD Office
-                      </span>
-                    </div>
-                    <span className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                      targetAgency === 'DSWD' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300'
-                    }`}>
-                      {targetAgency === 'DSWD' && <Check className="w-2.5 h-2.5" />}
-                    </span>
-                  </div>
-
-                  <span className="inline-block text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 mb-2">
+            {/* DSWD Only Notice */}
+            <div className="p-5 rounded-2xl border border-blue-200 bg-blue-50/50">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-700 shrink-0">
+                  <Landmark className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-slate-900 mb-1">
+                    DSWD Office (Department of Social Welfare and Development)
+                  </h3>
+                  <span className="inline-block text-[10px] font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded border border-blue-200 mb-2">
                     National Agency (Pambansa)
                   </span>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Para sa 4Ps, National AICS emergency financial grant, at tulong-medikal sa malalaking ospital.
+                    Lahat ng request assistance ay direktang ipapasa sa DSWD para sa review at approval. 
+                    Para sa 4Ps, AICS emergency financial grant, at tulong-medikal.
                   </p>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-400 font-medium">
-                  Direktang susuriin ng <strong>DSWD Admin</strong>
-                </div>
-              </div>
-
-              {/* CARD: MSWDO */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => handleSelectAgency('MSWDO')}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectAgency('MSWDO'); }}
-                className={`p-5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer ${
-                  targetAgency === 'MSWDO'
-                    ? 'border-slate-900 bg-white ring-2 ring-slate-900 shadow-sm'
-                    : 'border-slate-200 bg-white hover:border-slate-300'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700">
-                        <Building2 className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs font-bold text-slate-900">
-                        MSWDO Office
-                      </span>
-                    </div>
-                    <span className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                      targetAgency === 'MSWDO' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300'
-                    }`}>
-                      {targetAgency === 'MSWDO' && <Check className="w-2.5 h-2.5" />}
-                    </span>
-                  </div>
-
-                  <span className="inline-block text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 mb-2">
-                    Municipal / LGU (Lokal na Pamahalaan)
-                  </span>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    Para sa mga residente kabilang ang Senior Citizens (OSCA), PWD, 4Ps, at mga pamilyang nangangailangan ng lokal na ayuda ng bayan.
-                  </p>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-400 font-medium">
-                  Direktang susuriin ng <strong>MSWDO Admin</strong>
                 </div>
               </div>
             </div>
@@ -581,7 +484,7 @@ export default function RequestAssistancePage() {
                 const Icon = type.icon;
                 const isSelected = selectedType === type.id;
                 const hasCross = myRequests.some(
-                  (r) => r.type === type.id && r.agency === otherAgency && r.status !== 'Rejected'
+                  (r) => r.type === type.id && r.agency === 'DSWD' && r.status !== 'Rejected'
                 );
 
                 return (
@@ -607,7 +510,7 @@ export default function RequestAssistancePage() {
                           <Check className="w-3.5 h-3.5 text-white" />
                         ) : hasCross ? (
                           <span className="text-[9px] font-semibold text-amber-700 bg-amber-100 px-1 py-0.5 rounded">
-                            Nasa {otherAgency}
+                             Nasa DSWD
                           </span>
                         ) : null}
                       </div>
@@ -630,22 +533,12 @@ export default function RequestAssistancePage() {
             </div>
 
             {/* Real-Time Duplicate Warnings */}
-            {crossAgencyRequest && (
-              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 animate-fadeIn">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-semibold block mb-0.5">Bawal ang Duplicate Request:</span>
-                  Mayroon ka nang naunang kahilingan para sa <strong>{selectedType}</strong> sa <strong>{otherAgency}</strong> (Ref #{crossAgencyRequest.id} • Status: {crossAgencyRequest.status}). Ayon sa patakaran, kapag nakapag-request ka na sa isang ahensya, bawal nang mag-request ng parehong tulong sa kabilang ahensya.
-                </div>
-              </div>
-            )}
-
             {sameAgencyPendingRequest && (
               <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs flex items-start gap-2.5 animate-fadeIn">
                 <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-semibold block mb-0.5">Kasalukuyang Pinoproseso:</span>
-                  Mayroon ka nang kahilingan para sa <strong>{selectedType}</strong> sa <strong>{targetAgency}</strong> na kasalukuyang <strong>{sameAgencyPendingRequest.status}</strong>. Mangyaring hintayin muna itong maproseso bago magsumite muli.
+                  Mayroon ka nang kahilingan para sa <strong>{selectedType}</strong> sa <strong>DSWD</strong> na kasalukuyang <strong>{sameAgencyPendingRequest.status}</strong>. Mangyaring hintayin muna itong maproseso bago magsumite muli.
                 </div>
               </div>
             )}
@@ -927,13 +820,11 @@ export default function RequestAssistancePage() {
               disabled={
                 submitting ||
                 (beneficiary && beneficiary.status !== 'Approved') ||
-                !!crossAgencyRequest ||
                 !!sameAgencyPendingRequest
               }
               className={`px-6 py-2.5 rounded-xl font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-sm ${
                 submitting ||
                 (beneficiary && beneficiary.status !== 'Approved') ||
-                !!crossAgencyRequest ||
                 !!sameAgencyPendingRequest
                   ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
                   : 'bg-slate-900 hover:bg-slate-800 text-white'
@@ -944,13 +835,11 @@ export default function RequestAssistancePage() {
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   <span>Ipinapadala...</span>
                 </>
-              ) : crossAgencyRequest ? (
-                <span>Bawal ang Duplicate (Nasa {otherAgency} na)</span>
               ) : sameAgencyPendingRequest ? (
                 <span>Kasalukuyan pang {sameAgencyPendingRequest.status}</span>
               ) : (
                 <>
-                  <span>Isumite ang Kahilingan</span>
+                  <span>Isumite sa DSWD</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}

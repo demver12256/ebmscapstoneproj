@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { programApi, beneficiaryApi } from '../services/api';
 import { 
-  ArrowLeft, Users, UserPlus, Calendar, MapPin, DollarSign, 
+  ArrowLeft, Users, UserPlus, Calendar, MapPin, 
   CheckCircle, XCircle, Search, Filter, X 
 } from 'lucide-react';
 import { usePagination } from '../hooks/usePagination';

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { assistanceRequestApi, beneficiaryApi } from '../services/api';
 import { parseAttachments, getRequirementsForType } from '../utils/assistanceRequirements';
+import { usePagination } from '../hooks/usePagination';
+import Pagination from '../components/ui/Pagination';
 import {
   HandHeart, Clock, CheckCircle, XCircle, Eye, Search, Filter,
   AlertTriangle, ShieldCheck, FileText, Users,
@@ -42,7 +44,7 @@ export default function AssistanceRequestsManagementPage() {
   const [requests, setRequests] = useState([]);
   const [stats, setStats] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterAgency, setFilterAgency] = useState(isMswdo ? 'MSWDO' : 'all');
+  const filterAgency = isMswdo ? 'MSWDO' : 'DSWD';
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
@@ -254,6 +256,7 @@ export default function AssistanceRequestsManagementPage() {
     const matchesPriority = filterPriority === 'all' || req.priority === filterPriority;
     return matchesSearch && matchesStatus && matchesType && matchesPriority;
   });
+  const requestPagination = usePagination(filteredRequests, 10);
 
   // Filter beneficiaries in Create Modal
   const filteredBeneficiaries = beneficiaries.filter(b => {
@@ -383,15 +386,10 @@ export default function AssistanceRequestsManagementPage() {
                 <span>Office: MSWDO Municipal Aid</span>
               </div>
             ) : (
-              <select
-                value={filterAgency}
-                onChange={(e) => setFilterAgency(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white font-medium"
-              >
-                <option value="all">🏛️ All Offices (DSWD & MSWDO)</option>
-                <option value="DSWD">🏛️ DSWD Requests (National)</option>
-                <option value="MSWDO">🏢 MSWDO Requests (Municipal)</option>
-              </select>
+              <div className="w-full px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 font-bold text-xs flex items-center gap-2">
+                <Building className="w-4 h-4 text-blue-600" />
+                <span>Office: DSWD National Aid</span>
+              </div>
             )}
           </div>
 
@@ -492,7 +490,7 @@ export default function AssistanceRequestsManagementPage() {
                   </td>
                 </tr>
               ) : (
-                filteredRequests.map((req) => {
+                requestPagination.paginatedData.map((req) => {
                   const statusCfg = STATUS_CONFIG[req.status] || STATUS_CONFIG.Pending;
                   const StatusIcon = statusCfg.icon;
                   const typeCfg = getTypeConfig(req.type);
@@ -609,6 +607,17 @@ export default function AssistanceRequestsManagementPage() {
               )}
             </tbody>
           </table>
+          <div className="border-t border-slate-200 px-5 py-3">
+            <Pagination
+              currentPage={requestPagination.currentPage}
+              totalPages={requestPagination.totalPages}
+              onPageChange={requestPagination.goToPage}
+              totalItems={requestPagination.totalItems}
+              itemsPerPage={10}
+              startIndex={requestPagination.startIndex}
+              endIndex={requestPagination.endIndex}
+            />
+          </div>
         </div>
       </div>
 

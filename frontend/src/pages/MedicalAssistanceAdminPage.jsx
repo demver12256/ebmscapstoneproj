@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { medicalAssistanceApi, barangayApi } from '../services/api';
+import { usePagination } from '../hooks/usePagination';
+import Pagination from '../components/ui/Pagination';
 import {
   Stethoscope, Pill, FlaskConical, Building2, CheckCircle2, XCircle,
   AlertCircle, Upload, Eye, RefreshCw, FileText, Search, Filter,
   Clock, ShieldAlert, ShieldCheck, HelpCircle, Check, X,
-  User, Phone, MapPin, DollarSign, ExternalLink, Sparkles,
+  User, Phone, MapPin, ExternalLink, Sparkles,
   AlertTriangle, ChevronRight, FileCheck, Award
 } from 'lucide-react';
 
@@ -53,6 +55,7 @@ export default function MedicalAssistanceAdminPage() {
   const [docReviewRemarks, setDocReviewRemarks] = useState('');
 
   const [notificationMsg, setNotificationMsg] = useState(null);
+  const applicationPagination = usePagination(applications, 10);
 
   useEffect(() => {
     loadData();
@@ -352,7 +355,7 @@ export default function MedicalAssistanceAdminPage() {
                   </td>
                 </tr>
               ) : (
-                applications.map((app) => {
+                applicationPagination.paginatedData.map((app) => {
                   const statusCfg = STATUS_CONFIG[app.status] || STATUS_CONFIG.Draft;
                   const StatusIcon = statusCfg.icon;
                   const isImmediate = app.is_immediate_family;
@@ -445,6 +448,17 @@ export default function MedicalAssistanceAdminPage() {
               )}
             </tbody>
           </table>
+          <div className="border-t border-slate-200 px-5 py-3">
+            <Pagination
+              currentPage={applicationPagination.currentPage}
+              totalPages={applicationPagination.totalPages}
+              onPageChange={applicationPagination.goToPage}
+              totalItems={applicationPagination.totalItems}
+              itemsPerPage={10}
+              startIndex={applicationPagination.startIndex}
+              endIndex={applicationPagination.endIndex}
+            />
+          </div>
         </div>
       </div>
 

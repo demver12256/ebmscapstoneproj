@@ -529,7 +529,7 @@ export default function BeneficiaryAttendancePage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-600">
           <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 space-y-1">
             <span className="font-black text-slate-800 block">1. Dalhin ang RFID Card</span>
-            <p>Huwag kalimutang dalhin ang iyong opisyal na EBMS RFID card sa bawat assembly, FDS, at consultation.</p>
+            <p>Huwag kalimutang dalhin ang iyong opisyal na BeniAid RFID card sa bawat assembly, FDS, at consultation.</p>
           </div>
           <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 space-y-1">
             <span className="font-black text-slate-800 block">2. I-tap sa Scanner</span>

@@ -31,6 +31,8 @@ import {
 } from 'lucide-react';
 import { announcementApi, programApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { usePagination } from '../hooks/usePagination';
+import Pagination from '../components/ui/Pagination';
 
 export const TARGET_CATEGORIES = [
   '4Ps Household Beneficiaries',
@@ -634,7 +636,7 @@ export default function AnnouncementManagementPage() {
 
       // Construct CSV content
       let csvContent = 'data:text/csv;charset=utf-8,';
-      csvContent += `DSWD/MSWD EBMS ATTENDANCE REPORT\n`;
+      csvContent += `BeniAid ATTENDANCE REPORT\n`;
       csvContent += `Activity Title: "${data.event.title}"\n`;
       csvContent += `Date: ${data.event.event_date || 'N/A'}, Venue: ${data.event.venue || 'N/A'}\n`;
       csvContent += `Total Expected: ${data.summary.total_recipients}, Present: ${data.summary.total_present}, Absent: ${data.summary.total_absent}\n\n`;
@@ -683,6 +685,13 @@ export default function AnnouncementManagementPage() {
   const totalRecipients = announcements.reduce((sum, a) => sum + (a.recipient_count || 0), 0);
   const totalPresent = announcements.reduce((sum, a) => sum + (a.present_count || 0), 0);
   const avgAttendanceRate = totalRecipients > 0 ? Math.round((totalPresent / totalRecipients) * 100) : 0;
+  const visibleAnnouncements = announcements.filter((a) => (
+    filterStatus === 'archived' ? a.status === 'archived' : a.status !== 'archived'
+  ));
+  const announcementPagination = usePagination(visibleAnnouncements, 10);
+  const archivedAnnouncements = announcements.filter((a) => a.status === 'archived');
+  const archivedPagination = usePagination(archivedAnnouncements, 10);
+  const recipientPagination = usePagination(selectedAnnouncementStats?.Recipients || [], 10);
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -861,7 +870,7 @@ export default function AnnouncementManagementPage() {
             <AlertCircle className="w-8 h-8 mx-auto mb-2" />
             <p className="font-bold text-sm">{error}</p>
           </div>
-        ) : announcements.filter(a => filterStatus === 'archived' ? a.status === 'archived' : a.status !== 'archived').length === 0 ? (
+        ) : visibleAnnouncements.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <Megaphone className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <p className="font-bold text-slate-700">No Announcements Found</p>
@@ -881,9 +890,7 @@ export default function AnnouncementManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-sm">
-                {announcements
-                  .filter((a) => (filterStatus === 'archived' ? a.status === 'archived' : a.status !== 'archived'))
-                  .map((ann) => {
+                {announcementPagination.paginatedData.map((ann) => {
                   const presentCount = ann.present_count || 0;
                   const totalExpected = ann.recipient_count || 0;
                   const attPercentage = totalExpected > 0 ? Math.round((presentCount / totalExpected) * 100) : 0;
@@ -1083,6 +1090,17 @@ export default function AnnouncementManagementPage() {
                 })}
               </tbody>
             </table>
+            <div className="border-t border-slate-200 px-5 py-3">
+              <Pagination
+                currentPage={announcementPagination.currentPage}
+                totalPages={announcementPagination.totalPages}
+                onPageChange={announcementPagination.goToPage}
+                totalItems={announcementPagination.totalItems}
+                itemsPerPage={10}
+                startIndex={announcementPagination.startIndex}
+                endIndex={announcementPagination.endIndex}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -1655,7 +1673,7 @@ export default function AnnouncementManagementPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {selectedAnnouncementStats.Recipients.map((r) => (
+                        {recipientPagination.paginatedData.map((r) => (
                           <tr key={r.id} className="hover:bg-slate-50">
                             <td className="py-2.5 px-4">
                               <p className="font-bold text-slate-900">{r.Beneficiary?.first_name} {r.Beneficiary?.last_name}</p>
@@ -1685,6 +1703,17 @@ export default function AnnouncementManagementPage() {
                         ))}
                       </tbody>
                     </table>
+                    <div className="border-t border-slate-200 px-4 py-3">
+                      <Pagination
+                        currentPage={recipientPagination.currentPage}
+                        totalPages={recipientPagination.totalPages}
+                        onPageChange={recipientPagination.goToPage}
+                        totalItems={recipientPagination.totalItems}
+                        itemsPerPage={10}
+                        startIndex={recipientPagination.startIndex}
+                        endIndex={recipientPagination.endIndex}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -1718,7 +1747,7 @@ export default function AnnouncementManagementPage() {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
-              {announcements.filter((a) => a.status === 'archived').length === 0 ? (
+              {archivedAnnouncements.length === 0 ? (
                 <div className="text-center py-12 bg-slate-50 rounded-lg border border-slate-200">
                   <Archive className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                   <p className="text-slate-600 font-medium">No archived announcements found</p>
@@ -1737,9 +1766,7 @@ export default function AnnouncementManagementPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {announcements
-                        .filter((a) => a.status === 'archived')
-                        .map((ann) => (
+                      {archivedPagination.paginatedData.map((ann) => (
                           <tr key={ann.id} className="hover:bg-blue-50 transition-colors">
                             <td className="px-4 py-3 font-medium text-slate-900">
                               <p className="font-bold text-slate-900">{ann.title}</p>
@@ -1794,6 +1821,17 @@ export default function AnnouncementManagementPage() {
                         ))}
                     </tbody>
                   </table>
+                  <div className="border-t border-slate-200 px-4 py-3">
+                    <Pagination
+                      currentPage={archivedPagination.currentPage}
+                      totalPages={archivedPagination.totalPages}
+                      onPageChange={archivedPagination.goToPage}
+                      totalItems={archivedPagination.totalItems}
+                      itemsPerPage={10}
+                      startIndex={archivedPagination.startIndex}
+                      endIndex={archivedPagination.endIndex}
+                    />
+                  </div>
                 </div>
               )}
             </div>

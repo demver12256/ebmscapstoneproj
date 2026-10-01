@@ -256,11 +256,16 @@ router.post('/', upload.any(), async (req, res, next) => {
       attachmentUrl = JSON.stringify(
         uploadedFiles.map((f, i) => {
           const meta = Array.isArray(attachmentMetadata)
-            ? (attachmentMetadata.find((m) => m.originalName === f.originalname) || attachmentMetadata[i] || {})
+            ? (
+              attachmentMetadata.find((m) => m.fieldName === f.fieldname) ||
+              attachmentMetadata.find((m) => m.originalName === f.originalname) ||
+              attachmentMetadata[i] ||
+              {}
+            )
             : {};
           return {
-            requirementId: meta.reqId || null,
-            requirementName: meta.reqName || null,
+            requirementId: meta.reqId || meta.requirementId || null,
+            requirementName: meta.reqName || meta.requirementName || null,
             name: f.originalname,
             url: `/uploads/documents/assistance/${f.filename}`,
             size: f.size,

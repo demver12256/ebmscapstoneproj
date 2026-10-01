@@ -6,6 +6,10 @@ apply plugin: "com.facebook.react"
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
 react {
+    // Package the JavaScript bundle even in debug APKs so the APK can run
+    // standalone on a phone without requiring a Metro server.
+    debuggableVariants = []
+
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '..'
     // root = file("../")
@@ -73,13 +77,17 @@ android {
 
     compileSdkVersion rootProject.ext.compileSdkVersion
 
+    sourceSets {
+        main.java.srcDirs += file("$buildDir/generated/rncli/src/main/java")
+    }
+
     namespace "com.mobiletemp"
     defaultConfig {
         applicationId "com.mobiletemp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1"
     }
     signingConfigs {
         debug {

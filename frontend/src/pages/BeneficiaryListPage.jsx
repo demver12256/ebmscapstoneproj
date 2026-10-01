@@ -3,9 +3,11 @@ import { useLocation } from 'react-router-dom';
 import { 
   X, Users, Clock, Eye, EyeOff, AlertTriangle, FileCheck, ShieldAlert, 
   Download, Archive, Edit3, CreditCard, User, MapPin, Calendar, Phone, Lock, ShieldCheck,
-  CheckCircle2, XCircle, Clock4, Award, RefreshCw, Package, Layers, BookmarkCheck, DollarSign, Wallet, Building2, ExternalLink, Sparkles, Gift
+  CheckCircle2, XCircle, Clock4, Award, RefreshCw, Package, Layers, BookmarkCheck, Wallet, Building2, ExternalLink, Sparkles, Gift
 } from 'lucide-react';
 import Table from '../components/ui/Table';
+import Pagination from '../components/ui/Pagination';
+import { usePagination } from '../hooks/usePagination';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { beneficiaryApi, barangayApi } from '../services/api';
@@ -17,6 +19,7 @@ export default function BeneficiaryListPage() {
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [barangays, setBarangays] = useState([]);
   const [pendingApplications, setPendingApplications] = useState([]);
+  const pendingPagination = usePagination(pendingApplications, 10);
   const [selectedBarangayId, setSelectedBarangayId] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedIpClassification, setSelectedIpClassification] = useState('');
@@ -1740,7 +1743,7 @@ export default function BeneficiaryListPage() {
                         <div className="bg-white p-4 rounded-2xl border border-emerald-100 bg-emerald-50/20 shadow-2xs flex flex-col justify-between">
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Kabuuang Na-claim</span>
-                            <DollarSign className="w-4 h-4 text-emerald-600" />
+                            <span className="w-4 h-4 text-emerald-600 flex items-center justify-center text-lg font-semibold leading-none">₱</span>
                           </div>
                           <div className="flex items-baseline gap-1">
                             <span className="text-xl sm:text-2xl font-black text-emerald-700">
@@ -2380,7 +2383,7 @@ export default function BeneficiaryListPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {pendingApplications.map((app) => (
+                      {pendingPagination.paginatedData.map((app) => (
                         <tr key={app.id} className="hover:bg-amber-50/40 transition-colors">
                           <td className="px-4 py-3.5 font-bold text-slate-900">{app.first_name} {app.last_name}</td>
                           <td className="px-4 py-3.5 text-slate-600 font-semibold">{app.category || '—'}</td>
@@ -2416,6 +2419,17 @@ export default function BeneficiaryListPage() {
                       ))}
                     </tbody>
                   </table>
+                  <div className="border-t border-slate-200 px-4 py-3">
+                    <Pagination
+                      currentPage={pendingPagination.currentPage}
+                      totalPages={pendingPagination.totalPages}
+                      onPageChange={pendingPagination.goToPage}
+                      totalItems={pendingPagination.totalItems}
+                      itemsPerPage={10}
+                      startIndex={pendingPagination.startIndex}
+                      endIndex={pendingPagination.endIndex}
+                    />
+                  </div>
                 </div>
               )}
             </div>

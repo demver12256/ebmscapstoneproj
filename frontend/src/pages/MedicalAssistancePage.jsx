@@ -6,7 +6,7 @@ import {
   Stethoscope, Pill, FlaskConical, Building2, CheckCircle2, XCircle,
   AlertCircle, Upload, Eye, RefreshCw, FileText, ArrowRight, ArrowLeft,
   Clock, ShieldAlert, ShieldCheck, HelpCircle, Check, X, FileCheck,
-  ChevronRight, Calendar, User, Phone, MapPin, DollarSign, Download,
+  ChevronRight, Calendar, User, Phone, MapPin, Download,
   ExternalLink, Sparkles, Plus, AlertTriangle, GraduationCap, Wallet, HeartHandshake, HandHeart
 } from 'lucide-react';
 

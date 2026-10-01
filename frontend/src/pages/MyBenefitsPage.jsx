@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  DollarSign,
   Calendar,
   CheckCircle,
   Clock,
@@ -538,7 +537,7 @@ export default function MyBenefitsPage() {
         {/* Total Received */}
         <div className="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center gap-2 mb-2">
-            <DollarSign className="w-5 h-5" />
+            <span className="w-5 h-5 flex items-center justify-center text-xl font-semibold leading-none">₱</span>
             <p className="text-sm font-semibold">Total Received</p>
           </div>
           <p className="text-3xl font-black">
@@ -922,7 +921,7 @@ export default function MyBenefitsPage() {
 
         {unifiedHistory.length === 0 ? (
           <div className="text-center py-8 text-slate-500">
-            <DollarSign className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <span className="w-12 h-12 mx-auto mb-3 flex items-center justify-center text-5xl font-semibold leading-none opacity-30">₱</span>
             <p className="text-sm">No benefits or grants received yet</p>
           </div>
         ) : (
@@ -1406,7 +1405,7 @@ export default function MyBenefitsPage() {
             {/* Modal Footer */}
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
               <span className="text-[11px] text-slate-400">
-                EBMS • Social Welfare Assistance Monitoring
+                BeniAid • Social Welfare Assistance Monitoring
               </span>
               <div className="flex items-center gap-2">
                 <button

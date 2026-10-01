@@ -42,8 +42,14 @@ export default function StaffMswdoNotificationPopupModal() {
       const notifRes = await notificationApi.list();
       const notifs = notifRes.data?.data || [];
 
+      // Payout verification requests are DSWD-admin-only, including older
+      // notifications that may already exist in an MSWDO account.
+      const roleVisibleNotifs = notifs.filter((item) =>
+        user.role === 'admin' || item.reference_type !== 'payout_verification'
+      );
+
       // Filter unread notifications for this user
-      const unreadList = notifs.filter((n) => !n.is_read);
+      const unreadList = roleVisibleNotifs.filter((n) => !n.is_read);
 
       // Only show items not dismissed in current session
       const newItems = unreadList.filter((item) => !dismissedIds.has(item.id));

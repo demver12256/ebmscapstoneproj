@@ -1,6 +1,5 @@
 import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+import { API_URL } from '../config/api';
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -249,6 +248,26 @@ export const medicalAssistanceApi = {
   getAdminApplication: (id) => apiClient.get(`/medical-assistance/admin/applications/${id}`),
   updateApplicationStatus: (id, data) => apiClient.patch(`/medical-assistance/admin/applications/${id}/status`, data),
   reviewDocument: (id, data) => apiClient.patch(`/medical-assistance/admin/documents/${id}/review`, data),
+};
+
+export const interventionApi = {
+  // Beneficiary endpoints
+  getMyInterventions: () => apiClient.get('/interventions/me'),
+  submitIntervention: (formData) => apiClient.post('/interventions/submit', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updateMyIntervention: (id, formData) => apiClient.put(`/interventions/me/${id}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  deleteMyIntervention: (id) => apiClient.delete(`/interventions/me/${id}`),
+  
+  // Staff/Admin endpoints
+  getPendingInterventions: () => apiClient.get('/interventions/pending'),
+  getAllInterventions: (params) => apiClient.get('/interventions/all', { params }),
+  getBeneficiaryInterventions: (beneficiaryId) => apiClient.get(`/interventions/beneficiary/${beneficiaryId}`),
+  verifyIntervention: (id, data) => apiClient.post(`/interventions/${id}/verify`, data),
+  rejectIntervention: (id, data) => apiClient.post(`/interventions/${id}/reject`, data),
+  getStats: () => apiClient.get('/interventions/stats'),
 };
 
 export default apiClient;

@@ -2,21 +2,11 @@ import { useState, useEffect } from 'react';
 import { FileText, Calendar, Filter, X, Download, FileSpreadsheet, Printer, Eye, CheckCircle, AlertCircle, TrendingUp, Users, Shield, ClipboardList } from 'lucide-react';
 import { reportsApi, programApi, barangayApi, beneficiaryApi, distributionApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import * as XLSX from 'xlsx';
+import { usePagination } from '../hooks/usePagination';
+import Pagination from '../components/ui/Pagination';
 
 // ─── CSV Download Helper ───────────────────────────────────────────
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 100);
-}
-
 // ─── Beneficiaries Modal ───────────────────────────────────────────
 function BeneficiariesModal({ distribution, onClose }) {
   const [transactions, setTransactions] = useState([]);
@@ -212,6 +202,7 @@ function BeneficiariesModal({ distribution, onClose }) {
 function DistributionDetailModal({ distribution, onClose }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
+  const transactionPagination = usePagination(detail?.Transactions || [], 10);
 
   useEffect(() => {
     if (!distribution) return;
@@ -299,8 +290,8 @@ function DistributionDetailModal({ distribution, onClose }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {detail.Transactions.slice(0, 10).map((txn, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
+                      {transactionPagination.paginatedData.map((txn) => (
+                        <tr key={txn.id} className="hover:bg-slate-50">
                           <td className="px-4 py-2 font-medium text-slate-800">
                             {txn.Beneficiary ? `${txn.Beneficiary.first_name} ${txn.Beneficiary.last_name}` : 'Unknown'}
                           </td>
@@ -322,9 +313,17 @@ function DistributionDetailModal({ distribution, onClose }) {
                     </tbody>
                   </table>
                 </div>
-                {detail.Transactions.length > 10 && (
-                  <p className="text-xs text-slate-500 text-center mt-2">Showing 10 of {detail.Transactions.length} transactions</p>
-                )}
+                <div className="border-t border-slate-200 px-3 py-3">
+                  <Pagination
+                    currentPage={transactionPagination.currentPage}
+                    totalPages={transactionPagination.totalPages}
+                    onPageChange={transactionPagination.goToPage}
+                    totalItems={transactionPagination.totalItems}
+                    itemsPerPage={10}
+                    startIndex={transactionPagination.startIndex}
+                    endIndex={transactionPagination.endIndex}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -816,11 +815,113 @@ function generateClientCSV(headers, rowsData) {
   return new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
 }
 
+function parseCSVRows(csvText) {
+  const rows = [];
+  let row = [];
+  let value = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < csvText.length; i += 1) {
+    const char = csvText[i];
+    const nextChar = csvText[i + 1];
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      value += '"';
+      i += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (!inQuotes && char === ',') {
+      row.push(value);
+      value = '';
+    } else if (!inQuotes && (char === '\n' || char === '\r')) {
+      if (char === '\r' && nextChar === '\n') i += 1;
+      row.push(value);
+      if (row.some((cell) => cell !== '')) rows.push(row);
+      row = [];
+      value = '';
+    } else {
+      value += char;
+    }
+  }
+
+  if (value || row.length) {
+    row.push(value);
+    if (row.some((cell) => cell !== '')) rows.push(row);
+  }
+
+  return rows;
+}
+
+function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
+  const safeRows = rows.length > 0 ? rows : [[]];
+  const worksheet = XLSX.utils.aoa_to_sheet(safeRows);
+  const columnCount = Math.max(...safeRows.map((row) => row.length), 1);
+
+  worksheet['!cols'] = Array.from({ length: columnCount }, (_, columnIndex) => {
+    const longestValue = safeRows.reduce((longest, row) => {
+      const value = String(row[columnIndex] ?? '');
+      const longestLine = Math.max(...value.split('\n').map((line) => line.length));
+      return Math.max(longest, longestLine);
+    }, 0);
+
+    return { wch: Math.min(Math.max(longestValue + 2, 12), 60) };
+  });
+  worksheet['!rows'] = safeRows.map((row, rowIndex) => ({
+    hpt: rowIndex === 0 ? 24 : Math.min(Math.max(21, ...row.map((cell) => String(cell ?? '').split('\n').length * 15)), 90),
+  }));
+  worksheet['!autofilter'] = {
+    ref: `A1:${XLSX.utils.encode_cell({ r: 0, c: columnCount - 1 }).replace(/1$/, safeRows.length)}`,
+  };
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  XLSX.writeFile(workbook, filename);
+}
+
   const handleExportCSV = async (type) => {
     setExportLoading(type);
     try {
       const params = getExportParams();
       let blob, filename;
+
+      // The distribution report is exported as a real Excel workbook so
+      // columns are readable when opened in Excel instead of using CSV defaults.
+      if (type === 'distributions') {
+        const res = await reportsApi.recentDistributions({ limit: 1000, ...params });
+        const list = res.data.data || [];
+        const headers = ['Distribution ID', 'Title', 'Program', 'Barangay', 'Date', 'Beneficiaries', 'Beneficiary Names', 'Amount Released', 'Status'];
+        const rows = list.map((d) => [
+          d.distribution_id || '',
+          d.title || '',
+          d.program || '',
+          d.barangay || '',
+          d.date ? new Date(d.date).toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '',
+          Number(d.beneficiaries || 0),
+          Array.isArray(d.beneficiary_names) ? d.beneficiary_names.join(' | ') : '',
+          Number(d.amount || 0),
+          d.status || '',
+        ]);
+
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        const columnWidths = headers.map((header, columnIndex) => {
+          const longestValue = [header, ...rows.map((row) => row[columnIndex])]
+            .reduce((longest, value) => Math.max(longest, String(value ?? '').length), 0);
+          return { wch: Math.min(Math.max(longestValue + 2, 14), 42) };
+        });
+        worksheet['!cols'] = columnWidths;
+        worksheet['!rows'] = [{ hpt: 24 }, ...rows.map(() => ({ hpt: 21 }))];
+
+        rows.forEach((_, rowIndex) => {
+          const amountCell = worksheet[XLSX.utils.encode_cell({ r: rowIndex + 1, c: 7 })];
+          if (amountCell) amountCell.z = '₱#,##0.00';
+        });
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Distributions');
+        XLSX.writeFile(workbook, 'distribution-report.xlsx');
+        showSuccess('✅ distribution-report.xlsx downloaded successfully!');
+        return;
+      }
 
       try {
         if (type === 'beneficiaries') {
@@ -898,7 +999,11 @@ function generateClientCSV(headers, rowsData) {
       }
 
       if (blob && filename) {
-        downloadBlob(blob, filename);
+        const csvText = typeof blob.text === 'function' ? await blob.text() : String(blob);
+        const rows = parseCSVRows(csvText.replace(/^\uFEFF/, ''));
+        const excelFilename = filename.replace(/\.csv$/i, '.xlsx');
+        writeAutoSizedExcel(rows, excelFilename, type === 'audit-logs' ? 'Audit Logs' : 'Report');
+        filename = excelFilename;
         showSuccess(`✅ ${filename} downloaded successfully!`);
       }
     } catch (err) {
@@ -1020,7 +1125,7 @@ function generateClientCSV(headers, rowsData) {
     return `<!DOCTYPE html>
 <html>
 <head>
-  <title>DSWD EBMS Report - ${now}</title>
+  <title>BeniAid Report - ${now}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 24px; }
@@ -1043,7 +1148,7 @@ function generateClientCSV(headers, rowsData) {
 </head>
 <body>
   <div class="header">
-    <h1>DSWD Electronic Beneficiary Management System</h1>
+    <h1>BeniAid Beneficiary Management System</h1>
     <p>Official Report &mdash; Generated: ${now}</p>
     ${programFilter ? `<p>Program Filter: ${programs.find(p => String(p.id) === String(programFilter))?.name || ''}</p>` : ''}
     ${barangayFilter ? `<p>Barangay Filter: ${barangays.find(b => String(b.id) === String(barangayFilter))?.barangay_name || ''}</p>` : ''}
@@ -1061,7 +1166,7 @@ function generateClientCSV(headers, rowsData) {
     <thead><tr>${tableHeaders}</tr></thead>
     <tbody>${rowsHTML || `<tr><td colSpan="8" style="text-align:center;padding:20px;">${cfg.emptyMsg}</td></tr>`}</tbody>
   </table>
-  <div class="footer">DSWD EBMS &copy; ${new Date().getFullYear()} &mdash; Confidential &mdash; Page 1</div>
+  <div class="footer">BeniAid &copy; ${new Date().getFullYear()} &mdash; Confidential &mdash; Page 1</div>
 </body>
 </html>`;
   };
@@ -1103,13 +1208,13 @@ function generateClientCSV(headers, rowsData) {
 
   // ── Available report definitions ──────────────────────────────
   const availableReports = [
-    { icon: '👥', title: 'Beneficiary List', desc: 'Export list of all approved beneficiaries', color: 'bg-blue-50 hover:bg-blue-100 border-blue-200', exportType: 'beneficiaries', fileName: 'beneficiary-list.csv' },
-    { icon: '📊', title: 'Distribution Report', desc: 'Summary of all distribution events', color: 'bg-green-50 hover:bg-green-100 border-green-200', exportType: 'distributions', fileName: 'distribution-report.csv' },
-    { icon: '📝', title: 'Program Report', desc: 'Overview of benefit programs', color: 'bg-purple-50 hover:bg-purple-100 border-purple-200', exportType: 'programs', fileName: 'program-report.csv' },
-    { icon: '📋', title: 'Enrollment Report', desc: 'Active enrollments per program', color: 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200', exportType: 'enrollments', fileName: 'enrollment-report.csv' },
-    { icon: '🆘', title: 'Assistance Requests', desc: 'All assistance request records', color: 'bg-orange-50 hover:bg-orange-100 border-orange-200', exportType: 'assistance-requests', fileName: 'assistance-requests-report.csv' },
-    { icon: '📅', title: 'Attendance Report', desc: 'Attendance records from events', color: 'bg-teal-50 hover:bg-teal-100 border-teal-200', exportType: 'attendance', fileName: 'attendance-report.csv' },
-    ...(user?.role === 'admin' ? [{ icon: '🔐', title: 'Audit / System Logs', desc: 'System activity and audit trail', color: 'bg-slate-50 hover:bg-slate-100 border-slate-300', exportType: 'audit-logs', fileName: 'audit-logs.csv' }] : []),
+    { icon: '👥', title: 'Beneficiary List', desc: 'Excel report with auto-sized columns', color: 'bg-blue-50 hover:bg-blue-100 border-blue-200', exportType: 'beneficiaries', fileName: 'beneficiary-list.xlsx' },
+    { icon: '📊', title: 'Distribution Report', desc: 'Excel report with auto-sized columns', color: 'bg-green-50 hover:bg-green-100 border-green-200', exportType: 'distributions', fileName: 'distribution-report.xlsx' },
+    { icon: '📝', title: 'Program Report', desc: 'Excel report with auto-sized columns', color: 'bg-purple-50 hover:bg-purple-100 border-purple-200', exportType: 'programs', fileName: 'program-report.xlsx' },
+    { icon: '📋', title: 'Enrollment Report', desc: 'Excel report with auto-sized columns', color: 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200', exportType: 'enrollments', fileName: 'enrollment-report.xlsx' },
+    { icon: '🆘', title: 'Assistance Requests', desc: 'Excel report with auto-sized columns', color: 'bg-orange-50 hover:bg-orange-100 border-orange-200', exportType: 'assistance-requests', fileName: 'assistance-requests-report.xlsx' },
+    { icon: '📅', title: 'Attendance Report', desc: 'Excel report with auto-sized columns', color: 'bg-teal-50 hover:bg-teal-100 border-teal-200', exportType: 'attendance', fileName: 'attendance-report.xlsx' },
+    ...(user?.role === 'admin' ? [{ icon: '🔐', title: 'Audit / System Logs', desc: 'Excel report with auto-sized columns', color: 'bg-slate-50 hover:bg-slate-100 border-slate-300', exportType: 'audit-logs', fileName: 'audit-logs.xlsx' }] : []),
   ];
 
   const totalBeneficiaries = (summary.fourPsCount || 0) + (summary.seniorCitizensCount || 0) + (summary.pwdCount || 0);
@@ -1471,7 +1576,7 @@ function generateClientCSV(headers, rowsData) {
                   ) : (
                     <Download className="w-4 h-4" />
                   )}
-                  Export CSV
+                  {cfg.exportType === 'distributions' ? 'Export Excel' : 'Export CSV'}
                 </button>
               </div>
             </div>
@@ -1554,7 +1659,7 @@ function generateClientCSV(headers, rowsData) {
         {/* Available Reports */}
         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900 mb-1">Available Reports</h3>
-          <p className="text-sm text-slate-600 mb-5">Click to download a CSV report with current filters applied</p>
+          <p className="text-sm text-slate-600 mb-5">Click to download a report with current filters applied</p>
           <div className="space-y-3">
             {availableReports.map((report, idx) => (
               <button
@@ -1605,10 +1710,10 @@ function generateClientCSV(headers, rowsData) {
                 <FileSpreadsheet className="w-8 h-8 text-green-600" />
               )}
               <div className="font-semibold text-slate-900 text-sm text-center">Export as Excel</div>
-              <div className="text-xs text-slate-600 text-center">Download CSV file</div>
+               <div className="text-xs text-slate-600 text-center">Download formatted Excel file</div>
             </button>
 
-            {/* Beneficiary CSV */}
+            {/* Beneficiary Excel */}
             <button
               onClick={() => handleExportCSV('beneficiaries')}
               disabled={exportLoading === 'beneficiaries'}
@@ -1619,7 +1724,7 @@ function generateClientCSV(headers, rowsData) {
               ) : (
                 <Download className="w-8 h-8 text-blue-600" />
               )}
-              <div className="font-semibold text-slate-900 text-sm text-center">Beneficiary CSV</div>
+              <div className="font-semibold text-slate-900 text-sm text-center">Beneficiary Excel</div>
               <div className="text-xs text-slate-600 text-center">Download beneficiary list</div>
             </button>
 
@@ -1638,7 +1743,7 @@ function generateClientCSV(headers, rowsData) {
 
       {/* Footer */}
       <div className="text-center py-4 text-sm text-slate-500">
-        © 2026 DSWD Beneficiary Management System. All rights reserved. | Version 1.0.0
+        © 2026 BeniAid Beneficiary Management System. All rights reserved. | Version 1.0.0
       </div>
 
       {/* Distribution Detail Modal */}

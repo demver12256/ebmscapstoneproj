@@ -355,10 +355,8 @@ router.put('/me/payout-account', authorize('beneficiary'), async (req, res, next
 
     // ── NOTIFY ADMIN FOR VERIFICATION & POPUP ──
     try {
+      // Digital payout verification is handled by the DSWD admin only.
       const targetRoles = ['admin'];
-      if (isMswdoCategory(beneficiary.category)) {
-        targetRoles.push('mswdo_admin');
-      }
 
       const adminUsers = await User.findAll({
         where: {
@@ -443,8 +441,8 @@ router.post('/me/extra-payout-accounts', authorize('beneficiary'), async (req, r
 
     // Notify admin
     try {
+      // Secondary payout verification is also handled by the DSWD admin only.
       const targetRoles = ['admin'];
-      if (isMswdoCategory(beneficiary.category)) targetRoles.push('mswdo_admin');
       const adminUsers = await User.findAll({ where: { role: { [Op.in]: targetRoles }, status: 'active' }, attributes: ['id'] });
       const barangayName = beneficiary.Barangay?.barangay_name ? ` (Brgy. ${beneficiary.Barangay.barangay_name})` : '';
       const maskedNum = cleanedNumber.length > 7 ? cleanedNumber.replace(/(.{4})(.*)(.{3})/, '$1****$3') : cleanedNumber;

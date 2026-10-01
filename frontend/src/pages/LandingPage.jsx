@@ -8,7 +8,7 @@ import {
   ShieldCheck, Sparkles, CreditCard, QrCode, Search, Users, CheckCircle2,
   ArrowRight,
   HandHeart, Award, Zap, Lock, FileText, Check,
-  Smartphone, Radio, Eye, EyeOff,
+  Smartphone, Radio, Eye, EyeOff, Download,
   AlertCircle, ChevronDown, RefreshCw, X
 } from 'lucide-react';
 
@@ -391,6 +391,15 @@ export default function LandingPage() {
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  const handleInstallApp = () => {
+    const downloadLink = document.createElement('a');
+    downloadLink.href = '/downloads/BeniAid.apk';
+    downloadLink.download = 'BeniAid.apk';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -786,12 +795,14 @@ export default function LandingPage() {
           
           {/* Brand Logo */}
           <div className="flex items-center gap-3.5 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-            <div className="h-11 w-11 rounded-2xl bg-[#00338D] text-white flex items-center justify-center font-bold text-xl shadow-sm">
-              <ShieldCheck className="w-6 h-6 text-[#FFD100]" />
-            </div>
+            <img
+              src="/dswd-logo.jpg"
+              alt="DSWD logo"
+              className="h-11 w-11 rounded-2xl bg-white object-contain shadow-sm"
+            />
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xl font-bold tracking-tight text-slate-900">DSWD EBMS</span>
+                <span className="text-xl font-bold tracking-tight text-slate-900">BeniAid</span>
                 <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-blue-50 text-[#00338D] border border-blue-100">Bongabong</span>
               </div>
               <p className="text-xs text-slate-500 font-medium">Beneficiary Management Portal</p>
@@ -810,7 +821,16 @@ export default function LandingPage() {
           </nav>
 
           {/* Action Login Button */}
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleInstallApp}
+              className="hidden sm:inline-flex items-center gap-2 rounded-xl border border-[#00338D] px-4 py-2.5 text-sm font-semibold text-[#00338D] transition hover:bg-blue-50"
+              aria-label="Download BeniAid APK"
+            >
+              <Download className="h-4 w-4" />
+              Install App
+            </button>
             <Button
               onClick={() => {
                 setShowRegisterModal(false);
@@ -873,6 +893,15 @@ export default function LandingPage() {
                   <Sparkles className="w-4 h-4 text-amber-500" />
                   Check Eligibility
                 </a>
+
+                <button
+                  type="button"
+                  onClick={handleInstallApp}
+                  className="px-6 py-4 rounded-xl border-2 border-[#00338D] text-[#00338D] hover:bg-blue-50 font-bold text-sm transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-2"
+                >
+                  <Download className="w-5 h-5" />
+                  Install App
+                </button>
               </div>
 
               {/* Metrics Row */}
@@ -1098,7 +1127,8 @@ export default function LandingPage() {
                     className="w-full py-3.5 bg-[#00338D] hover:bg-[#002566] text-white font-bold text-sm rounded-2xl shadow-xs transition flex items-center justify-center gap-2"
                   >
                     Proceed with Registration as {eligResult.category.split(' ')[0]} <ArrowRight className="w-4 h-4" />
-                  </button>
+                </button>
+
                 </div>
               ) : (
                 <div className="bg-slate-50/60 border border-dashed border-slate-300 rounded-3xl p-10 text-center space-y-2.5 flex flex-col items-center justify-center min-h-[320px]">
@@ -1354,13 +1384,11 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
             <div className="space-y-2.5 md:col-span-2">
               <div className="flex items-center gap-2.5 text-[#00338D] font-bold text-lg">
-                <div className="w-7 h-7 rounded-lg bg-[#00338D] text-white flex items-center justify-center">
-                  <ShieldCheck className="w-4 h-4" />
-                </div>
-                DSWD EBMS
+                <img src="/dswd-logo.jpg" alt="DSWD logo" className="w-7 h-7 rounded-lg bg-white object-contain" />
+                BeniAid
               </div>
               <p className="text-xs sm:text-sm text-slate-500 max-w-md leading-relaxed">
-                Department of Social Welfare and Development — Municipal Beneficiary Management System for Bongabong, Oriental Mindoro.
+                Department of Social Welfare and Development — BeniAid Beneficiary Management System for Bongabong, Oriental Mindoro.
               </p>
               <p className="text-xs text-slate-400">
                 Municipal Social Welfare and Development Office (MSWDO), Municipal Hall, Bongabong.
@@ -1394,7 +1422,7 @@ export default function LandingPage() {
           </div>
 
           <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
-            <p>© 2026 Republic of the Philippines — DSWD EBMS. All rights reserved.</p>
+                <p>© 2026 Republic of the Philippines — BeniAid. All rights reserved.</p>
             <div className="flex items-center gap-4">
               <span>Bongabong, Oriental Mindoro</span>
               <span>•</span>
@@ -1425,11 +1453,9 @@ export default function LandingPage() {
 
             {/* Modal Header */}
             <div className="text-center mb-6">
-              <div className="inline-flex p-3 rounded-2xl bg-blue-50 text-[#00338D] mb-3 border border-blue-100 shadow-2xs">
-                <ShieldCheck className="w-7 h-7" />
-              </div>
+              <img src="/dswd-logo.jpg" alt="DSWD logo" className="mx-auto mb-3 h-16 w-16 rounded-2xl bg-white object-contain border border-blue-100 shadow-2xs" />
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
-                {showLoginModal ? 'Sign in to DSWD EBMS' : 'Create Beneficiary Account'}
+                {showLoginModal ? 'Sign in to BeniAid' : 'Create Beneficiary Account'}
               </h2>
               <p className="text-xs text-slate-500 mt-1">
                 {showLoginModal
@@ -2031,7 +2057,6 @@ export default function LandingPage() {
           </div>
         </div>
       )}
-
 
     </div>
   );

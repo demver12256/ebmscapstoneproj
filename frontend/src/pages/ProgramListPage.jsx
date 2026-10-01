@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import Table from '../components/ui/Table';
+import Pagination from '../components/ui/Pagination';
+import { usePagination } from '../hooks/usePagination';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { programApi, barangayApi, beneficiaryApi } from '../services/api';
@@ -514,6 +516,22 @@ export default function ProgramListPage() {
     }
     return true;
   });
+  const eligiblePreviewPagination = usePagination(filteredEligiblePreview, 10);
+  const detailsListSource = detailsTab === 'enrolled'
+    ? enrolledBeneficiaries
+    : detailsTab === 'pending'
+    ? eligibleBeneficiaries
+    : allEligibleBeneficiaries;
+  const filteredDetailsList = detailsSearch.trim()
+    ? detailsListSource.filter((b) => {
+        const q = detailsSearch.toLowerCase().trim();
+        const name = `${b.first_name || ''} ${b.last_name || ''}`.toLowerCase();
+        const idCode = (b.beneficiary_id_code || '').toLowerCase();
+        return name.includes(q) || idCode.includes(q);
+      })
+    : detailsListSource;
+  const detailsPagination = usePagination(filteredDetailsList, 10);
+  const archivedPagination = usePagination(archivedPrograms, 10);
 
   const openCreateModal = () => {
     setEditingProgram(null);
@@ -1603,9 +1621,9 @@ export default function ProgramListPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredEligiblePreview.map((ben, idx) => (
+                      {eligiblePreviewPagination.paginatedData.map((ben, idx) => (
                         <tr key={ben.id} className="hover:bg-purple-50/50 transition">
-                          <td className="px-3 py-2 text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="px-3 py-2 text-slate-400 font-mono">{eligiblePreviewPagination.startIndex + idx + 1}</td>
                           <td className="px-3 py-2">
                             <span className="font-bold text-slate-900">
                               {ben.first_name} {ben.middle_name ? `${ben.middle_name} ` : ''}{ben.last_name} {ben.suffix || ''}
@@ -1638,6 +1656,17 @@ export default function ProgramListPage() {
                       ))}
                     </tbody>
                   </table>
+                    <div className="border-t border-slate-200 px-3 py-3">
+                      <Pagination
+                        currentPage={eligiblePreviewPagination.currentPage}
+                        totalPages={eligiblePreviewPagination.totalPages}
+                        onPageChange={eligiblePreviewPagination.goToPage}
+                        totalItems={eligiblePreviewPagination.totalItems}
+                        itemsPerPage={10}
+                        startIndex={eligiblePreviewPagination.startIndex}
+                        endIndex={eligiblePreviewPagination.endIndex}
+                      />
+                    </div>
                 </div>
               )}
             </div>
@@ -1864,23 +1893,7 @@ export default function ProgramListPage() {
                     <p className="text-xs text-slate-600 mt-2">Loading beneficiaries...</p>
                   </div>
                 ) : (() => {
-                  let listToDisplay = [];
-                  if (detailsTab === 'enrolled') {
-                    listToDisplay = enrolledBeneficiaries;
-                  } else if (detailsTab === 'pending') {
-                    listToDisplay = eligibleBeneficiaries;
-                  } else {
-                    listToDisplay = allEligibleBeneficiaries;
-                  }
-
-                  if (detailsSearch.trim()) {
-                    const q = detailsSearch.toLowerCase().trim();
-                    listToDisplay = listToDisplay.filter(b => {
-                      const name = `${b.first_name || ''} ${b.last_name || ''}`.toLowerCase();
-                      const idCode = (b.beneficiary_id_code || '').toLowerCase();
-                      return name.includes(q) || idCode.includes(q);
-                    });
-                  }
+                  const listToDisplay = filteredDetailsList;
 
                   if (listToDisplay.length === 0) {
                     return (
@@ -1918,11 +1931,11 @@ export default function ProgramListPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {listToDisplay.map((b, idx) => {
+                          {detailsPagination.paginatedData.map((b, idx) => {
                             const isEnrolled = b.enrollment_date || b.is_enrolled;
                             return (
                               <tr key={b.id || idx} className="hover:bg-slate-50 transition">
-                                <td className="px-3.5 py-2 text-slate-400 font-mono">{idx + 1}</td>
+                                <td className="px-3.5 py-2 text-slate-400 font-mono">{detailsPagination.startIndex + idx + 1}</td>
                                 <td className="px-3.5 py-2">
                                   <p className="font-bold text-slate-900">
                                     {b.first_name} {b.last_name} {b.suffix || ''}
@@ -1957,6 +1970,17 @@ export default function ProgramListPage() {
                           })}
                         </tbody>
                       </table>
+                      <div className="border-t border-slate-200 px-3 py-3">
+                        <Pagination
+                          currentPage={detailsPagination.currentPage}
+                          totalPages={detailsPagination.totalPages}
+                          onPageChange={detailsPagination.goToPage}
+                          totalItems={detailsPagination.totalItems}
+                          itemsPerPage={10}
+                          startIndex={detailsPagination.startIndex}
+                          endIndex={detailsPagination.endIndex}
+                        />
+                      </div>
                     </div>
                   );
                 })()}
@@ -2036,7 +2060,7 @@ export default function ProgramListPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {archivedPrograms.map((program) => (
+                      {archivedPagination.paginatedData.map((program) => (
                         <tr key={program.id} className="hover:bg-blue-50 transition-colors">
                           <td className="px-4 py-3 font-medium text-slate-900">{program.name}</td>
                           <td className="px-4 py-3">
@@ -2078,6 +2102,17 @@ export default function ProgramListPage() {
                       ))}
                     </tbody>
                   </table>
+                  <div className="border-t border-slate-200 px-4 py-3">
+                    <Pagination
+                      currentPage={archivedPagination.currentPage}
+                      totalPages={archivedPagination.totalPages}
+                      onPageChange={archivedPagination.goToPage}
+                      totalItems={archivedPagination.totalItems}
+                      itemsPerPage={10}
+                      startIndex={archivedPagination.startIndex}
+                      endIndex={archivedPagination.endIndex}
+                    />
+                  </div>
                 </div>
               )}
             </div>

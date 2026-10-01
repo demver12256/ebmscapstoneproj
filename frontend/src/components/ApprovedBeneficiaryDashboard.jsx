@@ -1,9 +1,11 @@
-import { Calendar, MapPin, Copy, Bell, FileText, CheckCircle2, Clock, Users, AlertTriangle, Megaphone, Check, X, Award, Gift, Zap, RefreshCw, CreditCard, Edit3, ShieldCheck, XCircle, Plus, Trash2 } from 'lucide-react';
+import { Calendar, MapPin, Copy, Bell, FileText, FileHeart, CheckCircle2, Clock, Users, AlertTriangle, Megaphone, Check, X, Award, Gift, Zap, RefreshCw, CreditCard, Edit3, ShieldCheck, XCircle, Plus, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { announcementApi, notificationApi, distributionApi, beneficiaryApi } from '../services/api';
 import { Link } from 'react-router-dom';
 import { isNonCashProgram, getNonCashDetails } from '../utils/nonCashPrograms';
+import { usePagination } from '../hooks/usePagination';
+import Pagination from './ui/Pagination';
 
 const PesoIcon = ({ className = "w-4 h-4" }) => (
   <svg
@@ -184,6 +186,7 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const allDigitalPayouts = transactions.filter(
     (t) => t.disbursement_type === 'digital' || t.payout_reference_number
   );
+  const payoutPagination = usePagination(allDigitalPayouts, 10);
 
   const handleAcknowledgeReceipt = async (transactionId) => {
     if (!window.confirm('Sigurado ka ba na natanggap mo na ang digital payout sa iyong account?\n\nAng pagkumpirma na ito ay magsisilbing opisyal na digital resibo at makikita ng DSWD Admin.')) {
@@ -483,6 +486,39 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
           </div>
         </div>
       )}
+
+      {/* INTERVENTION / OTHER AGENCY ASSISTANCE CARD */}
+      <div className="bg-gradient-to-r from-indigo-50 via-white to-blue-50 rounded-2xl border border-indigo-200 p-5 sm:p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+              <FileHeart className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-black text-slate-900">Intervention / Ibang Tulong</h2>
+              <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
+                May natanggap ka bang tulong mula sa PhilHealth, PCSO, LGU, NGO, o ibang ahensya? I-report ito para maitala at ma-verify ng DSWD staff.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+            <Link
+              to="/dashboard/my-interventions"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition"
+            >
+              <FileHeart className="w-3.5 h-3.5" />
+              Buksan ang Interventions
+            </Link>
+            <Link
+              to="/dashboard/my-interventions?new=1"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-700 text-xs font-bold transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Mag-report ng Tulong
+            </Link>
+          </div>
+        </div>
+      </div>
 
       {/* TARGETED ANNOUNCEMENTS BANNER / WIDGET - ONLY UPCOMING / INCOMING ANNOUNCEMENTS */}
       {upcomingAnnouncements.length > 0 && (
@@ -882,7 +918,7 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {allDigitalPayouts.map((txn) => {
+                    {payoutPagination.paginatedData.map((txn) => {
                       const isConfirmed = txn.beneficiary_acknowledged_at || acknowledgedIds.has(txn.id);
                       return (
                         <tr key={txn.id} className="hover:bg-slate-50 transition">
@@ -936,6 +972,17 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                     })}
                   </tbody>
                 </table>
+                <div className="border-t border-slate-200 px-3 py-3">
+                  <Pagination
+                    currentPage={payoutPagination.currentPage}
+                    totalPages={payoutPagination.totalPages}
+                    onPageChange={payoutPagination.goToPage}
+                    totalItems={payoutPagination.totalItems}
+                    itemsPerPage={10}
+                    startIndex={payoutPagination.startIndex}
+                    endIndex={payoutPagination.endIndex}
+                  />
+                </div>
               </div>
             </div>
           )}

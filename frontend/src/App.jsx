@@ -28,6 +28,8 @@ import RfidAnnouncementScannerPage from './pages/RfidAnnouncementScannerPage';
 import ComingSoonPage from './pages/ComingSoonPage';
 import RequestAssistancePage from './pages/RequestAssistancePage';
 import AssistanceRequestsManagementPage from './pages/AssistanceRequestsManagementPage';
+import MyInterventionsPage from './pages/MyInterventionsPage';
+import InterventionsManagementPage from './pages/InterventionsManagementPage';
 import MainLayout from './components/layout/MainLayout';
 
 const ProtectedRoute = ({ children }) => {
@@ -102,9 +104,11 @@ const AppRoutes = () => (
       <Route path="documents" element={<Navigate to="/dashboard/attendance" replace />} />
       <Route path="notifications" element={<NotificationsPage />} />
       <Route path="request-assistance" element={<RequestAssistancePage />} />
+      <Route path="my-interventions" element={<MyInterventionsPage />} />
       <Route path="medical-assistance" element={<Navigate to="/dashboard/request-assistance" replace />} />
       <Route path="medical-assistance-admin" element={<Navigate to="/dashboard/assistance-requests" replace />} />
       <Route path="assistance-requests" element={<AssistanceRequestsManagementPage />} />
+      <Route path="interventions-management" element={<InterventionsManagementPage />} />
       <Route path="help-center" element={<ComingSoonPage />} />
       <Route path="settings" element={<ComingSoonPage />} />
       <Route path="*" element={<NotFoundPage />} />
