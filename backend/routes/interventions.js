@@ -98,15 +98,6 @@ router.post('/submit', authorize('beneficiary'), upload.single('proof_document')
       status: 'Pending'
     });
 
-    // Create notification for staff/admin
-    await Notification.create({
-      user_id: req.user.id,
-      type: 'intervention_submitted',
-      title: 'New Intervention Report',
-      message: `${beneficiary.first_name} ${beneficiary.last_name} submitted an intervention report for ${assistance_type} from ${agency_name}.`,
-      is_read: false
-    });
-
     res.status(201).json({
       success: true,
       message: 'Intervention report submitted successfully. Waiting for staff verification.',

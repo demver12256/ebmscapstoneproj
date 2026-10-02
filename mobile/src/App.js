@@ -4,6 +4,7 @@ import {
   ScrollView,
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
@@ -31,6 +32,9 @@ import RequestAssistanceScreen from './screens/RequestAssistanceScreen';
 import MessagesScreen from './screens/MessagesScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
 import InterventionsScreen from './screens/InterventionsScreen';
+import PendingApprovalScreen from './screens/PendingApprovalScreen';
+import ApplicationSubmissionScreen from './screens/ApplicationSubmissionScreen';
+import ProfileScreen from './screens/ProfileScreen';
 import AuthScreen from './screens/AuthScreen';
 import SidebarDrawer from './components/SidebarDrawer';
 import BottomNavBar from './components/BottomNavBar';
@@ -69,6 +73,7 @@ const parseAttachments = (value) => {
 
 const isAnnouncementUpcoming = (ann) => {
   if (!ann) return false;
+  if (ann.is_reissued_for_beneficiary) return true;
   if (ann.status !== 'published') return false;
 
   const now = new Date();
@@ -106,6 +111,13 @@ const isAnnouncementUpcoming = (ann) => {
   return true;
 };
 
+const getPopupKey = (item) => {
+  const revision = item?.popupType === 'announcement'
+    ? item.beneficiary_visibility_at || item.publish_date || ''
+    : '';
+  return `${item?.popupType}-${item?.id}${revision ? `-${revision}` : ''}`;
+};
+
 const App = () => {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -115,6 +127,8 @@ const App = () => {
   const [error, setError] = useState('');
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState('');
   const [benefitsLoading, setBenefitsLoading] = useState(false);
   const [benefitsError, setBenefitsError] = useState('');
   const [assistanceApplications, setAssistanceApplications] = useState([]);
@@ -137,6 +151,7 @@ const App = () => {
     account_name: '',
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
   const [currentNav, setCurrentNav] = useState('dashboard');
   const [activeModal, setActiveModal] = useState(null);
   const [payoutMethodOpen, setPayoutMethodOpen] = useState(false);
@@ -206,6 +221,8 @@ const App = () => {
       const unreadNotif = notifList
         .filter((n) => {
           if (n.is_read) return false;
+          // Submission is silent for the beneficiary; only admin/staff decisions notify them.
+          if (n.type === 'intervention_submitted' || n.reference_type === 'intervention_submitted') return false;
           const isAssistanceSubmissionConfirmation =
             n.reference_type === 'assistance_request' &&
             (n.title?.startsWith('Kahilingan sa Ayuda:') ||
@@ -233,7 +250,7 @@ const App = () => {
 
       setModalItems((prevModalItems) => {
         const newItems = combined.filter((item) => {
-          const key = `${item.popupType}-${item.id}`;
+          const key = getPopupKey(item);
           return !shownPopupIds.has(key);
         });
 
@@ -263,7 +280,7 @@ const App = () => {
     try {
       const itemObj = item || modalItems[currentPopupIndex] || modalItems[0];
       if (!itemObj) return;
-      const key = `${itemObj.popupType}-${itemObj.id}`;
+      const key = getPopupKey(itemObj);
       setShownPopupIds((prev) => new Set([...prev, key]));
 
       if (itemObj.popupType === 'announcement') {
@@ -318,6 +335,9 @@ const App = () => {
   }, [user]);
 
   const handleNavSelect = (routeKey) => {
+    if (routeKey === 'dashboard' && user?.role === 'beneficiary') {
+      loadBeneficiaryProfile();
+    }
     setCurrentNav(routeKey);
     setCurrentScreen(routeKey);
     setSidebarOpen(false);
@@ -345,8 +365,14 @@ const App = () => {
 
   useEffect(() => {
     if (user?.role === 'beneficiary') {
-      loadBeneficiaryProfile();
+      setProfile(null);
+      setProfileLoading(true);
+      loadBeneficiaryProfile(true);
       loadBenefits();
+    } else {
+      setProfile(null);
+      setProfileLoading(false);
+      setProfileError('');
     }
   }, [user?.id]);
 
@@ -416,7 +442,9 @@ const App = () => {
     }
   };
 
-  const loadBeneficiaryProfile = async () => {
+  const loadBeneficiaryProfile = async (showLoader = false) => {
+    if (showLoader) setProfileLoading(true);
+    setProfileError('');
     try {
       const response = await beneficiaryApi.getMe();
       const data = response?.data?.data || response?.data || null;
@@ -434,9 +462,19 @@ const App = () => {
         account_name: data.payout_account_name || `${data.first_name || ''} ${data.last_name || ''}`.trim(),
       }));
     } catch (err) {
+      setProfileError(err?.response?.data?.message || err.message || 'Could not load your application status.');
       console.warn('Profile load failed:', err?.response?.data || err.message);
+    } finally {
+      if (showLoader) setProfileLoading(false);
     }
   };
+
+  useEffect(() => {
+    const status = String(profile?.status || '').toLowerCase();
+    if (user?.role !== 'beneficiary' || !['pending review', 'under review'].includes(status)) return undefined;
+    const refreshTimer = setInterval(() => loadBeneficiaryProfile(), 30000);
+    return () => clearInterval(refreshTimer);
+  }, [user?.id, user?.role, profile?.status]);
 
   // ── Computed real stats from actual DB data ──────────────────────────────────
   const _transactions = profile?.DistributionTransactions || [];
@@ -537,12 +575,50 @@ const App = () => {
     api.clearAuthToken();
     setUser(null);
     setProfile(null);
+    setProfileLoading(false);
+    setProfileError('');
     setIdentifier('');
     setPassword('');
     setError('');
     setCurrentScreen('dashboard');
     setCurrentNav('dashboard');
   };
+
+  const beneficiaryStatus = String(profile?.status || '').toLowerCase();
+
+  if (user?.role === 'beneficiary' && (profileLoading || !profile)) {
+    return (
+      <PendingApprovalScreen
+        profile={profile}
+        loading={profileLoading}
+        error={profileError}
+        onRefresh={() => loadBeneficiaryProfile()}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (user?.role === 'beneficiary' && ['pending submission', 'rejected'].includes(beneficiaryStatus)) {
+    return (
+      <ApplicationSubmissionScreen
+        profile={profile}
+        onProfileUpdated={setProfile}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (user?.role === 'beneficiary' && beneficiaryStatus !== 'approved') {
+    return (
+      <PendingApprovalScreen
+        profile={profile}
+        loading={false}
+        error={profileError}
+        onRefresh={() => loadBeneficiaryProfile()}
+        onLogout={handleLogout}
+      />
+    );
+  }
 
   const handleSavePayoutAccount = async () => {
     if (
@@ -616,11 +692,15 @@ const App = () => {
     const beneficiaryCategory = profile?.category || 'Category not set';
     const beneficiaryCode = profile?.beneficiary_id_code || profile?.household_id_number || 'Not assigned';
     const beneficiaryBarangay = profile?.barangay_name || profile?.Barangay?.barangay_name || profile?.barangay?.barangay_name || profile?.barangay || 'Not available';
+    const rawProfilePicture = profile?.profile_picture;
+    const dashboardProfilePicture = rawProfilePicture
+      ? (rawProfilePicture.startsWith('http') ? rawProfilePicture : `${FILES_BASE_URL}/${rawProfilePicture.replace(/^\/+/, '')}`)
+      : null;
     const accountStatus = profile?.account_verification_status || 'verified';
     const extraAccounts = Array.isArray(profile?.extra_payout_accounts) ? profile.extra_payout_accounts : [];
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+      <View style={{ flex: 1, backgroundColor: darkMode ? '#0f172a' : '#f8fafc' }}>
         <View style={{ flex: 1 }}>
           {/* Admin/Staff Beneficiary List Screen */}
           {currentScreen === 'beneficiaryList' && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user.role) && (
@@ -628,6 +708,15 @@ const App = () => {
               onBack={() => handleNavSelect('dashboard')}
               onOpenDrawer={() => setSidebarOpen(true)}
               user={user}
+            />
+          )}
+
+          {currentScreen === 'profile' && user.role === 'beneficiary' && (
+            <ProfileScreen
+              user={user}
+              profile={profile}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              onProfileUpdated={setProfile}
             />
           )}
 
@@ -691,27 +780,31 @@ const App = () => {
           {/* Dashboard Home (Image 4) */}
           {currentScreen === 'dashboard' && (
             <SafeAreaView style={styles.dashboardPage}>
-              <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
+              <StatusBar barStyle="light-content" backgroundColor={darkMode ? '#020617' : '#0f172a'} />
 
 
 
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, darkMode && styles.darkTopBar]}>
           <TouchableOpacity
             onPress={() => {
               console.log('[DEBUG] Hamburger tapped! Opening sidebar...');
               setSidebarOpen(true);
             }}
-            style={styles.menuButton}
+            style={[styles.menuButton, darkMode && styles.darkMenuButton]}
             activeOpacity={0.7}
             hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
           >
             <Text style={styles.menuIcon}>☰</Text>
           </TouchableOpacity>
-          <View style={styles.searchBox}>
-            <Text style={styles.searchIcon}>⌕</Text>
-            <Text style={styles.searchText}>Search anything...</Text>
-          </View>
           <View style={styles.topActions}>
+            <TouchableOpacity
+              onPress={() => setDarkMode((enabled) => !enabled)}
+              style={[styles.themeToggle, darkMode && styles.darkIconChip]}
+              accessibilityRole="button"
+              accessibilityLabel={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              <Text style={darkMode ? styles.darkIconText : styles.iconText}>{darkMode ? '☀' : '☾'}</Text>
+            </TouchableOpacity>
             <View style={styles.iconChip}><Text>◔</Text></View>
             <View style={styles.iconChip}><Text>☼</Text></View>
             <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
@@ -734,7 +827,19 @@ const App = () => {
         <ScrollView contentContainerStyle={styles.dashboardContent}>
           {/* Hero Header Card (Image 4) */}
           <View style={styles.heroCard}>
+            {!dashboardProfilePicture && (
             <View style={styles.heroIconWrap}><Text style={styles.heroIcon}>👤</Text></View>
+            )}
+            {dashboardProfilePicture ? (
+              <TouchableOpacity
+                style={styles.heroIconWrap}
+                onPress={() => user.role === 'beneficiary' && handleNavSelect('profile')}
+                disabled={user.role !== 'beneficiary'}
+                accessibilityLabel="Open My Profile"
+              >
+                <Image source={{ uri: dashboardProfilePicture }} style={styles.dashboardProfileImage} />
+              </TouchableOpacity>
+            ) : null}
             <View style={styles.heroTextWrap}>
               <Text style={styles.heroTitle}>Beneficiary Portal</Text>
               <Text style={styles.heroSubtitle}>Welcome back, {displayName}! Here is your official application, RFID card, and assistance payout overview.</Text>
@@ -768,7 +873,7 @@ const App = () => {
             </View>
 
             {/* Card 2: Beneficiary ID */}
-            <View style={styles.statusCardWhite}>
+            <View style={[styles.statusCardWhite, darkMode && styles.darkCard]}>
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.cardIcon}>📄</Text>
                 <Text style={styles.cardMiniTitle}>Beneficiary ID</Text>
@@ -793,7 +898,7 @@ const App = () => {
             </View>
 
             {/* Card 4: Barangay */}
-            <View style={styles.statusCardWhite}>
+            <View style={[styles.statusCardWhite, darkMode && styles.darkCard]}>
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.cardIcon}>📍</Text>
                 <Text style={styles.cardMiniTitle}>Barangay</Text>
@@ -901,7 +1006,7 @@ const App = () => {
             ))}
           </View>
 
-          <View style={styles.benefitsPanel}>
+          <View style={[styles.benefitsPanel, darkMode && styles.darkPanel]}>
             <View style={styles.sectionHeaderRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.panelTitle}>My Benefits & Assistance</Text>
@@ -1029,6 +1134,7 @@ const App = () => {
           onSelectNav={handleNavSelect}
           unreadMessageCount={unreadMessageCount}
           unreadNotifCount={unreadNotifCount}
+          darkMode={darkMode}
         />
 
         {/* Sidebar Drawer (rendered on top of everything) */}
@@ -1041,6 +1147,7 @@ const App = () => {
           unreadNotifCount={unreadNotifCount}
           unreadMessageCount={unreadMessageCount}
           onLogout={handleLogout}
+          darkMode={darkMode}
         />
 
         {/* Auto Popup Announcement & Notification Modal (Matching Web & User Screenshot) */}
@@ -1179,6 +1286,9 @@ const App = () => {
           api.setAuthToken(token);
         }
         setUser(loggedUser);
+        setProfile(null);
+        setProfileError('');
+        setProfileLoading(loggedUser?.role === 'beneficiary');
         if (loggedUser?.role !== 'beneficiary') {
           setProfile(null);
         }
@@ -1400,6 +1510,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
+  darkTopBar: {
+    backgroundColor: '#111827',
+    borderBottomColor: '#1f2937',
+  },
   menuButton: {
     width: 38,
     height: 38,
@@ -1416,12 +1530,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
+  darkMenuButton: {
+    backgroundColor: '#1e293b',
+    borderColor: '#334155',
+  },
   menuIcon: {
     fontSize: 20,
     fontWeight: '700',
     color: '#1e293b',
   },
   searchBox: {
+    display: 'none',
     flex: 1,
     backgroundColor: '#eff2f7',
     borderRadius: 14,
@@ -1445,6 +1564,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconChip: {
+    display: 'none',
     width: 34,
     height: 34,
     borderRadius: 10,
@@ -1452,6 +1572,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
+  },
+  themeToggle: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#ecf0f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  darkIconChip: {
+    backgroundColor: '#334155',
+  },
+  iconText: {
+    color: '#334155',
+    fontSize: 18,
+  },
+  darkIconText: {
+    color: '#f8fafc',
+    fontSize: 18,
   },
   logoutButton: {
     backgroundColor: '#0f172a',
@@ -1484,6 +1624,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
+  },
+  dashboardProfileImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 14,
   },
   heroIcon: {
     color: '#fff',
@@ -1578,6 +1723,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 4,
     elevation: 2,
+  },
+  darkCard: {
+    backgroundColor: '#1e293b',
+    borderColor: '#334155',
   },
   statusCardAmber: {
     backgroundColor: '#fffdf5',
@@ -1976,6 +2125,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginTop: 16,
+  },
+  darkPanel: {
+    backgroundColor: '#1e293b',
   },
   detailCard: {
     backgroundColor: '#fff',

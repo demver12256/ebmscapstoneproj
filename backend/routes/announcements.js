@@ -36,6 +36,68 @@ function parseTargetBarangayIds(input) {
   return bIds.map(Number).filter(id => !isNaN(id) && id > 0);
 }
 
+function getBeneficiaryAnnouncementCutoff(beneficiary) {
+  const value = beneficiary?.approved_at || beneficiary?.approval_date || beneficiary?.createdAt || beneficiary?.created_at;
+  if (!value) return null;
+
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function announcementPredatesBeneficiary(announcement, cutoff) {
+  if (cutoff === null || !announcement) return false;
+
+  const timestamps = [
+    announcement.publish_date,
+    announcement.beneficiary_visibility_at,
+    announcement.createdAt || announcement.created_at,
+  ]
+    .filter(Boolean)
+    .map((value) => new Date(value).getTime())
+    .filter(Number.isFinite);
+
+  if (timestamps.length === 0) return true;
+  return Math.max(...timestamps) < cutoff;
+}
+
+function announcementWasReissuedAfter(announcement, cutoff) {
+  if (cutoff === null || !announcement?.beneficiary_visibility_at) return false;
+
+  const timestamp = new Date(announcement.beneficiary_visibility_at).getTime();
+  return Number.isFinite(timestamp) && timestamp >= cutoff;
+}
+
+async function removeHistoricalAnnouncementRecords(beneficiary, userId, recipientLinks, cutoff) {
+  if (cutoff === null) return new Set();
+
+  const historicalLinks = recipientLinks.filter((link) =>
+    announcementPredatesBeneficiary(link.Announcement, cutoff)
+  );
+  if (historicalLinks.length === 0) return new Set();
+
+  const recipientIds = historicalLinks.map((link) => link.id);
+  const announcementIds = [...new Set(
+    historicalLinks.map((link) => link.announcement_id || link.Announcement?.id).filter(Boolean)
+  )];
+
+  await AnnouncementRecipient.destroy({ where: { id: recipientIds } });
+
+  if (announcementIds.length > 0) {
+    await Attendance.destroy({
+      where: { beneficiary_id: beneficiary.id, announcement_id: announcementIds },
+    });
+    await Notification.destroy({
+      where: {
+        user_id: userId,
+        reference_type: { [Op.in]: ['announcement', 'announcement_absence'] },
+        reference_id: { [Op.in]: announcementIds },
+      },
+    });
+  }
+
+  return new Set(recipientIds);
+}
+
 // Helper function to find target matching beneficiaries directly by Barangay & Category (Approved beneficiaries)
 async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsInput) {
   let catList = [];
@@ -188,13 +250,17 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
 
     // Bulk create using findOrCreate pattern
     for (const record of recipientRecords) {
-      await AnnouncementRecipient.findOrCreate({
+      const [recipient, created] = await AnnouncementRecipient.findOrCreate({
         where: {
           announcement_id: record.announcement_id,
           beneficiary_id: record.beneficiary_id,
         },
         defaults: record,
       });
+
+      if (!created) {
+        await recipient.update({ is_read: false, read_at: null });
+      }
     }
 
     if (inAppNotifications.length > 0) {
@@ -303,6 +369,82 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
   return matchingBeneficiaries.length;
 }
 
+// Reconcile recipients when an admin explicitly edits a completed announcement.
+// Completed events should not be re-dispatched to every beneficiary, but newly
+// eligible beneficiaries still need a recipient record so the update is visible
+// in their account and in the admin attendance log.
+async function syncEditedCompletedAnnouncementRecipients(announcement) {
+  const matchingBeneficiaries = await getMatchingBeneficiaries(
+    announcement.target_programs,
+    announcement.target_barangays
+  );
+  const matchingBeneficiaryIds = matchingBeneficiaries.map((beneficiary) => beneficiary.id);
+  const matchingUserIds = matchingBeneficiaries.map((beneficiary) => beneficiary.user_id).filter(Boolean);
+
+  await AnnouncementRecipient.destroy({
+    where: {
+      announcement_id: announcement.id,
+      beneficiary_id: { [Op.notIn]: matchingBeneficiaryIds.length ? matchingBeneficiaryIds : [0] },
+    },
+  });
+  await Notification.destroy({
+    where: {
+      reference_id: announcement.id,
+      reference_type: 'announcement',
+      user_id: { [Op.notIn]: matchingUserIds.length ? matchingUserIds : [0] },
+    },
+  });
+
+  const newlyAddedBeneficiaries = [];
+  for (const beneficiary of matchingBeneficiaries) {
+    const [recipient, created] = await AnnouncementRecipient.findOrCreate({
+      where: {
+        announcement_id: announcement.id,
+        beneficiary_id: beneficiary.id,
+      },
+      defaults: {
+        announcement_id: announcement.id,
+        beneficiary_id: beneficiary.id,
+        user_id: beneficiary.user_id,
+        is_read: false,
+        attendance_status: 'Pending',
+        notification_sent: true,
+        sms_sent: false,
+      },
+    });
+
+    if (created) {
+      newlyAddedBeneficiaries.push(beneficiary);
+    } else {
+      await recipient.update({ is_read: false, read_at: null });
+    }
+  }
+
+  await announcement.update({ recipient_count: matchingBeneficiaries.length });
+
+  if (newlyAddedBeneficiaries.length > 0) {
+    const formattedTime = `${announcement.event_time || ''}${announcement.end_time ? ` - ${announcement.end_time}` : ''}`.trim();
+    const scheduleText = announcement.event_date
+      ? `\n\n📅 ${announcement.event_date}${formattedTime ? ` at ${formattedTime}` : ''}`
+      : '';
+
+    await Notification.bulkCreate(
+      newlyAddedBeneficiaries.filter((beneficiary) => beneficiary.user_id).map((beneficiary) => ({
+        user_id: beneficiary.user_id,
+        title: announcement.title,
+        message: `${announcement.message}${scheduleText}${announcement.venue ? `\n📍 Venue: ${announcement.venue}` : ''}`,
+        type: 'announcement',
+        reference_id: announcement.id,
+        reference_type: 'announcement',
+        is_read: false,
+      })),
+      { ignoreDuplicates: true }
+    );
+  }
+
+  return matchingBeneficiaries.length;
+}
+
 // ── GET /preview-count ── Preview matching beneficiary count (Admin/Staff/Barangay)
 router.get('/preview-count', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
@@ -332,6 +474,8 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
       return res.status(404).json({ success: false, message: 'Beneficiary profile not found' });
     }
 
+    const beneficiaryAnnouncementCutoff = getBeneficiaryAnnouncementCutoff(beneficiary);
+
     // Auto-link any published or completed announcements targeting this beneficiary
     const publishedAnnouncements = await Announcement.findAll({
       where: { status: { [Op.in]: ['published', 'completed'] } },
@@ -340,6 +484,8 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
     const benCategory = (beneficiary.category || '').toLowerCase();
 
     for (const ann of publishedAnnouncements) {
+      if (announcementPredatesBeneficiary(ann, beneficiaryAnnouncementCutoff)) continue;
+
       let targetBarangays = [];
       if (typeof ann.target_barangays === 'string') {
         try { targetBarangays = JSON.parse(ann.target_barangays); } catch (e) { targetBarangays = [ann.target_barangays]; }
@@ -376,6 +522,7 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
         const timeToCheck = ann.end_time || ann.event_time || '23:59';
         const expireTime = parseDateTime(ann.event_date, timeToCheck);
         const isEnded = ann.status === 'completed' || (expireTime && new Date() >= expireTime);
+        const wasReissuedAfterApproval = announcementWasReissuedAfter(ann, beneficiaryAnnouncementCutoff);
 
         await AnnouncementRecipient.findOrCreate({
           where: {
@@ -387,7 +534,7 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
             beneficiary_id: beneficiary.id,
             user_id: req.user.id,
             is_read: false,
-            attendance_status: isEnded ? 'Absent' : 'Pending',
+            attendance_status: isEnded && !wasReissuedAfterApproval ? 'Absent' : 'Pending',
             notification_sent: true,
           },
         });
@@ -417,8 +564,16 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
       order: [['created_at', 'DESC']],
     });
 
+    const historicalRecipientIds = await removeHistoricalAnnouncementRecords(
+      beneficiary,
+      req.user.id,
+      recipientLinks,
+      beneficiaryAnnouncementCutoff
+    );
+
     const records = [];
     for (const r of recipientLinks) {
+      if (historicalRecipientIds.has(r.id)) continue;
       if (!r.Announcement || !['published', 'completed'].includes(r.Announcement.status)) continue;
 
       let targetBarangays = [];
@@ -516,6 +671,8 @@ router.get('/', async (req, res, next) => {
         return res.json({ success: true, data: [] });
       }
 
+      const beneficiaryAnnouncementCutoff = getBeneficiaryAnnouncementCutoff(beneficiary);
+
       // Sync category from active enrollment if available
       try {
         const activeEnrollment = await Enrollment.findOne({
@@ -550,6 +707,8 @@ router.get('/', async (req, res, next) => {
       });
 
       for (const ann of publishedAnnouncements) {
+        if (announcementPredatesBeneficiary(ann, beneficiaryAnnouncementCutoff)) continue;
+
         let targetBarangays = [];
         if (typeof ann.target_barangays === 'string') {
           try { targetBarangays = JSON.parse(ann.target_barangays); } catch (e) { targetBarangays = [ann.target_barangays]; }
@@ -588,6 +747,7 @@ router.get('/', async (req, res, next) => {
           const timeToCheck = ann.end_time || ann.event_time || '23:59';
           const expireTime = parseDateTime(ann.event_date, timeToCheck);
           const isEnded = ann.status === 'completed' || (expireTime && new Date() >= expireTime);
+          const wasReissuedAfterApproval = announcementWasReissuedAfter(ann, beneficiaryAnnouncementCutoff);
 
           await AnnouncementRecipient.findOrCreate({
             where: {
@@ -599,7 +759,7 @@ router.get('/', async (req, res, next) => {
               beneficiary_id: beneficiary.id,
               user_id: req.user.id,
               is_read: false,
-              attendance_status: isEnded ? 'Absent' : 'Pending',
+              attendance_status: isEnded && !wasReissuedAfterApproval ? 'Absent' : 'Pending',
               notification_sent: true,
             },
           });
@@ -624,12 +784,20 @@ router.get('/', async (req, res, next) => {
         order: [['created_at', 'DESC']],
       });
 
+      const historicalRecipientIds = await removeHistoricalAnnouncementRecords(
+        beneficiary,
+        req.user.id,
+        recipientLinks,
+        beneficiaryAnnouncementCutoff
+      );
+
       const benCategory = (beneficiary.category || '').toLowerCase();
       const validAnnouncements = [];
       const invalidRecipientIds = [];
       const invalidAnnouncementIds = [];
 
       for (const r of recipientLinks) {
+        if (historicalRecipientIds.has(r.id)) continue;
         if (!r.Announcement || !['published', 'completed'].includes(r.Announcement.status)) continue;
 
         let targetBarangays = [];
@@ -666,6 +834,10 @@ router.get('/', async (req, res, next) => {
 
         if (matchesBarangay && matchesCategory) {
           const plain = r.Announcement.toJSON();
+          plain.is_reissued_for_beneficiary = announcementWasReissuedAfter(
+            r.Announcement,
+            beneficiaryAnnouncementCutoff
+          );
           plain.is_read = r.is_read;
           plain.read_at = r.read_at;
           plain.attendance_status = r.attendance_status;
@@ -834,6 +1006,21 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Announcement not found' });
     }
 
+    let visibleBeneficiaryRecipient = null;
+    if (req.user.role === 'beneficiary') {
+      const beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id } });
+      const cutoff = getBeneficiaryAnnouncementCutoff(beneficiary);
+      const ownRecipient = beneficiary && (announcement.Recipients || []).find(
+        (recipient) => Number(recipient.beneficiary_id) === Number(beneficiary.id)
+      );
+
+      if (!beneficiary || announcementPredatesBeneficiary(announcement, cutoff) || !ownRecipient) {
+        return res.status(404).json({ success: false, message: 'Announcement not found' });
+      }
+
+      visibleBeneficiaryRecipient = ownRecipient;
+    }
+
     // Two-way isolation check: DSWD Admin cannot view MSWDO announcements
     const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
     const mswdoUserIds = mswdoUsers.map(u => u.id);
@@ -871,6 +1058,9 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const plain = announcement.toJSON();
+    if (visibleBeneficiaryRecipient) {
+      plain.Recipients = [visibleBeneficiaryRecipient.toJSON()];
+    }
     // For MSWDO Admin: if not author and not notified, strip the beneficiary attendance Recipients list
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin') {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
@@ -1420,6 +1610,7 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       expiration_date: expiration_date !== undefined ? expiration_date : announcement.expiration_date,
       target_programs: targetCatsOrProgs,
       target_barangays: updatedBarangays,
+      beneficiary_visibility_at: new Date(),
       notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : announcement.notify_mswdo,
     });
 
@@ -1428,6 +1619,8 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
         await announcement.update({ publish_date: new Date() });
       }
       await dispatchAnnouncementNotifications(announcement, req.user.id);
+    } else if (announcement.status === 'completed') {
+      await syncEditedCompletedAnnouncementRecipients(announcement);
     } else {
       await AuditLog.create({
         user_id: req.user.id,
@@ -1455,6 +1648,7 @@ router.patch('/:id/resend', authorize('admin'), async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Announcement not found' });
     }
 
+    await announcement.update({ beneficiary_visibility_at: new Date() });
     const recipientCount = await dispatchAnnouncementNotifications(announcement, req.user.id);
 
     res.json({

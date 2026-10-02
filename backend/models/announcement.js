@@ -41,6 +41,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         defaultValue: DataTypes.NOW,
       },
+      beneficiary_visibility_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Latest admin edit or resend that makes this announcement visible to newly approved beneficiaries',
+      },
       expiration_date: {
         type: DataTypes.DATEONLY,
         allowNull: true,

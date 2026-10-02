@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import DocumentPicker from 'react-native-document-picker';
 import { interventionApi } from '../services/api';
 
 const peso = (value) => `\u20B1${Number(value || 0).toLocaleString('en-PH', {
@@ -34,6 +35,7 @@ const blankForm = () => ({
   amount: '',
   date_received: new Date().toISOString().slice(0, 10),
   description: '',
+  proof_document: null,
 });
 
 export default function InterventionsScreen({ onBack }) {
@@ -43,6 +45,20 @@ export default function InterventionsScreen({ onBack }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(blankForm);
   const [submitting, setSubmitting] = useState(false);
+
+  const pickProofDocument = async () => {
+    try {
+      const file = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.images, DocumentPicker.types.pdf],
+        copyTo: 'cachesDirectory',
+      });
+      setForm((current) => ({ ...current, proof_document: file }));
+    } catch (error) {
+      if (!DocumentPicker.isCancel(error)) {
+        Alert.alert('Unable to attach file', 'Please choose a PDF, JPG, PNG, or WEBP file up to 10MB.');
+      }
+    }
+  };
 
   const loadInterventions = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -72,7 +88,18 @@ export default function InterventionsScreen({ onBack }) {
     try {
       setSubmitting(true);
       const payload = new FormData();
-      Object.entries(form).forEach(([key, value]) => payload.append(key, value));
+      Object.entries(form).forEach(([key, value]) => {
+        if (key !== 'proof_document' && value !== null && value !== undefined) {
+          payload.append(key, value);
+        }
+      });
+      if (form.proof_document) {
+        payload.append('proof_document', {
+          uri: form.proof_document.fileCopyUri || form.proof_document.uri,
+          type: form.proof_document.type || 'application/octet-stream',
+          name: form.proof_document.name || 'intervention-document',
+        });
+      }
       await interventionApi.submit(payload);
       Alert.alert('Submitted', 'Your intervention report is waiting for staff verification.');
       setForm(blankForm());
@@ -143,6 +170,11 @@ export default function InterventionsScreen({ onBack }) {
             <TextInput style={styles.input} value={form.amount} onChangeText={(value) => updateField('amount', value)} placeholder="0.00" keyboardType="decimal-pad" />
             <Text style={styles.label}>Description</Text>
             <TextInput style={[styles.input, styles.multiline]} value={form.description} onChangeText={(value) => updateField('description', value)} placeholder="Add details" multiline />
+            <Text style={styles.label}>Proof document</Text>
+            <TouchableOpacity style={styles.fileButton} onPress={pickProofDocument}>
+              <Text style={styles.fileButtonText}>{form.proof_document ? 'Change attached file' : 'Attach file'}</Text>
+            </TouchableOpacity>
+            {form.proof_document ? <Text style={styles.fileName}>{form.proof_document.name}</Text> : <Text style={styles.fileHint}>PDF, JPG, PNG, or WEBP • up to 10MB</Text>}
             <TouchableOpacity style={styles.submitButton} onPress={submit} disabled={submitting}>
               {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Submit for Verification</Text>}
             </TouchableOpacity>
@@ -167,6 +199,7 @@ export default function InterventionsScreen({ onBack }) {
             <Text style={styles.itemDate}>Received {formatDate(item.date_received)}</Text>
             {item.amount ? <Text style={styles.amount}>{peso(item.amount)}</Text> : null}
             {item.description ? <Text style={styles.description}>{item.description}</Text> : null}
+            {item.proof_document_url ? <Text style={styles.fileAttached}>📎 Proof document attached</Text> : null}
             {item.status !== 'Verified' && <TouchableOpacity onPress={() => remove(item)}><Text style={styles.deleteText}>Delete report</Text></TouchableOpacity>}
           </View>
         ))}
@@ -196,6 +229,10 @@ const styles = StyleSheet.create({
   label: { color: '#475569', fontSize: 12, fontWeight: '700', marginTop: 8, marginBottom: 4 },
   input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 11, paddingVertical: 10, color: '#0f172a', fontSize: 13 },
   multiline: { minHeight: 74, textAlignVertical: 'top' },
+  fileButton: { borderWidth: 1, borderColor: '#93c5fd', borderRadius: 8, backgroundColor: '#eff6ff', paddingVertical: 11, alignItems: 'center', marginTop: 4 },
+  fileButtonText: { color: '#1d4ed8', fontSize: 13, fontWeight: '800' },
+  fileName: { color: '#334155', fontSize: 11, marginTop: 6 },
+  fileHint: { color: '#94a3b8', fontSize: 11, marginTop: 6 },
   submitButton: { backgroundColor: '#2563eb', borderRadius: 9, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
   submitText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   center: { alignItems: 'center', paddingVertical: 40 },
@@ -214,5 +251,6 @@ const styles = StyleSheet.create({
   itemDate: { color: '#64748b', fontSize: 11, marginTop: 4 },
   amount: { color: '#15803d', fontSize: 14, fontWeight: '800', marginTop: 8 },
   description: { color: '#475569', fontSize: 12, lineHeight: 18, marginTop: 8 },
+  fileAttached: { color: '#1d4ed8', fontSize: 12, fontWeight: '700', marginTop: 8 },
   deleteText: { color: '#dc2626', fontSize: 12, fontWeight: '700', marginTop: 12 },
 });

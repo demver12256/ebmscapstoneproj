@@ -91,6 +91,14 @@ const api = {
 
 export const authApi = {
   login: (credentials) => apiClient.post('/auth/login', credentials),
+  googleLogin: async (credential) => {
+    const response = await apiClient.post('/auth/google', { credential });
+    const payload = response.data;
+    const token = payload?.token || payload?.data?.token;
+    if (token) setAuthToken(token);
+    return payload;
+  },
+  changePassword: (data) => apiClient.post('/auth/change-password', data),
   registerBeneficiary: (data) => apiClient.post('/auth/register-beneficiary', data),
   sendOtp: (data) => apiClient.post('/auth/send-otp', data),
   verifyOtp: (data) => apiClient.post('/auth/verify-otp', data),
@@ -102,6 +110,15 @@ export const beneficiaryApi = {
   list: () => apiClient.get('/beneficiaries'),
   getById: (id) => apiClient.get(`/beneficiaries/${id}`),
   getMe: () => apiClient.get('/beneficiaries/me'),
+  uploadProfilePicture: (data) => apiClient.post('/beneficiaries/me/profile-picture', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updateMe: (data) => apiClient.put('/beneficiaries/me', data),
+  uploadMyDocument: (data) => apiClient.post('/beneficiaries/me/documents', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  deleteMyDocument: (id) => apiClient.delete(`/beneficiaries/me/documents/${id}`),
+  submitMyApplication: (data) => apiClient.post('/beneficiaries/me/submit', data),
   getAttendance: (id) => apiClient.get(`/beneficiaries/${id}/attendance`),
   getDistributions: (id) => apiClient.get(`/beneficiaries/${id}/distributions`),
   getEnrollments: (id) => apiClient.get(`/beneficiaries/${id}/enrollments`),

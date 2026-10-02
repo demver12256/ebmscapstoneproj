@@ -33,7 +33,10 @@ export default function NotificationsScreen({ onBack, user }) {
 
     try {
       const res = await notificationApi.list();
-      setNotifications(res.data?.data || []);
+      setNotifications((res.data?.data || []).filter((notification) => (
+        notification.type !== 'intervention_submitted' &&
+        notification.reference_type !== 'intervention_submitted'
+      )));
     } catch (err) {
       console.warn('Failed to load notifications:', err?.message);
     } finally {

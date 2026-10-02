@@ -21,9 +21,10 @@ const BottomNavBar = ({
   onSelectNav,
   unreadMessageCount = 0,
   unreadNotifCount = 0,
+  darkMode = false,
 }) => {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, darkMode && styles.darkContainer]}>
       {TABS.map((tab) => {
         // Map requestAssistance to assistance tab as active
         const isActive =
@@ -57,7 +58,7 @@ const BottomNavBar = ({
                 </View>
               )}
             </View>
-            <Text style={[styles.label, isActive && styles.labelActive]}>
+            <Text style={[styles.label, darkMode && styles.darkLabel, isActive && styles.labelActive]}>
               {tab.label}
             </Text>
           </TouchableOpacity>
@@ -81,6 +82,10 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 16,
     height: Platform.OS === 'ios' ? 68 : 58,
+  },
+  darkContainer: {
+    backgroundColor: '#0f172a',
+    borderTopColor: '#334155',
   },
   tabItem: {
     flex: 1,
@@ -120,6 +125,9 @@ const styles = StyleSheet.create({
   labelActive: {
     color: '#2563eb',
     fontWeight: '800',
+  },
+  darkLabel: {
+    color: '#cbd5e1',
   },
   badge: {
     position: 'absolute',

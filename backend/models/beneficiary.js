@@ -78,6 +78,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATEONLY,
         allowNull: true,
       },
+      approved_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
       approving_staff_id: {
         type: DataTypes.INTEGER,
         allowNull: true,

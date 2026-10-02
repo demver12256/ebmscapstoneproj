@@ -42,6 +42,7 @@ const SidebarDrawer = ({
   unreadNotifCount = 0,
   unreadMessageCount = 0,
   onLogout,
+  darkMode = false,
 }) => {
   const [mounted, setMounted] = useState(visible);
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
@@ -102,6 +103,7 @@ const SidebarDrawer = ({
   const isStaff = user && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user.role);
 
   const mainNavItems = [
+    ...(user?.role === 'beneficiary' ? [{ key: 'profile', label: 'My Profile', icon: '👤' }] : []),
     { key: 'dashboard', label: 'Dashboard', icon: '🏠' },
     { key: 'attendance', label: 'My Attendance', icon: '📅' },
     { key: 'assistance', label: 'My Assistance', icon: '🤲' },
@@ -119,8 +121,8 @@ const SidebarDrawer = ({
       </TouchableWithoutFeedback>
 
       {/* Sliding Sidebar Panel */}
-      <Animated.View style={[styles.drawer, { transform: [{ translateX: slideAnim }] }]}>
-        <SafeAreaView style={styles.safeArea}>
+      <Animated.View style={[styles.drawer, darkMode && styles.darkDrawer, { transform: [{ translateX: slideAnim }] }]}>
+        <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
           <View style={styles.drawerContent}>
               {/* Header: DSWD Logo + Title + Close Button */}
               <View style={styles.header}>
@@ -161,7 +163,7 @@ const SidebarDrawer = ({
                         <Text style={[styles.navIcon, isActive && styles.navIconActive]}>
                           {item.icon}
                         </Text>
-                        <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>
+                        <Text style={[styles.navLabel, darkMode && styles.darkNavLabel, isActive && styles.navLabelActive]}>
                           {item.label}
                         </Text>
                         {Boolean(item.badge) && item.badge > 0 && (
@@ -187,7 +189,7 @@ const SidebarDrawer = ({
                         <Text style={[styles.navIcon, currentRoute === 'beneficiaryList' && styles.navIconActive]}>
                           👥
                         </Text>
-                        <Text style={[styles.navLabel, currentRoute === 'beneficiaryList' && styles.navLabelActive]}>
+                        <Text style={[styles.navLabel, darkMode && styles.darkNavLabel, currentRoute === 'beneficiaryList' && styles.navLabelActive]}>
                           Beneficiary List
                         </Text>
                       </TouchableOpacity>
@@ -277,6 +279,12 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#ffffff',
+  },
+  darkDrawer: {
+    backgroundColor: '#0f172a',
+  },
+  darkSafeArea: {
+    backgroundColor: '#0f172a',
   },
   drawerContent: {
     flex: 1,
@@ -439,6 +447,9 @@ const styles = StyleSheet.create({
   navLabelActive: {
     color: '#ffffff',
     fontWeight: '700',
+  },
+  darkNavLabel: {
+    color: '#e2e8f0',
   },
   badgeWrap: {
     backgroundColor: '#ef4444',

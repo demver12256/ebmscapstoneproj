@@ -394,7 +394,8 @@ export default function LandingPage() {
 
   const handleInstallApp = () => {
     const downloadLink = document.createElement('a');
-    downloadLink.href = '/downloads/BeniAid.apk';
+    // Cache-bust the APK so the landing page never serves a stale browser/CDN copy.
+    downloadLink.href = `/downloads/BeniAid.apk?v=${encodeURIComponent(process.env.REACT_APP_MOBILE_APK_VERSION || 'latest')}`;
     downloadLink.download = 'BeniAid.apk';
     document.body.appendChild(downloadLink);
     downloadLink.click();

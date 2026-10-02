@@ -132,7 +132,8 @@ router.post('/verify-otp', async (req, res, next) => {
 router.post('/forgot-password/send-otp', async (req, res, next) => {
   try {
     const { identifier } = req.body;
-    const cleanId = (identifier || '').trim();
+    const rawIdentifier = String(identifier || '').trim();
+    const cleanId = rawIdentifier.includes('@') ? rawIdentifier.toLowerCase() : rawIdentifier;
 
     if (!cleanId) {
       return res.status(400).json({ success: false, message: 'Email o Username ay kinakailangan.' });

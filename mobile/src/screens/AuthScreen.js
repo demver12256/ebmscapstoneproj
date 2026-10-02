@@ -13,9 +13,10 @@ import {
   StyleSheet,
   StatusBar,
   Modal,
-  Alert,
 } from 'react-native';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import api, { authApi, barangayApi } from '../services/api';
+import { GOOGLE_WEB_CLIENT_ID } from '../config/api';
 
 const BONGABONG_BARANGAYS_FALLBACK = [
   { id: 1, barangay_name: 'Anahao' },
@@ -71,6 +72,7 @@ export default function AuthScreen({ onLoginSuccess }) {
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
 
   // ── Barangay List ──
@@ -121,6 +123,10 @@ export default function AuthScreen({ onLoginSuccess }) {
   const [forgotSuccess, setForgotSuccess] = useState('');
 
   useEffect(() => {
+    GoogleSignin.configure({
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+      offlineAccess: false,
+    });
     loadBarangays();
   }, []);
 
@@ -165,29 +171,47 @@ export default function AuthScreen({ onLoginSuccess }) {
     }
   };
 
-  // ── Handle Google Sign In on Mobile ──
-  const handleGoogleSignInClick = () => {
-    Alert.alert(
-      'Google Sign-In',
-      'Google Identity Services is active on the BeniAid web portal. Para sa mobile app, maaari kang mag-sign in gamit ang inyong registered Username o Email sa itaas, o gamitin ang demo accounts.',
-      [
-        {
-          text: 'Gamitin ang Admin Demo',
-          onPress: () => {
-            setLoginIdentifier('admin@ebms.local');
-            setLoginPassword('Admin@123');
-          },
-        },
-        {
-          text: 'Gamitin ang Maria Santos (Beneficiary)',
-          onPress: () => {
-            setLoginIdentifier('maria_santos');
-            setLoginPassword('Maria@123');
-          },
-        },
-        { text: 'OK', style: 'cancel' },
-      ]
-    );
+  // ── Native Google sign-in ──
+  const handleGoogleSignInClick = async () => {
+    if (googleLoading || loginLoading) return;
+
+    try {
+      setGoogleLoading(true);
+      setLoginError('');
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+      const googleAccount = await GoogleSignin.signIn();
+      if (!googleAccount?.idToken) {
+        throw new Error('Hindi nakakuha ng Google ID token. Pakisubukang muli.');
+      }
+
+      const payload = await authApi.googleLogin(googleAccount.idToken);
+      if (!payload?.success || !payload?.token || !payload?.user) {
+        throw new Error(payload?.message || 'Hindi nakumpleto ang Google sign-in.');
+      }
+
+      onLoginSuccess?.(payload.user, payload.token);
+    } catch (err) {
+      if (err?.code === statusCodes.SIGN_IN_CANCELLED) return;
+
+      const message = err?.response?.data?.message || err?.message;
+      const isAndroidOAuthConfigurationError =
+        err?.code === '10' || /DEVELOPER_ERROR|Developer console is not set up correctly/i.test(String(message || ''));
+
+      if (isAndroidOAuthConfigurationError) {
+        console.warn('[Google Sign-In] Android OAuth mismatch. Verify the Android OAuth client package and signing SHA-1 in Google Cloud.');
+        setLoginError('Hindi pa available ang Google sign-in. Gamitin muna ang username at password o makipag-ugnayan sa administrator.');
+        return;
+      }
+
+      setLoginError(
+        err?.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE
+          ? 'Kailangan i-update o i-install ang Google Play Services para makapag-sign in.'
+          : message || 'Hindi gumana ang Google sign-in. Pakisubukang muli.'
+      );
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
   // ── Handle Register Step 1 ──
@@ -277,10 +301,7 @@ export default function AuthScreen({ onLoginSuccess }) {
       try {
         await authApi.registerBeneficiary(regData);
         setRegSuccess('✓ Matagumpay na nagawa ang account! Lilipat sa login...');
-
-        // Reset form
         resetRegForm();
-
         setTimeout(() => {
           setRegSuccess('');
           setLoginIdentifier('');
@@ -325,7 +346,6 @@ export default function AuthScreen({ onLoginSuccess }) {
       setDevOtp('');
       resetRegForm();
       setRegSuccess('✓ Matagumpay na nagawa ang account! Lilipat sa login...');
-
       setTimeout(() => {
         setRegSuccess('');
         setLoginIdentifier('');
@@ -386,9 +406,17 @@ export default function AuthScreen({ onLoginSuccess }) {
       setForgotLoading(true);
       setForgotError('');
       setForgotSuccess('');
+      setForgotOtp('');
+      setForgotDevOtp('');
+      setForgotNewPassword('');
+      setForgotConfirmPassword('');
 
       const res = await authApi.sendForgotPasswordOtp({ identifier: forgotIdentifier.trim() });
       const data = res?.data || {};
+
+      if (!data.success || !data.email) {
+        throw new Error(data.message || 'Hindi maipadala ang verification code.');
+      }
 
       setForgotMaskedEmail(data.masked_email || data.email || 'iyong email');
       setForgotEmail(data.email || '');
@@ -398,7 +426,9 @@ export default function AuthScreen({ onLoginSuccess }) {
 
       setForgotStep(2);
     } catch (err) {
-      setForgotError(err?.response?.data?.message || 'Walang nahanap na account para sa ibinigay na username/email.');
+      setForgotError(
+        err?.response?.data?.message || err?.message || 'Walang nahanap na account para sa ibinigay na username/email.'
+      );
     } finally {
       setForgotLoading(false);
     }
@@ -435,6 +465,8 @@ export default function AuthScreen({ onLoginSuccess }) {
       setTimeout(() => {
         setForgotStep(1);
         setForgotIdentifier('');
+        setForgotEmail('');
+        setForgotMaskedEmail('');
         setForgotOtp('');
         setForgotDevOtp('');
         setForgotNewPassword('');
@@ -499,7 +531,7 @@ export default function AuthScreen({ onLoginSuccess }) {
                 }}
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="admin@ebms.local o maria_santos"
+                placeholder="Ilagay ang iyong username o email"
                 placeholderTextColor="#5c6678"
               />
 
@@ -555,29 +587,6 @@ export default function AuthScreen({ onLoginSuccess }) {
                 )}
               </TouchableOpacity>
 
-              {/* Quick Demo Accs */}
-              <View style={styles.demoBox}>
-                <Text style={styles.demoTitle}>Demo Accounts (Tap to fill):</Text>
-                <TouchableOpacity
-                  style={styles.demoChip}
-                  onPress={() => {
-                    setLoginIdentifier('admin@ebms.local');
-                    setLoginPassword('Admin@123');
-                  }}
-                >
-                  <Text style={styles.demoChipText}>👑 Admin: admin@ebms.local / Admin@123</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.demoChip}
-                  onPress={() => {
-                    setLoginIdentifier('maria_santos');
-                    setLoginPassword('Maria@123');
-                  }}
-                >
-                  <Text style={styles.demoChipText}>👤 Beneficiary: maria_santos / Maria@123</Text>
-                </TouchableOpacity>
-              </View>
-
               {/* Divider */}
               <View style={styles.dividerRow}>
                 <View style={styles.dividerLine} />
@@ -587,11 +596,19 @@ export default function AuthScreen({ onLoginSuccess }) {
 
               {/* Google Button */}
               <TouchableOpacity
-                style={styles.googleButton}
+                style={[styles.googleButton, googleLoading && styles.btnDisabled]}
                 onPress={handleGoogleSignInClick}
+                disabled={googleLoading || loginLoading}
               >
                 <Text style={styles.googleIcon}>G</Text>
-                <Text style={styles.googleText}>Sign in with Google</Text>
+                {googleLoading ? (
+                  <View style={styles.btnRow}>
+                    <ActivityIndicator color="#4285F4" size="small" />
+                    <Text style={styles.googleText}>Connecting to Google...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.googleText}>Sign in with Google</Text>
+                )}
               </TouchableOpacity>
 
               {/* Create Account Link */}
@@ -961,7 +978,7 @@ export default function AuthScreen({ onLoginSuccess }) {
                     value={forgotIdentifier}
                     onChangeText={setForgotIdentifier}
                     autoCapitalize="none"
-                    placeholder="hal. maria_santos o maria@gmail.com"
+                    placeholder="Ilagay ang iyong username o email"
                     placeholderTextColor="#5c6678"
                   />
 
@@ -1003,9 +1020,28 @@ export default function AuthScreen({ onLoginSuccess }) {
                     onChangeText={setForgotOtp}
                     keyboardType="number-pad"
                     maxLength={6}
+                    textContentType="oneTimeCode"
                     placeholder="123456"
                     placeholderTextColor="#5c6678"
                   />
+
+                  <View style={styles.forgotOptionsRow}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setForgotStep(1);
+                        setForgotOtp('');
+                        setForgotDevOtp('');
+                        setForgotNewPassword('');
+                        setForgotConfirmPassword('');
+                        setForgotError('');
+                      }}
+                    >
+                      <Text style={styles.forgotText}>Palitan ang account</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleForgotSendOtp} disabled={forgotLoading}>
+                      <Text style={styles.forgotText}>Ipadala ulit ang code</Text>
+                    </TouchableOpacity>
+                  </View>
 
                   <Text style={styles.label}>BAGONG PASSWORD *</Text>
                   <View style={styles.passwordFieldWrap}>
@@ -1450,25 +1486,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 17,
   },
-  demoBox: {
-    backgroundColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
-  },
-  demoTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 4,
-  },
-  demoChip: {
-    paddingVertical: 3,
-  },
-  demoChipText: {
-    fontSize: 11.5,
-    color: '#1d4ed8',
-    fontWeight: '600',
+  forgotOptionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: -4,
+    marginBottom: 12,
   },
   row: {
     flexDirection: 'row',

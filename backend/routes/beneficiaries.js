@@ -241,7 +241,7 @@ router.put('/me', authorize('beneficiary'), async (req, res, next) => {
 
     const {
       category, sex, birthdate, civil_status, address, contact_number,
-      national_id_number, psa_birth_cert_number, ip_classification
+      national_id_number, psa_birth_cert_number, ip_classification, sitio, barangay_id
     } = req.body;
 
     // Check duplicates for national_id_number
@@ -272,17 +272,28 @@ router.put('/me', authorize('beneficiary'), async (req, res, next) => {
       }
     }
 
-    await beneficiary.update({
+    const updates = {
       category,
       sex,
       birthdate,
       civil_status,
       address,
+      sitio,
       contact_number,
       national_id_number,
       psa_birth_cert_number,
       ip_classification
-    });
+    };
+
+    if (barangay_id !== undefined && barangay_id !== null && barangay_id !== '') {
+      const parsedBarangayId = Number(barangay_id);
+      if (!Number.isInteger(parsedBarangayId) || !(await Barangay.findByPk(parsedBarangayId))) {
+        return res.status(400).json({ success: false, message: 'Please select a valid barangay.' });
+      }
+      updates.barangay_id = parsedBarangayId;
+    }
+
+    await beneficiary.update(updates);
 
     res.json({ success: true, data: beneficiary });
   } catch (error) {
@@ -1165,6 +1176,7 @@ router.post('/applications/:id/approve', authorize('admin'), async (req, res, ne
       beneficiary_id_code: customId,
       household_id_number: is4Ps ? customId : null,
       approval_date: new Date(),
+      approved_at: beneficiary.status === 'Approved' ? beneficiary.approved_at : new Date(),
       approving_staff_id: req.user.id,
       rejection_reason: null,
       missing_documents: null
