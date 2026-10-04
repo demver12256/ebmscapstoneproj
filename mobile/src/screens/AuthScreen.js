@@ -103,18 +103,17 @@ export default function AuthScreen({ onLoginSuccess }) {
   // ── OTP Modal for Registration ──
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpCode, setOtpCode] = useState('');
-  const [devOtp, setDevOtp] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [pendingRegData, setPendingRegData] = useState(null);
 
   // ── Forgot Password State ──
   const [forgotStep, setForgotStep] = useState(1);
+  const [forgotMethod, setForgotMethod] = useState('email');
   const [forgotIdentifier, setForgotIdentifier] = useState('');
-  const [forgotMaskedEmail, setForgotMaskedEmail] = useState('');
-  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMaskedDestination, setForgotMaskedDestination] = useState('');
+  const [forgotRecoveryToken, setForgotRecoveryToken] = useState('');
   const [forgotOtp, setForgotOtp] = useState('');
-  const [forgotDevOtp, setForgotDevOtp] = useState('');
   const [forgotNewPassword, setForgotNewPassword] = useState('');
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
   const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
@@ -162,10 +161,13 @@ export default function AuthScreen({ onLoginSuccess }) {
       }
 
       if (onLoginSuccess) {
-        onLoginSuccess(payload.user, payload.token);
+        await onLoginSuccess(payload.user, payload.token);
       }
     } catch (err) {
-      setLoginError(err?.response?.data?.message || err?.message || 'Hindi nahanap ang account (User not found) o mali ang password.');
+      const isNetworkError = !err?.response || err?.code === 'ERR_NETWORK' || err?.code === 'ECONNABORTED';
+      setLoginError(isNetworkError
+        ? 'Hindi makakonekta sa server. Siguraduhing parehong Wi-Fi ang phone at computer at bukas ang backend.'
+        : err?.response?.data?.message || err?.message || 'Hindi nahanap ang account o mali ang password.');
     } finally {
       setLoginLoading(false);
     }
@@ -190,7 +192,7 @@ export default function AuthScreen({ onLoginSuccess }) {
         throw new Error(payload?.message || 'Hindi nakumpleto ang Google sign-in.');
       }
 
-      onLoginSuccess?.(payload.user, payload.token);
+      await onLoginSuccess?.(payload.user, payload.token);
     } catch (err) {
       if (err?.code === statusCodes.SIGN_IN_CANCELLED) return;
 
@@ -278,42 +280,23 @@ export default function AuthScreen({ onLoginSuccess }) {
       address: fullCombinedAddress,
     };
 
-    // If EMAIL is provided -> Send OTP and open modal
-    if (regEmail && regEmail.trim() !== '') {
-      setRegLoading(true);
-      try {
-        const response = await authApi.sendOtp({ email: regEmail.trim() });
-        if (response.data?.dev_otp) {
-          setDevOtp(response.data.dev_otp);
-        }
-        setPendingRegData(regData);
-        setOtpCode('');
-        setOtpError('');
-        setShowOtpModal(true);
-      } catch (err) {
-        setRegError(err?.response?.data?.message || 'Bigo sa pagpapadala ng verification code.');
-      } finally {
-        setRegLoading(false);
-      }
-    } else {
-      // NO email provided -> Register directly without OTP (for IPs / elderly)
-      setRegLoading(true);
-      try {
-        await authApi.registerBeneficiary(regData);
-        setRegSuccess('✓ Matagumpay na nagawa ang account! Lilipat sa login...');
-        resetRegForm();
-        setTimeout(() => {
-          setRegSuccess('');
-          setLoginIdentifier('');
-          setLoginPassword('');
-          setLoginError('');
-          setMode('login');
-        }, 1800);
-      } catch (err) {
-        setRegError(err?.response?.data?.message || 'Bigo sa paggawa ng account.');
-      } finally {
-        setRegLoading(false);
-      }
+    if (!regContactNumber.trim()) {
+      setRegError('Mangyaring ilagay ang inyong mobile number para makatanggap ng OTP.');
+      return;
+    }
+
+    // Every new beneficiary account must verify its registered mobile number.
+    setRegLoading(true);
+    try {
+      await authApi.sendMobileOtp({ contact_number: regContactNumber.trim() });
+      setPendingRegData(regData);
+      setOtpCode('');
+      setOtpError('');
+      setShowOtpModal(true);
+    } catch (err) {
+      setRegError(err?.response?.data?.message || 'Hindi maipadala ang mobile verification code.');
+    } finally {
+      setRegLoading(false);
     }
   };
 
@@ -328,9 +311,9 @@ export default function AuthScreen({ onLoginSuccess }) {
       setOtpLoading(true);
       setOtpError('');
 
-      // Verify OTP first
-      const verifyRes = await authApi.verifyOtp({
-        email: pendingRegData.email,
+      // Verify mobile OTP first, then submit the registration token.
+      const verifyRes = await authApi.verifyMobileOtp({
+        contact_number: pendingRegData.contact_number,
         otp: otpCode.trim(),
       });
 
@@ -343,7 +326,6 @@ export default function AuthScreen({ onLoginSuccess }) {
       });
 
       setShowOtpModal(false);
-      setDevOtp('');
       resetRegForm();
       setRegSuccess('✓ Matagumpay na nagawa ang account! Lilipat sa login...');
       setTimeout(() => {
@@ -361,14 +343,11 @@ export default function AuthScreen({ onLoginSuccess }) {
   };
 
   const handleResendRegOtp = async () => {
-    if (!pendingRegData?.email) return;
+    if (!pendingRegData?.contact_number) return;
     try {
       setOtpLoading(true);
       setOtpError('');
-      const response = await authApi.sendOtp({ email: pendingRegData.email });
-      if (response.data?.dev_otp) {
-        setDevOtp(response.data.dev_otp);
-      }
+      await authApi.sendMobileOtp({ contact_number: pendingRegData.contact_number });
       setOtpError('Bago at sariwang OTP code ang naipadala!');
     } catch (err) {
       setOtpError(err?.response?.data?.message || 'Hindi maipadala ang verification code.');
@@ -398,7 +377,9 @@ export default function AuthScreen({ onLoginSuccess }) {
   // ── Handle Forgot Password Step 1: Send OTP ──
   const handleForgotSendOtp = async () => {
     if (!forgotIdentifier.trim()) {
-      setForgotError('Pakiusap ilagay ang iyong Username o Email address.');
+      setForgotError(forgotMethod === 'email'
+        ? 'Ilagay ang email address na ginamit sa pagrehistro.'
+        : 'Ilagay ang mobile number na nakarehistro sa beneficiary account.');
       return;
     }
 
@@ -407,23 +388,21 @@ export default function AuthScreen({ onLoginSuccess }) {
       setForgotError('');
       setForgotSuccess('');
       setForgotOtp('');
-      setForgotDevOtp('');
       setForgotNewPassword('');
       setForgotConfirmPassword('');
 
-      const res = await authApi.sendForgotPasswordOtp({ identifier: forgotIdentifier.trim() });
+      const res = await authApi.sendForgotPasswordOtp({
+        method: forgotMethod,
+        identifier: forgotIdentifier.trim(),
+      });
       const data = res?.data || {};
 
-      if (!data.success || !data.email) {
+      if (!data.success || !data.recovery_token) {
         throw new Error(data.message || 'Hindi maipadala ang verification code.');
       }
 
-      setForgotMaskedEmail(data.masked_email || data.email || 'iyong email');
-      setForgotEmail(data.email || '');
-      if (data.dev_otp) {
-        setForgotDevOtp(data.dev_otp);
-      }
-
+      setForgotRecoveryToken(data.recovery_token);
+      setForgotMaskedDestination(data.masked_destination || 'iyong registered contact');
       setForgotStep(2);
     } catch (err) {
       setForgotError(
@@ -455,25 +434,26 @@ export default function AuthScreen({ onLoginSuccess }) {
       setForgotLoading(true);
       setForgotError('');
 
-      await authApi.resetPassword({
-        email: forgotEmail,
+      const response = await authApi.resetPassword({
+        recovery_token: forgotRecoveryToken,
         otp: forgotOtp.trim(),
         new_password: forgotNewPassword,
       });
 
-      setForgotSuccess('✓ Matagumpay na napalitan ang iyong password! Bumabalik sa login...');
+      setForgotSuccess(response?.data?.message || 'Matagumpay na napalitan ang iyong password! Bumabalik sa login...');
       setTimeout(() => {
+        const loginIdentifier = response?.data?.login_identifier ||
+          (forgotMethod === 'email' ? forgotIdentifier : '');
         setForgotStep(1);
         setForgotIdentifier('');
-        setForgotEmail('');
-        setForgotMaskedEmail('');
+        setForgotRecoveryToken('');
+        setForgotMaskedDestination('');
         setForgotOtp('');
-        setForgotDevOtp('');
         setForgotNewPassword('');
         setForgotConfirmPassword('');
         setForgotSuccess('');
         setForgotError('');
-        setLoginIdentifier('');
+        setLoginIdentifier(loginIdentifier);
         setLoginPassword('');
         setMode('login');
       }, 2000);
@@ -540,8 +520,11 @@ export default function AuthScreen({ onLoginSuccess }) {
                 <Text style={styles.label}>PASSWORD</Text>
                 <TouchableOpacity
                   onPress={() => {
-                    setForgotIdentifier(loginIdentifier);
+                    setForgotMethod('email');
+                    setForgotIdentifier(loginIdentifier.includes('@') ? loginIdentifier : '');
                     setForgotStep(1);
+                    setForgotRecoveryToken('');
+                    setForgotMaskedDestination('');
                     setForgotError('');
                     setForgotSuccess('');
                     setMode('forgot');
@@ -712,7 +695,7 @@ export default function AuthScreen({ onLoginSuccess }) {
                 placeholderTextColor="#5c6678"
               />
               <Text style={styles.inputHint}>
-                May OTP verification kung lalagyan. Kung walang email, maaari itong iwang bakante.
+                Opsyonal para sa mga update sa account.
               </Text>
 
               {/* Barangay Picker */}
@@ -777,16 +760,20 @@ export default function AuthScreen({ onLoginSuccess }) {
                 </View>
               </View>
 
-              {/* Contact Number */}
-              <Text style={styles.label}>CONTACT NUMBER</Text>
+              {/* Mobile number is required for registration OTP. */}
+              <Text style={styles.label}>MOBILE NUMBER *</Text>
               <TextInput
                 style={styles.input}
                 value={regContactNumber}
                 onChangeText={setRegContactNumber}
                 keyboardType="phone-pad"
+                autoCapitalize="none"
                 placeholder="0917xxxxxxx"
                 placeholderTextColor="#5c6678"
               />
+              <Text style={styles.inputHint}>
+                Kailangan ito para matanggap ang registration verification code.
+              </Text>
 
               {/* Category */}
               <Text style={styles.label}>PRIMARY SECTOR CATEGORY</Text>
@@ -909,17 +896,11 @@ export default function AuthScreen({ onLoginSuccess }) {
                   <View style={styles.btnRow}>
                     <ActivityIndicator color="#ffffff" size="small" />
                     <Text style={styles.primaryButtonText}>
-                      {regEmail && regEmail.trim() !== ''
-                        ? 'Ipinapadala ang OTP...'
-                        : 'Ginagawa ang Account...'}
+                      Ipinapadala ang mobile OTP...
                     </Text>
                   </View>
                 ) : (
-                  <Text style={styles.primaryButtonText}>
-                    {regEmail && regEmail.trim() !== ''
-                      ? 'Ipadala ang OTP at I-verify'
-                      : 'Lumikha ng Beneficiary Account'}
-                  </Text>
+                  <Text style={styles.primaryButtonText}>Ipadala ang OTP at Magparehistro</Text>
                 )}
               </TouchableOpacity>
 
@@ -953,8 +934,8 @@ export default function AuthScreen({ onLoginSuccess }) {
               </Text>
               <Text style={styles.subtitle}>
                 {forgotStep === 1
-                  ? 'Ilagay ang iyong Username o Email upang makatanggap ng 6-digit verification code.'
-                  : `I-type ang code na ipinadala sa ${forgotMaskedEmail} at ilagay ang bagong password.`}
+                  ? 'Pumili kung saan mo gustong matanggap ang 6-digit verification code.'
+                  : `I-type ang code na ipinadala sa ${forgotMaskedDestination} at ilagay ang bagong password.`}
               </Text>
 
               {forgotError ? (
@@ -969,18 +950,52 @@ export default function AuthScreen({ onLoginSuccess }) {
                 </View>
               ) : null}
 
-              {/* STEP 1: Enter Username or Email */}
+              {/* STEP 1: Choose email or mobile recovery */}
               {forgotStep === 1 && (
                 <>
-                  <Text style={styles.label}>USERNAME O EMAIL ADDRESS</Text>
+                  <View style={styles.recoveryMethodRow}>
+                    {[
+                      { value: 'mobile', label: 'Mobile Number', hint: 'SMS sa beneficiary' },
+                      { value: 'email', label: 'Email / Gmail', hint: 'Registered email' },
+                    ].map((option) => (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.recoveryMethodButton,
+                          forgotMethod === option.value && styles.recoveryMethodButtonActive,
+                        ]}
+                        onPress={() => {
+                          setForgotMethod(option.value);
+                          setForgotIdentifier('');
+                          setForgotRecoveryToken('');
+                          setForgotError('');
+                        }}
+                      >
+                        <Text style={[
+                          styles.recoveryMethodTitle,
+                          forgotMethod === option.value && styles.recoveryMethodTitleActive,
+                        ]}>{option.label}</Text>
+                        <Text style={styles.recoveryMethodHint}>{option.hint}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={styles.label}>
+                    {forgotMethod === 'mobile' ? 'REGISTERED MOBILE NUMBER' : 'REGISTERED EMAIL ADDRESS'}
+                  </Text>
                   <TextInput
                     style={styles.input}
                     value={forgotIdentifier}
                     onChangeText={setForgotIdentifier}
                     autoCapitalize="none"
-                    placeholder="Ilagay ang iyong username o email"
+                    keyboardType={forgotMethod === 'mobile' ? 'phone-pad' : 'email-address'}
+                    placeholder={forgotMethod === 'mobile' ? '0917xxxxxxx' : 'hal. maria@gmail.com'}
                     placeholderTextColor="#5c6678"
                   />
+                  <Text style={styles.inputHint}>
+                    {forgotMethod === 'mobile'
+                      ? 'Gamitin ang numerong naka-save sa beneficiary account.'
+                      : 'Gamitin ang email na nakarehistro sa account.'}
+                  </Text>
 
                   <TouchableOpacity
                     style={[styles.primaryButton, forgotLoading && styles.btnDisabled]}
@@ -990,7 +1005,7 @@ export default function AuthScreen({ onLoginSuccess }) {
                     {forgotLoading ? (
                       <View style={styles.btnRow}>
                         <ActivityIndicator color="#ffffff" size="small" />
-                        <Text style={styles.primaryButtonText}>Hinahanap ang Account...</Text>
+                        <Text style={styles.primaryButtonText}>Ipinapadala ang Code...</Text>
                       </View>
                     ) : (
                       <Text style={styles.primaryButtonText}>Ipadala ang Verification Code</Text>
@@ -1002,17 +1017,6 @@ export default function AuthScreen({ onLoginSuccess }) {
               {/* STEP 2: Enter OTP & New Password */}
               {forgotStep === 2 && (
                 <>
-                  {forgotDevOtp ? (
-                    <TouchableOpacity
-                      style={styles.devOtpBanner}
-                      onPress={() => setForgotOtp(forgotDevOtp)}
-                    >
-                      <Text style={styles.devOtpText}>
-                        🔧 Dev OTP: <Text style={styles.devOtpBold}>{forgotDevOtp}</Text> (Tap to fill)
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
-
                   <Text style={styles.label}>6-DIGIT VERIFICATION CODE</Text>
                   <TextInput
                     style={[styles.input, styles.otpInput]}
@@ -1024,13 +1028,18 @@ export default function AuthScreen({ onLoginSuccess }) {
                     placeholder="123456"
                     placeholderTextColor="#5c6678"
                   />
+                  <Text style={styles.inputHint}>
+                    {forgotMethod === 'mobile'
+                      ? 'I-check ang SMS inbox ng registered mobile number.'
+                      : 'I-check ang email inbox at spam folder.'}
+                  </Text>
 
                   <View style={styles.forgotOptionsRow}>
                     <TouchableOpacity
                       onPress={() => {
                         setForgotStep(1);
                         setForgotOtp('');
-                        setForgotDevOtp('');
+                        setForgotRecoveryToken('');
                         setForgotNewPassword('');
                         setForgotConfirmPassword('');
                         setForgotError('');
@@ -1178,10 +1187,10 @@ export default function AuthScreen({ onLoginSuccess }) {
               <View style={styles.otpIconBadge}>
                 <Text style={{ fontSize: 24 }}>✉️</Text>
               </View>
-              <Text style={styles.otpModalTitle}>I-verify ang Email</Text>
+              <Text style={styles.otpModalTitle}>I-verify ang Mobile Number</Text>
               <Text style={styles.otpModalSub}>
                 Nagpadala kami ng 6-digit verification code sa:{'\n'}
-                <Text style={{ fontWeight: '800', color: '#111827' }}>{pendingRegData?.email}</Text>
+                <Text style={{ fontWeight: '800', color: '#111827' }}>{pendingRegData?.contact_number}</Text>
               </Text>
             </View>
 
@@ -1189,17 +1198,6 @@ export default function AuthScreen({ onLoginSuccess }) {
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>{otpError}</Text>
               </View>
-            ) : null}
-
-            {devOtp ? (
-              <TouchableOpacity
-                style={styles.devOtpBanner}
-                onPress={() => setOtpCode(devOtp)}
-              >
-                <Text style={styles.devOtpText}>
-                  🔧 Dev OTP: <Text style={styles.devOtpBold}>{devOtp}</Text> (Tap to fill)
-                </Text>
-              </TouchableOpacity>
             ) : null}
 
             <Text style={styles.label}>6-DIGIT VERIFICATION CODE</Text>
@@ -1492,6 +1490,37 @@ const styles = StyleSheet.create({
     marginTop: -4,
     marginBottom: 12,
   },
+  recoveryMethodRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  recoveryMethodButton: {
+    flex: 1,
+    minHeight: 66,
+    borderWidth: 1,
+    borderColor: '#d7dfe9',
+    borderRadius: 12,
+    padding: 10,
+    backgroundColor: '#f9fafb',
+  },
+  recoveryMethodButtonActive: {
+    borderColor: '#00338d',
+    backgroundColor: '#eff6ff',
+  },
+  recoveryMethodTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  recoveryMethodTitleActive: {
+    color: '#00338d',
+  },
+  recoveryMethodHint: {
+    marginTop: 4,
+    fontSize: 10,
+    color: '#6b7280',
+  },
   row: {
     flexDirection: 'row',
     gap: 10,
@@ -1661,24 +1690,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 6,
     textAlign: 'center',
-  },
-  devOtpBanner: {
-    backgroundColor: '#fef3c7',
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
-    alignItems: 'center',
-  },
-  devOtpText: {
-    fontSize: 12,
-    color: '#92400e',
-    fontWeight: '600',
-  },
-  devOtpBold: {
-    fontWeight: '900',
-    color: '#b45309',
   },
   footerNote: {
     fontSize: 11,

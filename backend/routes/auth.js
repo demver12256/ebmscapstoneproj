@@ -6,9 +6,34 @@ const { OAuth2Client } = require('google-auth-library');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { Op } = require('sequelize');
-const { User, Beneficiary, Otp } = require('../db');
+const { sequelize, User, Beneficiary, Otp } = require('../db');
+const { sendSms } = require('../services/smsService');
 
 const router = express.Router();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_LOCK_DURATION_MS = 15 * 60 * 1000;
+
+function getActiveLoginLock(user) {
+  if (!user?.login_locked_until) return null;
+  const lockedUntil = new Date(user.login_locked_until);
+  return lockedUntil > new Date() ? lockedUntil : null;
+}
+
+async function clearExpiredLoginLock(user) {
+  if (user?.login_locked_until && !getActiveLoginLock(user)) {
+    await user.update({ failed_login_attempts: 0, login_locked_until: null });
+  }
+}
+
+function loginLockResponse(lockedUntil) {
+  const retryAfterSeconds = Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 1000));
+  return {
+    success: false,
+    message: `Nasuspinde muna ang pag-login dahil sa 5 maling pagtatangka. Subukan muli pagkalipas ng ${Math.ceil(retryAfterSeconds / 60)} minuto.`,
+    locked_until: lockedUntil.toISOString(),
+    retry_after_seconds: retryAfterSeconds,
+  };
+}
 
 // Google OAuth client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -31,6 +56,54 @@ if (process.env.SMTP_USER && process.env.SMTP_PASS) {
 function generateOtp() {
   return crypto.randomInt(100000, 999999).toString();
 }
+
+function normalizePhilippineMobile(value) {
+  const raw = String(value || '').replace(/[\s()-]/g, '');
+  if (/^09\d{9}$/.test(raw)) return `+63${raw.slice(1)}`;
+  if (/^\+639\d{9}$/.test(raw)) return raw;
+  if (/^639\d{9}$/.test(raw)) return `+${raw}`;
+  return null;
+}
+
+router.post('/send-mobile-otp', async (req, res, next) => {
+  try {
+    const contactNumber = normalizePhilippineMobile(req.body.contact_number);
+    if (!contactNumber) return res.status(400).json({ success: false, message: 'Maglagay ng valid na Philippine mobile number (hal. 0917xxxxxxx).' });
+    await Otp.update({ verified: true }, { where: { contact_number: contactNumber, verified: false } });
+    const otpCode = generateOtp();
+    const otpRecord = await Otp.create({ contact_number: contactNumber, otp_code: otpCode, expires_at: new Date(Date.now() + 5 * 60 * 1000), verified: false });
+    let sent = false;
+    try {
+      await sendSms(contactNumber, `BeniAid DSWD Bongabong verification code: ${otpCode}. Expires in 5 minutes.`);
+      sent = true;
+    } catch (smsError) {
+      console.error('[MOBILE OTP] SMS send failed:', smsError.message);
+    }
+    if (!sent) {
+      await otpRecord.update({ verified: true });
+      return res.status(503).json({
+        success: false,
+        message: 'Hindi naipadala ang OTP. Pakisuri ang PhilSMS setup at subukan muli.',
+      });
+    }
+    return res.json({ success: true, message: 'OTP sent to your mobile number.' });
+  } catch (error) { next(error); }
+});
+
+router.post('/verify-mobile-otp', async (req, res, next) => {
+  try {
+    const contactNumber = normalizePhilippineMobile(req.body.contact_number);
+    const otp = String(req.body.otp || '').trim();
+    if (!contactNumber || !/^\d{6}$/.test(otp)) return res.status(400).json({ success: false, message: 'Mobile number and 6-digit OTP are required.' });
+    const otpRecord = await Otp.findOne({ where: { contact_number: contactNumber, otp_code: otp, verified: false }, order: [['created_at', 'DESC']] });
+    if (!otpRecord) return res.status(400).json({ success: false, message: 'Invalid OTP code.' });
+    if (new Date() > new Date(otpRecord.expires_at)) return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
+    otpRecord.verified = true;
+    await otpRecord.save();
+    const otpToken = jwt.sign({ contact_number: contactNumber, mobile_otp_verified: true }, process.env.JWT_SECRET, { expiresIn: '10m' });
+    return res.json({ success: true, otp_token: otpToken });
+  } catch (error) { next(error); }
+});
 
 // ─── POST /api/auth/send-otp ───
 router.post('/send-otp', async (req, res, next) => {
@@ -57,12 +130,12 @@ router.post('/send-otp', async (req, res, next) => {
     if (transporter) {
       try {
         await transporter.sendMail({
-          from: `"EBMS System" <${process.env.SMTP_USER}>`,
+          from: `"BeniAid DSWD Bongabong" <${process.env.SMTP_USER}>`,
           to: email,
-          subject: 'EBMS - Your Verification Code',
+          subject: 'BeniAid DSWD Bongabong - Your Verification Code',
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #f8fafc; border-radius: 12px;">
-              <h2 style="color: #0038A8; margin-bottom: 8px;">EBMS Verification Code</h2>
+              <h2 style="color: #0038A8; margin-bottom: 8px;">BeniAid DSWD Bongabong Verification Code</h2>
               <p style="color: #475569; margin-bottom: 24px;">Use the following code to verify your email address. This code expires in 5 minutes.</p>
               <div style="background: #0038A8; color: white; font-size: 32px; font-weight: bold; text-align: center; padding: 16px 32px; border-radius: 8px; letter-spacing: 8px; margin-bottom: 24px;">
                 ${otpCode}
@@ -131,96 +204,111 @@ router.post('/verify-otp', async (req, res, next) => {
 // ─── POST /api/auth/forgot-password/send-otp ───
 router.post('/forgot-password/send-otp', async (req, res, next) => {
   try {
-    const { identifier } = req.body;
-    const rawIdentifier = String(identifier || '').trim();
-    const cleanId = rawIdentifier.includes('@') ? rawIdentifier.toLowerCase() : rawIdentifier;
-
-    if (!cleanId) {
-      return res.status(400).json({ success: false, message: 'Email o Username ay kinakailangan.' });
+    const method = String(req.body.method || '').trim().toLowerCase();
+    const rawIdentifier = String(req.body.identifier || '').trim();
+    if (!['email', 'mobile'].includes(method) || !rawIdentifier) {
+      return res.status(400).json({ success: false, message: 'Pumili ng recovery method at ilagay ang registered email o mobile number.' });
     }
 
-    // Check if user exists
-    const user = await User.findOne({
-      where: {
-        [Op.or]: [
-          { email: cleanId },
-          { username: cleanId },
-        ],
-      },
-    });
+    if (method === 'email' && !transporter) {
+      return res.status(503).json({ success: false, message: 'Hindi pa naka-configure ang email service. Makipag-ugnayan sa administrator.' });
+    }
+
+    let user;
+    let destination;
+    let maskedDestination;
+    const otpField = method === 'email' ? 'email' : 'contact_number';
+
+    if (method === 'email') {
+      destination = rawIdentifier.toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination)) {
+        return res.status(400).json({ success: false, message: 'Maglagay ng valid na registered email address.' });
+      }
+      user = await User.findOne({ where: { email: destination } });
+      const [namePart, domainPart] = destination.split('@');
+      const maskedName = namePart.length > 2
+        ? `${namePart[0]}${'*'.repeat(namePart.length - 2)}${namePart.slice(-1)}`
+        : `${namePart[0]}*`;
+      maskedDestination = `${maskedName}@${domainPart}`;
+    } else {
+      destination = normalizePhilippineMobile(rawIdentifier);
+      if (!destination) {
+        return res.status(400).json({ success: false, message: 'Maglagay ng valid na Philippine mobile number (hal. 0917xxxxxxx).' });
+      }
+
+      const digits = destination.slice(1);
+      const mobileAliases = [destination, digits, `0${digits.slice(2)}`];
+      const beneficiary = await Beneficiary.findOne({
+        where: { contact_number: { [Op.in]: mobileAliases } },
+        include: [{ model: User, required: true, where: { role: 'beneficiary' } }],
+      });
+      user = beneficiary?.User || null;
+      maskedDestination = `+63 ${digits.slice(2, 4)}••••${digits.slice(-4)}`;
+    }
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'Walang nahanap na account para sa ibinigay na username/email.',
+        message: method === 'mobile'
+          ? 'Walang beneficiary account na tumutugma sa registered mobile number.'
+          : 'Walang account na nakarehistro sa email na iyan.',
       });
     }
 
-    const targetEmail = user.email;
-    if (!targetEmail) {
-      return res.status(400).json({
-        success: false,
-        message: 'Walang nakatalagang email address ang account na ito. Mangyaring makipag-ugnayan sa Administrator.',
-      });
+    if (method === 'email' && !user.email) {
+      return res.status(400).json({ success: false, message: 'Walang registered email address ang account na ito.' });
     }
 
-    // Invalidate prior OTPs
-    await Otp.update({ verified: true }, { where: { email: targetEmail, verified: false } });
-
+    await Otp.update({ verified: true }, { where: { [otpField]: destination, verified: false } });
     const otpCode = generateOtp();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    await Otp.create({
-      email: targetEmail,
+    const otpRecord = await Otp.create({
+      [otpField]: destination,
       otp_code: otpCode,
-      expires_at: expiresAt,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000),
       verified: false,
     });
 
-    // Mask email for privacy (e.g. j***@gmail.com)
-    const [namePart, domainPart] = targetEmail.split('@');
-    const maskedName = namePart.length > 2
-      ? namePart[0] + '*'.repeat(namePart.length - 2) + namePart.slice(-1)
-      : namePart[0] + '*';
-    const maskedEmail = `${maskedName}@${domainPart}`;
-
-    // Send via email if SMTP is configured
-    if (transporter) {
-      try {
+    try {
+      if (method === 'email') {
         await transporter.sendMail({
-          from: `"EBMS DSWD System" <${process.env.SMTP_USER}>`,
-          to: targetEmail,
-          subject: 'EBMS - Password Reset Code',
+          from: `"BeniAid DSWD Bongabong" <${process.env.SMTP_USER}>`,
+          to: destination,
+          subject: 'BeniAid DSWD Bongabong - Password Reset Code',
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #f8fafc; border-radius: 12px;">
-              <h2 style="color: #0038A8; margin-bottom: 8px;">DSWD EBMS Password Reset</h2>
-              <p style="color: #475569; margin-bottom: 24px;">Nakatanggap kami ng kahilingan na i-reset ang iyong password para sa user na <strong>${user.username || user.first_name}</strong>.</p>
-              <p style="color: #475569; margin-bottom: 12px;">Gamitin ang sumusunod na 6-digit verification code. Mag-e-expire ito sa loob ng 10 minuto:</p>
-              <div style="background: #0038A8; color: white; font-size: 32px; font-weight: bold; text-align: center; padding: 16px 32px; border-radius: 8px; letter-spacing: 8px; margin-bottom: 24px;">
-                ${otpCode}
-              </div>
+              <h2 style="color: #0038A8; margin-bottom: 8px;">BeniAid DSWD Bongabong Password Reset</h2>
+              <p style="color: #475569; margin-bottom: 12px;">Gamitin ang 6-digit verification code na ito. Mag-e-expire ito sa loob ng 10 minuto:</p>
+              <div style="background: #0038A8; color: white; font-size: 32px; font-weight: bold; text-align: center; padding: 16px 32px; border-radius: 8px; letter-spacing: 8px; margin-bottom: 24px;">${otpCode}</div>
               <p style="color: #94a3b8; font-size: 12px;">Kung hindi mo hiniling ang reset na ito, balewalain ang email na ito.</p>
             </div>
           `,
         });
-        return res.json({
-          success: true,
-          message: `Naipadala ang verification code sa ${maskedEmail}`,
-          email: targetEmail,
-          masked_email: maskedEmail,
-        });
-      } catch (emailErr) {
-        console.error('[FORGOT-PASSWORD] Email send failed:', emailErr.message);
+      } else {
+        await sendSms(destination, `BeniAid DSWD Bongabong password reset code: ${otpCode}. Expires in 10 minutes.`);
       }
+    } catch (deliveryError) {
+      await otpRecord.update({ verified: true });
+      console.error(`[FORGOT-PASSWORD] ${method} delivery failed:`, deliveryError.message);
+      return res.status(503).json({
+        success: false,
+        message: method === 'mobile'
+          ? 'Hindi naipadala ang SMS code. Pakisuri ang SMS service at subukan muli.'
+          : 'Hindi naipadala ang email code. Pakisuri ang email service at subukan muli.',
+      });
     }
 
-    console.log(`[FORGOT-PASSWORD OTP] Code for ${targetEmail}: ${otpCode}`);
+    const recoveryToken = jwt.sign({
+      purpose: 'forgot_password',
+      user_id: user.id,
+      method,
+      destination,
+    }, process.env.JWT_SECRET, { expiresIn: '10m' });
+
     return res.json({
       success: true,
-      message: `Naipadala ang verification code sa ${maskedEmail}`,
-      email: targetEmail,
-      masked_email: maskedEmail,
-      dev_otp: otpCode,
+      message: `Naipadala ang verification code sa ${maskedDestination}.`,
+      masked_destination: maskedDestination,
+      recovery_token: recoveryToken,
     });
   } catch (error) {
     next(error);
@@ -230,58 +318,47 @@ router.post('/forgot-password/send-otp', async (req, res, next) => {
 // ─── POST /api/auth/forgot-password/reset ───
 router.post('/forgot-password/reset', async (req, res, next) => {
   try {
-    const { email, otp, new_password, otp_token } = req.body;
-
-    if (!email || !new_password) {
-      return res.status(400).json({ success: false, message: 'Email at bagong password ay kinakailangan.' });
+    const { recovery_token, otp, new_password } = req.body;
+    const otpCode = String(otp || '').trim();
+    if (!recovery_token || !/^\d{6}$/.test(otpCode) || !new_password) {
+      return res.status(400).json({ success: false, message: 'Recovery token, 6-digit code, at bagong password ay kinakailangan.' });
     }
-
     if (new_password.length < 6) {
       return res.status(400).json({ success: false, message: 'Ang password ay dapat hindi bababa sa 6 characters.' });
     }
 
-    // Verify via otp_token or direct OTP code
-    let isVerified = false;
-    if (otp_token) {
-      try {
-        const decoded = jwt.verify(otp_token, process.env.JWT_SECRET);
-        if (decoded.email === email && decoded.otp_verified) {
-          isVerified = true;
-        }
-      } catch (err) {}
+    let challenge;
+    try {
+      challenge = jwt.verify(recovery_token, process.env.JWT_SECRET);
+    } catch (tokenError) {
+      return res.status(400).json({ success: false, message: 'Nag-expire o invalid ang recovery request. Humingi ng bagong verification code.' });
+    }
+    if (challenge.purpose !== 'forgot_password' || !['email', 'mobile'].includes(challenge.method) || !challenge.user_id || !challenge.destination) {
+      return res.status(400).json({ success: false, message: 'Invalid ang recovery request. Humingi ng bagong verification code.' });
     }
 
-    if (!isVerified && otp) {
-      const otpRecord = await Otp.findOne({
-        where: { email, otp_code: otp, verified: false },
-        order: [['created_at', 'DESC']],
-      });
-
-      if (otpRecord && new Date() <= new Date(otpRecord.expires_at)) {
-        otpRecord.verified = true;
-        await otpRecord.save();
-        isVerified = true;
-      }
+    const otpField = challenge.method === 'email' ? 'email' : 'contact_number';
+    const otpRecord = await Otp.findOne({
+      where: { [otpField]: challenge.destination, otp_code: otpCode, verified: false },
+      order: [['created_at', 'DESC']],
+    });
+    if (!otpRecord || new Date() > new Date(otpRecord.expires_at)) {
+      return res.status(400).json({ success: false, message: 'Mali o expired na ang verification code. Humingi ng bagong code.' });
     }
 
-    if (!isVerified) {
-      return res.status(400).json({
-        success: false,
-        message: 'Maling verification code o nag-expire na. Mangyaring humingi ng panibagong code.',
-      });
-    }
-
-    const user = await User.findOne({ where: { email } });
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found.' });
-    }
+    const user = await User.findByPk(challenge.user_id);
+    if (!user) return res.status(404).json({ success: false, message: 'Hindi na makita ang account na ito.' });
 
     user.password = new_password;
+    user.failed_login_attempts = 0;
+    user.login_locked_until = null;
     await user.save();
+    await otpRecord.update({ verified: true });
 
     return res.json({
       success: true,
       message: 'Matagumpay na napalitan ang iyong password! Maaari ka nang mag-sign in.',
+      login_identifier: user.username || user.email || '',
     });
   } catch (error) {
     next(error);
@@ -330,6 +407,12 @@ router.post('/google', async (req, res, next) => {
     // Find existing user by email
     let user = await User.findOne({ where: { email } });
     console.log('[Google Auth] User lookup:', user ? `Found user ID ${user.id}` : 'User not found, creating new');
+
+    if (user) {
+      const lockedUntil = getActiveLoginLock(user);
+      if (lockedUntil) return res.status(423).json(loginLockResponse(lockedUntil));
+      await clearExpiredLoginLock(user);
+    }
 
     if (!user) {
       // Auto-create beneficiary account for new Google users
@@ -383,7 +466,7 @@ router.post('/google', async (req, res, next) => {
 
     console.log('[Google Auth] Generating JWT token for user ID:', user.id);
     const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '1d',
+      expiresIn: process.env.JWT_EXPIRES_IN || '30d',
     });
 
     console.log('[Google Auth] Login successful for:', email);
@@ -432,30 +515,91 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Hindi nahanap ang account (User not found)' });
     }
 
-    if (!(await user.comparePassword(password))) {
-      return res.status(401).json({ success: false, message: 'Incorrect password' });
+    let authenticatedUser = null;
+    let loginFailure = null;
+    let lockedUntil = null;
+    let attemptsRemaining = null;
+
+    await sequelize.transaction(async (transaction) => {
+      const account = await User.findByPk(user.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+
+      if (!account) {
+        loginFailure = 'missing';
+        return;
+      }
+
+      const currentLock = getActiveLoginLock(account);
+      if (currentLock) {
+        loginFailure = 'locked';
+        lockedUntil = currentLock;
+        return;
+      }
+
+      if (account.login_locked_until) {
+        await account.update({ failed_login_attempts: 0, login_locked_until: null }, { transaction });
+      }
+
+      if (!(await account.comparePassword(password))) {
+        const failedAttempts = (Number(account.failed_login_attempts) || 0) + 1;
+        if (failedAttempts >= MAX_LOGIN_ATTEMPTS) {
+          lockedUntil = new Date(Date.now() + LOGIN_LOCK_DURATION_MS);
+          await account.update({
+            failed_login_attempts: MAX_LOGIN_ATTEMPTS,
+            login_locked_until: lockedUntil,
+          }, { transaction });
+          loginFailure = 'locked';
+          return;
+        }
+
+        attemptsRemaining = MAX_LOGIN_ATTEMPTS - failedAttempts;
+        await account.update({ failed_login_attempts: failedAttempts }, { transaction });
+        loginFailure = 'incorrect_password';
+        return;
+      }
+
+      await account.update({ failed_login_attempts: 0, login_locked_until: null }, { transaction });
+      authenticatedUser = account;
+    });
+
+    if (loginFailure === 'missing') {
+      return res.status(404).json({ success: false, message: 'Hindi na makita ang account na ito.' });
     }
+    if (loginFailure === 'locked') {
+      return res.status(423).json(loginLockResponse(lockedUntil));
+    }
+    if (loginFailure === 'incorrect_password') {
+      return res.status(401).json({
+        success: false,
+        message: `Mali ang password. May ${attemptsRemaining} na pagtatangka ka pa bago pansamantalang masuspinde ang pag-login.`,
+        attempts_remaining: attemptsRemaining,
+      });
+    }
+
+    const loginUser = authenticatedUser;
 
     // Allow login even if inactive, but include status in response
     // Frontend will show appropriate notice based on status
 
-    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '1d',
+    const token = jwt.sign({ id: loginUser.id, role: loginUser.role }, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '30d',
     });
 
     res.json({
       success: true,
       token,
       user: {
-        id: user.id,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-        inactive_reason: user.inactive_reason,
-        barangay_id: user.barangay_id,
+        id: loginUser.id,
+        first_name: loginUser.first_name,
+        last_name: loginUser.last_name,
+        username: loginUser.username,
+        email: loginUser.email,
+        role: loginUser.role,
+        status: loginUser.status,
+        inactive_reason: loginUser.inactive_reason,
+        barangay_id: loginUser.barangay_id,
       },
     });
   } catch (error) {
@@ -486,13 +630,25 @@ router.post('/register-beneficiary', async (req, res, next) => {
 
     const trimmedUsername = username ? String(username).trim() : '';
     const trimmedEmail = email && String(email).trim() !== '' ? String(email).trim().toLowerCase() : null;
+    const normalizedContactNumber = normalizePhilippineMobile(contact_number);
 
-    if (!first_name || !last_name || !trimmedUsername || !password || !barangay_id) {
+    if (!first_name || !last_name || !trimmedUsername || !password || !barangay_id || !normalizedContactNumber) {
       return res.status(400).json({
         success: false,
-        message: 'First name, last name, username, password, and barangay are required',
+        message: 'First name, last name, username, password, barangay, and a valid mobile number are required',
       });
     }
+
+    if (!otp_token) return res.status(400).json({ success: false, message: 'Mobile OTP verification is required before registration.' });
+    try {
+      const decoded = jwt.verify(otp_token, process.env.JWT_SECRET);
+      if (!decoded.mobile_otp_verified || decoded.contact_number !== normalizedContactNumber) throw new Error('Invalid mobile OTP');
+    } catch (jwtErr) {
+      return res.status(400).json({ success: false, message: 'Mobile OTP verification has expired. Please verify your number again.' });
+    }
+
+    const existingContact = await User.findOne({ where: { contact_number: normalizedContactNumber } });
+    if (existingContact) return res.status(409).json({ success: false, message: 'Ang mobile number na ito ay nakarehistro na sa sistema.' });
 
     if (trimmedUsername.length < 3) {
       return res.status(400).json({
@@ -545,29 +701,6 @@ router.post('/register-beneficiary', async (req, res, next) => {
 
     // Check if email already exists (if email is provided)
     if (trimmedEmail) {
-      // Verify OTP token only when email is provided
-      if (!otp_token) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email verification is required when an email is provided. Please verify your email with OTP first.',
-        });
-      }
-
-      try {
-        const decoded = jwt.verify(otp_token, process.env.JWT_SECRET);
-        if (!decoded.otp_verified || decoded.email.toLowerCase() !== trimmedEmail) {
-          return res.status(400).json({
-            success: false,
-            message: 'Invalid or expired OTP verification. Please verify your email again.',
-          });
-        }
-      } catch (jwtErr) {
-        return res.status(400).json({
-          success: false,
-          message: 'OTP verification has expired. Please verify your email again.',
-        });
-      }
-
       const existingEmail = await User.findOne({ where: { email: trimmedEmail } });
       if (existingEmail) {
         return res.status(409).json({ success: false, message: 'Email address is already registered' });
@@ -592,7 +725,7 @@ router.post('/register-beneficiary', async (req, res, next) => {
       password,
       role: 'beneficiary',
       barangay_id: Number(barangay_id),
-      contact_number: contact_number ? String(contact_number).trim() : null,
+      contact_number: normalizedContactNumber,
       status: 'active',
     });
 
@@ -617,7 +750,7 @@ router.post('/register-beneficiary', async (req, res, next) => {
       barangay_id: Number(barangay_id),
       category: stdCategory,
       ip_classification: ip_classification || 'Non-IP',
-      contact_number: contact_number ? String(contact_number).trim() : '',
+      contact_number: normalizedContactNumber,
       sitio: sitio || '',
       address: computedAddress,
       household_id_number: is4Ps ? trimmedHh : null,

@@ -1505,7 +1505,7 @@ router.post('/:id/verify-payout-account', authorize('admin'), async (req, res, n
           if (beneficiary.contact_number) {
             await SMSNotification.create({
               beneficiary_id: beneficiary.id,
-              message: `DSWD EBMS: Magandang araw! Na-aprubahan na ng Admin ang iyong ${beneficiary.payout_provider || 'E-Wallet'} account (${maskedNumber}). Handa na ito para sa digital ayuda disbursement.`,
+              message: `BeniAid DSWD Bongabong: Magandang araw! Na-aprubahan na ng Admin ang iyong ${beneficiary.payout_provider || 'E-Wallet'} account (${maskedNumber}). Handa na ito para sa digital ayuda disbursement.`,
               status: 'sent',
               sent_at: new Date()
             });
@@ -1565,7 +1565,7 @@ router.post('/:id/verify-payout-account', authorize('admin'), async (req, res, n
           if (beneficiary.contact_number) {
             await SMSNotification.create({
               beneficiary_id: beneficiary.id,
-              message: `DSWD EBMS: Ang iyong ${beneficiary.payout_provider || 'E-Wallet'} account ay may mismatch sa opisyal na pangalan. Mangyaring bisitahin ang portal upang i-update ang iyong impormasyon.`,
+              message: `BeniAid DSWD Bongabong: Ang iyong ${beneficiary.payout_provider || 'E-Wallet'} account ay may mismatch sa opisyal na pangalan. Mangyaring bisitahin ang portal upang i-update ang iyong impormasyon.`,
               status: 'sent',
               sent_at: new Date()
             });

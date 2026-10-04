@@ -7,9 +7,10 @@
 npm install
 ```
 
-2. Configure API endpoint:
-   - Update `API_URL` in `src/config/api.js`
-   - Default: http://localhost:5000
+2. Configure API endpoint in `src/config/api.js`:
+   - For a physical Android device, use the computer's current Wi-Fi IPv4 address and keep both devices on the same Wi-Fi network.
+   - For the Android emulator, use `http://10.0.2.2:5000/api`.
+   - The current development computer address is `http://192.168.8.36:5000/api`; update it if the computer's address changes.
 
 3. Run the app:
 

@@ -4,10 +4,11 @@ module.exports = (sequelize, DataTypes) => {
     {
       email: {
         type: DataTypes.STRING,
-        allowNull: false,
-        validate: {
-          isEmail: true,
-        },
+        allowNull: true,
+      },
+      contact_number: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
       },
       otp_code: {
         type: DataTypes.STRING(6),

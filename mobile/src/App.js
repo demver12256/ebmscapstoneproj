@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   SafeAreaView,
   ScrollView,
@@ -40,8 +41,37 @@ import SidebarDrawer from './components/SidebarDrawer';
 import BottomNavBar from './components/BottomNavBar';
 import NotificationPopupModal from './components/NotificationPopupModal';
 import { API_URL } from './config/api';
+import {
+  prepareDeviceNotifications,
+  showDeviceNotification,
+  startBackgroundNotificationChecks,
+  stopBackgroundNotificationChecks,
+} from './services/deviceNotifications';
 
 const FILES_BASE_URL = API_URL.replace(/\/api\/?$/, '');
+const SESSION_TOKEN_KEY = 'beniaid_session_token';
+const SESSION_USER_KEY = 'beniaid_session_user';
+const DEVICE_NOTIFICATION_STATE_KEY = 'beniaid_device_notification_state';
+
+const saveSession = async (sessionUser, token) => {
+  if (!sessionUser || !token) return;
+  try {
+    await AsyncStorage.multiSet([
+      [SESSION_TOKEN_KEY, token],
+      [SESSION_USER_KEY, JSON.stringify(sessionUser)],
+    ]);
+  } catch (error) {
+    console.warn('Could not save the login session:', error?.message);
+  }
+};
+
+const clearSavedSession = async () => {
+  try {
+    await AsyncStorage.multiRemove([SESSION_TOKEN_KEY, SESSION_USER_KEY]);
+  } catch (error) {
+    console.warn('Could not clear the saved login session:', error?.message);
+  }
+};
 
 const formatMoney = (value) => {
   const amount = Number(value || 0);
@@ -118,6 +148,8 @@ const getPopupKey = (item) => {
   return `${item?.popupType}-${item?.id}${revision ? `-${revision}` : ''}`;
 };
 
+const getDeviceNotificationKey = (item) => `${item?.popupType || 'notification'}:${item?.id}`;
+
 const App = () => {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -126,6 +158,7 @@ const App = () => {
   const [extraSaving, setExtraSaving] = useState(false);
   const [error, setError] = useState('');
   const [user, setUser] = useState(null);
+  const [authInitializing, setAuthInitializing] = useState(true);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState('');
@@ -165,6 +198,42 @@ const App = () => {
   });
   const [submittingAssistance, setSubmittingAssistance] = useState(false);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const restoreSession = async () => {
+      try {
+        const [savedToken, savedUser] = await Promise.all([
+          AsyncStorage.getItem(SESSION_TOKEN_KEY),
+          AsyncStorage.getItem(SESSION_USER_KEY),
+        ]);
+
+        if (savedToken && savedUser) {
+          const parsedUser = JSON.parse(savedUser);
+          if (parsedUser?.id && parsedUser?.role) {
+            api.setAuthToken(savedToken);
+            if (isActive) setUser(parsedUser);
+          } else {
+            await clearSavedSession();
+          }
+        } else if (savedToken || savedUser) {
+          await clearSavedSession();
+        }
+      } catch (restoreError) {
+        api.clearAuthToken();
+        await clearSavedSession();
+        console.warn('Could not restore the saved login session:', restoreError?.message);
+      } finally {
+        if (isActive) setAuthInitializing(false);
+      }
+    };
+
+    restoreSession();
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   const loadAttendanceLogs = async () => {
     try {
       setAttendanceLoading(true);
@@ -196,6 +265,112 @@ const App = () => {
   const [currentPopupIndex, setCurrentPopupIndex] = useState(0);
   const [showPopupModal, setShowPopupModal] = useState(false);
   const [shownPopupIds, setShownPopupIds] = useState(new Set());
+  const deviceNotificationStateRef = useRef({
+    userId: null,
+    knownIds: new Set(),
+    deliveredIds: new Set(),
+    initPromise: null,
+    firstLoad: false,
+  });
+
+  const syncDeviceNotifications = async (allItems, unreadItems) => {
+    if (user?.role !== 'beneficiary' || !user?.id) return new Set();
+
+    const userId = String(user.id);
+    let state = deviceNotificationStateRef.current;
+    if (state.userId !== userId) {
+      state = {
+        userId,
+        knownIds: new Set(),
+        deliveredIds: new Set(),
+        initPromise: null,
+        firstLoad: false,
+      };
+      deviceNotificationStateRef.current = state;
+    }
+
+    if (!state.initPromise) {
+      state.initPromise = (async () => {
+        try {
+          const saved = await AsyncStorage.getItem(`${DEVICE_NOTIFICATION_STATE_KEY}:${userId}`);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            state.knownIds = new Set(Array.isArray(parsed.knownIds) ? parsed.knownIds : []);
+            state.deliveredIds = new Set(Array.isArray(parsed.deliveredIds) ? parsed.deliveredIds : []);
+            return;
+          }
+        } catch (storageError) {
+          console.warn('Could not load notified item IDs:', storageError?.message);
+        }
+
+        state.knownIds = new Set(allItems.map(getDeviceNotificationKey));
+        state.firstLoad = true;
+        await AsyncStorage.setItem(`${DEVICE_NOTIFICATION_STATE_KEY}:${userId}`, JSON.stringify({
+          knownIds: Array.from(state.knownIds),
+          deliveredIds: [],
+        })).catch((storageError) => {
+          console.warn('Could not save notification baseline:', storageError?.message);
+        });
+      })();
+    }
+    await state.initPromise;
+
+    if (state.firstLoad) {
+      state.firstLoad = false;
+      return new Set(state.deliveredIds);
+    }
+
+    for (const item of unreadItems) {
+      const key = getDeviceNotificationKey(item);
+      if (state.knownIds.has(key)) continue;
+
+      state.knownIds.add(key);
+      const title = item.title || 'BeniAid';
+      const body = item.message || item.description || 'May bago kang abiso sa BeniAid.';
+      try {
+        const displayed = await showDeviceNotification(key, title, body);
+        if (displayed) state.deliveredIds.add(key);
+      } catch (notificationError) {
+        console.warn('Could not display phone notification:', notificationError?.message);
+      }
+    }
+
+    allItems.forEach((item) => state.knownIds.add(getDeviceNotificationKey(item)));
+    const knownIds = Array.from(state.knownIds).slice(-200);
+    state.knownIds = new Set(knownIds);
+    const deliveredIds = Array.from(state.deliveredIds).filter((id) => state.knownIds.has(id));
+    state.deliveredIds = new Set(deliveredIds);
+    await AsyncStorage.setItem(`${DEVICE_NOTIFICATION_STATE_KEY}:${userId}`, JSON.stringify({
+      knownIds,
+      deliveredIds,
+    })).catch((storageError) => {
+      console.warn('Could not save notification delivery state:', storageError?.message);
+    });
+
+    return new Set(state.deliveredIds);
+  };
+
+  useEffect(() => {
+    if (user?.role !== 'beneficiary' || !user?.id) return undefined;
+    let isActive = true;
+
+    const startMonitoring = async () => {
+      try {
+        await prepareDeviceNotifications();
+        const token = await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+        if (isActive && token) {
+          await startBackgroundNotificationChecks(user.id, token, API_URL);
+        }
+      } catch (notificationError) {
+        console.warn('Could not enable phone notifications:', notificationError?.message);
+      }
+    };
+
+    startMonitoring();
+    return () => {
+      isActive = false;
+    };
+  }, [user?.id, user?.role]);
 
   const loadPopups = async () => {
     if (!user) return;
@@ -247,9 +422,19 @@ const App = () => {
         .map((n) => ({ ...n, popupType: 'notification' }));
 
       const combined = [...unreadAnn, ...unreadNotif];
+      const notifiedOnPhone = await syncDeviceNotifications(
+        [
+          ...annList.map((item) => ({ ...item, popupType: 'announcement' })),
+          ...notifList.map((item) => ({ ...item, popupType: 'notification' })),
+        ],
+        combined
+      );
+      const modalItemsToShow = combined.filter((item) => (
+        !notifiedOnPhone.has(getDeviceNotificationKey(item))
+      ));
 
       setModalItems((prevModalItems) => {
-        const newItems = combined.filter((item) => {
+        const newItems = modalItemsToShow.filter((item) => {
           const key = getPopupKey(item);
           return !shownPopupIds.has(key);
         });
@@ -559,6 +744,7 @@ const App = () => {
       }
 
       const loggedUser = payload.user || null;
+      await saveSession(loggedUser, payload.token);
       setUser(loggedUser);
       if (loggedUser?.role !== 'beneficiary') {
         setProfile(null);
@@ -571,8 +757,14 @@ const App = () => {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     api.clearAuthToken();
+    await clearSavedSession();
+    try {
+      await stopBackgroundNotificationChecks();
+    } catch (notificationError) {
+      console.warn('Could not stop background notification checks:', notificationError?.message);
+    }
     setUser(null);
     setProfile(null);
     setProfileLoading(false);
@@ -585,6 +777,15 @@ const App = () => {
   };
 
   const beneficiaryStatus = String(profile?.status || '').toLowerCase();
+
+  if (authInitializing) {
+    return (
+      <View style={styles.sessionLoadingContainer}>
+        <ActivityIndicator size="large" color="#1d4ed8" />
+        <Text style={styles.sessionLoadingText}>Ikinakarga ang iyong session...</Text>
+      </View>
+    );
+  }
 
   if (user?.role === 'beneficiary' && (profileLoading || !profile)) {
     return (
@@ -1281,7 +1482,8 @@ const App = () => {
 
   return (
     <AuthScreen
-      onLoginSuccess={(loggedUser, token) => {
+      onLoginSuccess={async (loggedUser, token) => {
+        await saveSession(loggedUser, token);
         if (token) {
           api.setAuthToken(token);
         }
@@ -1298,6 +1500,18 @@ const App = () => {
 };
 
 const styles = StyleSheet.create({
+  sessionLoadingContainer: {
+    flex: 1,
+    backgroundColor: '#4a4f57',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sessionLoadingText: {
+    marginTop: 12,
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   container: {
     flex: 1,
     backgroundColor: '#4a4f57',

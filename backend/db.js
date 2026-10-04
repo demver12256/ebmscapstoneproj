@@ -97,6 +97,8 @@ Beneficiary.hasMany(Attendance, { foreignKey: 'beneficiary_id', onDelete: 'CASCA
 // ── SMS ↔ Beneficiary ──
 SMSNotification.belongsTo(Beneficiary, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
 Beneficiary.hasMany(SMSNotification, { foreignKey: 'beneficiary_id', onDelete: 'CASCADE' });
+SMSNotification.belongsTo(Announcement, { foreignKey: 'announcement_id', onDelete: 'SET NULL' });
+Announcement.hasMany(SMSNotification, { foreignKey: 'announcement_id', as: 'SMSNotifications', onDelete: 'SET NULL' });
 
 // ── AuditLog ↔ User ──
 AuditLog.belongsTo(User, { foreignKey: 'user_id', onDelete: 'CASCADE' });

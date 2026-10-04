@@ -190,6 +190,43 @@ const calculatePriorityFromDate = (dateStr) => {
   }
 };
 
+const getAnnouncementStatusDisplay = (status) => {
+  const normalized = String(status || 'draft').toLowerCase();
+  const styles = {
+    published: 'bg-emerald-100 text-emerald-800',
+    completed: 'bg-purple-100 text-purple-800',
+    draft: 'bg-slate-100 text-slate-700',
+    scheduled: 'bg-blue-100 text-blue-800',
+    archived: 'bg-amber-100 text-amber-800',
+  };
+  return {
+    label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
+    className: styles[normalized] || 'bg-slate-100 text-slate-700',
+  };
+};
+
+const getAttendanceStatusDisplay = (status) => {
+  const normalized = ['Present', 'Absent', 'Pending'].includes(status) ? status : 'Pending';
+  const styles = {
+    Present: 'bg-emerald-100 text-emerald-800',
+    Absent: 'bg-rose-100 text-rose-800',
+    Pending: 'bg-slate-100 text-slate-700',
+  };
+  return { label: normalized.toUpperCase(), className: styles[normalized] };
+};
+
+const getSmsStatusDisplay = (status) => {
+  const presentations = {
+    queued: { label: 'QUEUED', className: 'bg-amber-100 text-amber-800' },
+    sent: { label: 'ACCEPTED BY PHILSMS', className: 'bg-emerald-100 text-emerald-800' },
+    failed: { label: 'FAILED', className: 'bg-rose-100 text-rose-800' },
+    no_mobile: { label: 'NO MOBILE', className: 'bg-slate-100 text-slate-700' },
+    not_queued: { label: 'NOT QUEUED', className: 'bg-slate-100 text-slate-700' },
+    not_applicable: { label: '—', className: 'bg-slate-100 text-slate-500' },
+  };
+  return presentations[status] || presentations.not_queued;
+};
+
 export default function AnnouncementManagementPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -512,7 +549,9 @@ export default function AnnouncementManagementPage() {
         setSuccessMessage('Announcement updated successfully!');
       } else {
         await announcementApi.create(payload);
-        setSuccessMessage('Announcement created, published, and notifications dispatched successfully!');
+        setSuccessMessage(payload.status === 'published'
+          ? 'Announcement published. SMS messages are queued for PhilSMS dispatch.'
+          : 'Announcement draft saved. SMS messages will be queued when it is published.');
       }
       setIsModalOpen(false);
       fetchAnnouncements();
@@ -588,15 +627,18 @@ export default function AnnouncementManagementPage() {
 
     let hours = 23;
     let minutes = 59;
-    const timeMatch = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+    const timeMatch = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
     if (timeMatch) {
       let h = parseInt(timeMatch[1], 10);
       const m = parseInt(timeMatch[2], 10);
-      const ampm = timeMatch[3] ? timeMatch[3].toUpperCase() : null;
+      const seconds = timeMatch[3] ? parseInt(timeMatch[3], 10) : 59;
+      const ampm = timeMatch[4] ? timeMatch[4].toUpperCase() : null;
       if (ampm === 'PM' && h < 12) h += 12;
       if (ampm === 'AM' && h === 12) h = 0;
       hours = h;
       minutes = m;
+      const endTime = new Date(year, month - 1, day, hours, minutes, seconds);
+      return new Date() < endTime;
     }
 
     const endTime = new Date(year, month - 1, day, hours, minutes, 59);
@@ -638,13 +680,14 @@ export default function AnnouncementManagementPage() {
       let csvContent = 'data:text/csv;charset=utf-8,';
       csvContent += `BeniAid ATTENDANCE REPORT\n`;
       csvContent += `Activity Title: "${data.event.title}"\n`;
+      csvContent += `Announcement Status: ${data.event.status || 'N/A'}\n`;
       csvContent += `Date: ${data.event.event_date || 'N/A'}, Venue: ${data.event.venue || 'N/A'}\n`;
-      csvContent += `Total Expected: ${data.summary.total_recipients}, Present: ${data.summary.total_present}, Absent: ${data.summary.total_absent}\n\n`;
+      csvContent += `Total Expected: ${data.summary.total_recipients}, Present: ${data.summary.total_present}, Absent: ${data.summary.total_absent}, Pending: ${data.summary.total_pending || 0}\n\n`;
 
-      csvContent += `No.,Beneficiary ID Code,Beneficiary Name,Barangay,RFID Number,Contact,Attendance Status,Scan Timestamp,Facilitated By\n`;
+      csvContent += `No.,Beneficiary ID Code,Beneficiary Name,Barangay,RFID Number,Contact,Attendance Status,Announcement SMS Status,Absence SMS Status,Scan Timestamp,Facilitated By\n`;
 
       data.report.forEach((row) => {
-        csvContent += `${row.row_number},"${row.beneficiary_id_code}","${row.beneficiary_name}","${row.barangay}","${row.rfid_number}","${row.contact_number}","${row.attendance_status}","${row.scanned_at}","${row.facilitated_by}"\n`;
+        csvContent += `${row.row_number},"${row.beneficiary_id_code}","${row.beneficiary_name}","${row.barangay}","${row.rfid_number}","${row.contact_number}","${row.attendance_status}","${row.sms_status}","${row.absence_sms_status}","${row.scanned_at}","${row.facilitated_by}"\n`;
       });
 
       const encodedUri = encodeURI(csvContent);
@@ -1637,43 +1680,70 @@ export default function AnnouncementManagementPage() {
 
             <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
-                <h4 className="font-black text-slate-900 text-lg">{selectedAnnouncementStats.title}</h4>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h4 className="font-black text-slate-900 text-lg">{selectedAnnouncementStats.title}</h4>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase ${getAnnouncementStatusDisplay(selectedAnnouncementStats.status).className}`}>
+                    {getAnnouncementStatusDisplay(selectedAnnouncementStats.status).label}
+                  </span>
+                </div>
                 <p className="text-xs text-slate-600">{selectedAnnouncementStats.message}</p>
                 <div className="flex flex-wrap gap-4 text-xs font-semibold text-slate-600 pt-2 border-t border-slate-200">
                   <span>Recipients: <strong className="text-slate-900">{selectedAnnouncementStats.recipient_count}</strong></span>
                   <span>Present Attendees: <strong className="text-emerald-700">{selectedAnnouncementStats.present_count}</strong></span>
                   <span>Absentees: <strong className="text-slate-500">{selectedAnnouncementStats.absent_count}</strong></span>
+                  <span>Pending Attendance: <strong className="text-amber-700">{selectedAnnouncementStats.pending_count || 0}</strong></span>
                   <span>Attendance Rate: <strong className="text-blue-700">{selectedAnnouncementStats.attendance_percentage}%</strong></span>
+                  <span>Announcement SMS queued: <strong className="text-amber-700">{selectedAnnouncementStats.sms_summary?.queued || 0}</strong></span>
+                  <span>Announcement SMS accepted: <strong className="text-emerald-700">{selectedAnnouncementStats.sms_summary?.accepted || 0}</strong></span>
+                  <span>Absence SMS queued: <strong className="text-amber-700">{selectedAnnouncementStats.absence_sms_summary?.queued || 0}</strong></span>
+                  <span>Absence SMS accepted: <strong className="text-emerald-700">{selectedAnnouncementStats.absence_sms_summary?.accepted || 0}</strong></span>
+                  <span>Absence SMS failed: <strong className="text-rose-700">{selectedAnnouncementStats.absence_sms_summary?.failed || 0}</strong></span>
+                  <span>Announcement SMS no mobile: <strong className="text-slate-500">{selectedAnnouncementStats.sms_summary?.no_mobile || 0}</strong></span>
+                  <span>Absence SMS no mobile: <strong className="text-slate-500">{selectedAnnouncementStats.absence_sms_summary?.no_mobile || 0}</strong></span>
                 </div>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h5 className="font-bold text-xs uppercase text-slate-500 tracking-wider">Beneficiary Recipient & Scan Details</h5>
-                  <button
-                    onClick={() => handleExportReport(selectedAnnouncementStats)}
-                    className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-1"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Export Excel/CSV
-                  </button>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => handleViewStats(selectedAnnouncementStats.id)}
+                      className="text-xs font-bold text-blue-700 hover:underline flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> Refresh status
+                    </button>
+                    <button
+                      onClick={() => handleExportReport(selectedAnnouncementStats)}
+                      className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-1"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Export Excel/CSV
+                    </button>
+                  </div>
                 </div>
 
                 {selectedAnnouncementStats.Recipients?.length === 0 ? (
                   <p className="text-xs text-slate-400 italic">No recipients recorded.</p>
                 ) : (
-                  <div className="border border-slate-200 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-xs">
+                  <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                    <table className="w-full min-w-[1080px] text-left text-xs">
                       <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
                         <tr>
                           <th className="py-2.5 px-4">Beneficiary ID & Name</th>
                           <th className="py-2.5 px-4">Barangay</th>
                           <th className="py-2.5 px-4">Attendance Status</th>
+                          <th className="py-2.5 px-4">Announcement SMS</th>
+                          <th className="py-2.5 px-4">Absence SMS</th>
                           <th className="py-2.5 px-4">Scan Timestamp</th>
                           <th className="py-2.5 px-4">Facilitated By</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {recipientPagination.paginatedData.map((r) => (
+                        {recipientPagination.paginatedData.map((r) => {
+                          const attendanceDisplay = getAttendanceStatusDisplay(r.attendance_status);
+                          const smsDisplay = getSmsStatusDisplay(r.sms_status);
+                          const absenceSmsDisplay = getSmsStatusDisplay(r.absence_sms_status);
+                          return (
                           <tr key={r.id} className="hover:bg-slate-50">
                             <td className="py-2.5 px-4">
                               <p className="font-bold text-slate-900">{r.Beneficiary?.first_name} {r.Beneficiary?.last_name}</p>
@@ -1683,15 +1753,29 @@ export default function AnnouncementManagementPage() {
                               {r.Beneficiary?.Barangay?.barangay_name || 'N/A'}
                             </td>
                             <td className="py-2.5 px-4">
-                              {r.attendance_status === 'Present' ? (
-                                <span className="bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full text-[10px]">
-                                  PRESENT
-                                </span>
-                              ) : (
-                                <span className="bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full text-[10px]">
-                                  PENDING / ABSENT
-                                </span>
-                              )}
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-extrabold ${attendanceDisplay.className}`}>
+                                {attendanceDisplay.label}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4">
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-extrabold ${smsDisplay.className}`}>
+                                {smsDisplay.label}
+                              </span>
+                              {r.sms_status === 'failed' && r.sms_failure_reason ? (
+                                <p className="mt-1 max-w-[220px] truncate text-[10px] text-rose-700" title={r.sms_failure_reason}>
+                                  {r.sms_failure_reason}
+                                </p>
+                              ) : null}
+                            </td>
+                            <td className="py-2.5 px-4">
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-extrabold ${absenceSmsDisplay.className}`}>
+                                {absenceSmsDisplay.label}
+                              </span>
+                              {r.absence_sms_status === 'failed' && r.absence_sms_failure_reason ? (
+                                <p className="mt-1 max-w-[220px] truncate text-[10px] text-rose-700" title={r.absence_sms_failure_reason}>
+                                  {r.absence_sms_failure_reason}
+                                </p>
+                              ) : null}
                             </td>
                             <td className="py-2.5 px-4 text-slate-600">
                               {r.scanned_at ? new Date(r.scanned_at).toLocaleString() : '—'}
@@ -1700,7 +1784,8 @@ export default function AnnouncementManagementPage() {
                               {r.ScannedByStaff ? `${r.ScannedByStaff.first_name} ${r.ScannedByStaff.last_name}` : '—'}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                     <div className="border-t border-slate-200 px-4 py-3">

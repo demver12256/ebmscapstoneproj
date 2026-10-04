@@ -1,13 +1,15 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { execSync } = require('child_process');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const bodyParser = require('body-parser');
-const path = require('path');
 
 const { connectDatabase, User } = require('./db');
+const { processQueuedSms, isConfigured: isSmsConfigured } = require('./utils/smsDispatcher');
+const { autoCompleteExpiredAnnouncements } = require('./utils/announcementScheduler');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const barangayRoutes = require('./routes/barangays');
@@ -223,6 +225,19 @@ const { checkAndProcessExpiredDistributions } = require('./utils/distributionSch
 connectDatabase()
   .then(async () => {
     await createDefaultAdmin();
+    autoCompleteExpiredAnnouncements().catch((err) => console.error('[ANNOUNCEMENTS] Auto-complete failed:', err.message));
+    setInterval(() => {
+      autoCompleteExpiredAnnouncements().catch((err) => console.error('[ANNOUNCEMENTS] Auto-complete failed:', err.message));
+    }, 30000).unref();
+
+    if (isSmsConfigured()) {
+      processQueuedSms().catch((err) => console.error('[SMS] Queue dispatch failed:', err.message));
+      setInterval(() => {
+        processQueuedSms().catch((err) => console.error('[SMS] Queue dispatch failed:', err.message));
+      }, 2000).unref();
+    } else {
+      console.warn('[SMS] PhilSMS is not configured; announcement SMS will remain queued until PHILSMS_API_TOKEN and PHILSMS_SENDER_ID are set.');
+    }
     await checkAndProcessExpiredDistributions();
     setInterval(() => {
       checkAndProcessExpiredDistributions().catch(err => console.error('[SCHEDULER] Error:', err));

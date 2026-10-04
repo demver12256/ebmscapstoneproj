@@ -97,7 +97,7 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
       is_read: false,
       attendance_status: 'Pending',
       notification_sent: true,
-      sms_sent: !!b.contact_number,
+      sms_sent: false,
     });
 
     const formattedTime = `${announcement.event_time || ''}${announcement.end_time ? ` - ${announcement.end_time}` : ''}`.trim();
@@ -115,13 +115,15 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
       });
     }
 
-    if (b.contact_number) {
+    const contactNumber = b.contact_number || b.User?.contact_number;
+    if (contactNumber) {
       smsNotifications.push({
+        announcement_id: announcement.id,
+        notification_type: 'announcement',
         beneficiary_id: b.id,
-        phone_number: b.contact_number,
-        message: `[EBMS ANNOUNCEMENT] ${announcement.title}: ${announcement.message.substring(0, 90)}... ${schedText}`,
-        status: 'sent',
-        sent_at: new Date(),
+        phone_number: contactNumber,
+        message: `[BeniAid DSWD Bongabong ANNOUNCEMENT] ${announcement.title}: ${announcement.message.substring(0, 90)}... ${schedText}`,
+        status: 'queued',
       });
     }
   }

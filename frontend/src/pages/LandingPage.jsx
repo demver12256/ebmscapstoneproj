@@ -9,7 +9,7 @@ import {
   ArrowRight,
   HandHeart, Award, Zap, Lock, FileText, Check,
   Smartphone, Radio, Eye, EyeOff, Download,
-  AlertCircle, ChevronDown, RefreshCw, X
+  AlertCircle, ChevronDown, RefreshCw, X, Mail
 } from 'lucide-react';
 
 // Google Sign-In Button component
@@ -163,7 +163,7 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
 };
 
 // OTP Verification Modal
-const OtpVerificationModal = ({ email, onVerified, onCancel, onResend }) => {
+const OtpVerificationModal = ({ contactNumber, onVerified, onCancel, onResend }) => {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [error, setError] = useState(null);
   const [verifying, setVerifying] = useState(false);
@@ -222,7 +222,7 @@ const OtpVerificationModal = ({ email, onVerified, onCancel, onResend }) => {
     setVerifying(true);
     setError(null);
     try {
-      const response = await authApi.verifyOtp({ email, otp: otpCode });
+      const response = await authApi.verifyMobileOtp({ contact_number: contactNumber, otp: otpCode });
       if (response.data.success) {
         onVerified(response.data.otp_token);
       }
@@ -258,11 +258,11 @@ const OtpVerificationModal = ({ email, onVerified, onCancel, onResend }) => {
           <div className="w-16 h-16 bg-blue-50 text-[#00338D] rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-100 shadow-sm">
             <Lock className="w-8 h-8" />
           </div>
-          <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Verify Your Email</h3>
+          <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Verify Your Mobile Number</h3>
           <p className="text-sm text-slate-500 mt-2">
-            We sent a 6-digit verification code to
+            We sent a 6-digit PIN to
           </p>
-          <p className="text-sm font-bold text-[#00338D] mt-0.5">{email}</p>
+          <p className="text-sm font-bold text-[#00338D] mt-0.5">{contactNumber}</p>
         </div>
 
         <div className="flex justify-center gap-2.5 mb-6" onPaste={handlePaste}>
@@ -365,21 +365,20 @@ export default function LandingPage() {
 
   // OTP flow states
   const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otpEmail, setOtpEmail] = useState('');
+  const [otpContactNumber, setOtpContactNumber] = useState('');
   const [pendingRegData, setPendingRegData] = useState(null);
   const [otpSending, setOtpSending] = useState(false);
-  const [devOtp, setDevOtp] = useState(null);
 
   // Forgot Password Flow States
   const [showForgotModal, setShowForgotModal] = useState(false);
-  const [forgotStep, setForgotStep] = useState(1); // 1: enter email/username, 2: enter otp & new password
+  const [forgotStep, setForgotStep] = useState(1); // 1: choose recovery method, 2: enter otp & new password
+  const [forgotMethod, setForgotMethod] = useState('email');
   const [forgotIdentifier, setForgotIdentifier] = useState('');
-  const [forgotTargetEmail, setForgotTargetEmail] = useState('');
-  const [forgotMaskedEmail, setForgotMaskedEmail] = useState('');
+  const [forgotRecoveryToken, setForgotRecoveryToken] = useState('');
+  const [forgotMaskedDestination, setForgotMaskedDestination] = useState('');
   const [forgotOtp, setForgotOtp] = useState('');
   const [forgotNewPassword, setForgotNewPassword] = useState('');
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
-  const [forgotDevOtp, setForgotDevOtp] = useState(null);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotError, setForgotError] = useState(null);
   const [forgotSuccess, setForgotSuccess] = useState(null);
@@ -395,7 +394,7 @@ export default function LandingPage() {
   const handleInstallApp = () => {
     const downloadLink = document.createElement('a');
     // Cache-bust the APK so the landing page never serves a stale browser/CDN copy.
-    downloadLink.href = `/downloads/BeniAid.apk?v=${encodeURIComponent(process.env.REACT_APP_MOBILE_APK_VERSION || 'latest')}`;
+    downloadLink.href = `/downloads/BeniAid.apk?v=${encodeURIComponent(process.env.REACT_APP_MOBILE_APK_VERSION || 'dswd-logo-20261004')}`;
     downloadLink.download = 'BeniAid.apk';
     document.body.appendChild(downloadLink);
     downloadLink.click();
@@ -431,23 +430,24 @@ export default function LandingPage() {
     e.preventDefault();
     setForgotError(null);
     setForgotSuccess(null);
-    setForgotDevOtp(null);
 
     const cleanId = (forgotIdentifier || '').trim();
     if (!cleanId) {
-      setForgotError('Pakiusap ilagay ang iyong Username o Email Address.');
+      setForgotError(forgotMethod === 'email'
+        ? 'Ilagay ang email address na ginamit sa pagrehistro.'
+        : 'Ilagay ang mobile number na nakarehistro sa beneficiary account.');
       return;
     }
 
     setForgotLoading(true);
     try {
-      const res = await authApi.sendForgotPasswordOtp({ identifier: cleanId });
+      const res = await authApi.sendForgotPasswordOtp({ method: forgotMethod, identifier: cleanId });
       if (res.data?.success) {
-        setForgotTargetEmail(res.data.email);
-        setForgotMaskedEmail(res.data.masked_email || res.data.email);
-        if (res.data.dev_otp) {
-          setForgotDevOtp(res.data.dev_otp);
-        }
+        setForgotRecoveryToken(res.data.recovery_token || '');
+        setForgotMaskedDestination(res.data.masked_destination || 'iyong registered contact');
+        setForgotOtp('');
+        setForgotNewPassword('');
+        setForgotConfirmPassword('');
         setForgotStep(2);
       }
     } catch (err) {
@@ -478,7 +478,7 @@ export default function LandingPage() {
     setForgotLoading(true);
     try {
       const res = await authApi.resetPassword({
-        email: forgotTargetEmail,
+        recovery_token: forgotRecoveryToken,
         otp: forgotOtp.trim(),
         new_password: forgotNewPassword,
       });
@@ -487,7 +487,7 @@ export default function LandingPage() {
         setTimeout(() => {
           setShowForgotModal(false);
           setShowLoginModal(true);
-          setEmail(forgotTargetEmail);
+          setEmail(res.data.login_identifier || (forgotMethod === 'email' ? forgotIdentifier : ''));
           setPassword('');
           setError(null);
         }, 2200);
@@ -575,58 +575,21 @@ export default function LandingPage() {
       address: fullCombinedAddress,
     };
 
-    // If email is provided, perform OTP verification
-    if (regEmail && regEmail.trim() !== '') {
-      setOtpSending(true);
-      try {
-        const response = await authApi.sendOtp({ email: regEmail.trim() });
-        if (response.data.dev_otp) {
-          setDevOtp(response.data.dev_otp);
-        }
-
-        setPendingRegData(regData);
-        setOtpEmail(regEmail.trim());
-        setShowOtpModal(true);
-      } catch (err) {
-        setRegError(err.response?.data?.message || 'Failed to send verification code');
-      } finally {
-        setOtpSending(false);
-      }
-    } else {
-      // If NO email is provided, register directly without OTP verification (for IPs / elderly)
-      setOtpSending(true);
-      try {
-        await authApi.registerBeneficiary(regData);
-        setRegSuccess(true);
-        const savedUsername = regUsername.trim();
-
-        setRegFirstName('');
-        setRegLastName('');
-        setRegUsername('');
-        setRegEmail('');
-        setRegBarangayId('');
-        setRegSex('Male');
-        setRegBirthdate('');
-        setRegCategory('4Ps Household Beneficiaries');
-        setRegHouseholdNumber('');
-        setRegContactNumber('');
-        setRegIpClassification('Non-IP');
-        setRegPassword('');
-        setRegConfirmPassword('');
-        setPendingRegData(null);
-
-        setTimeout(() => {
-          setShowRegisterModal(false);
-          setRegSuccess(false);
-          setEmail(savedUsername);
-          setPassword('');
-          setShowLoginModal(true);
-        }, 1800);
-      } catch (err) {
-        setRegError(err.response?.data?.message || 'Registration failed');
-      } finally {
-        setOtpSending(false);
-      }
+    // Mobile OTP is required for every beneficiary registration.
+    if (!regContactNumber.trim()) {
+      setRegError('Mangyaring ilagay ang inyong mobile number para makatanggap ng OTP.');
+      return;
+    }
+    setOtpSending(true);
+    try {
+      await authApi.sendMobileOtp({ contact_number: regContactNumber.trim() });
+      setPendingRegData(regData);
+      setOtpContactNumber(regContactNumber.trim());
+      setShowOtpModal(true);
+    } catch (err) {
+      setRegError(err.response?.data?.message || 'Hindi maipadala ang mobile verification code.');
+    } finally {
+      setOtpSending(false);
     }
   };
 
@@ -639,7 +602,6 @@ export default function LandingPage() {
 
       setShowOtpModal(false);
       setRegSuccess(true);
-      setDevOtp(null);
       const savedIdentifier = pendingRegData.username || pendingRegData.email;
 
       setRegFirstName('');
@@ -672,11 +634,7 @@ export default function LandingPage() {
 
   const handleResendOtp = async () => {
     try {
-      const response = await authApi.sendOtp({ email: otpEmail });
-      if (response.data.dev_otp) {
-        setDevOtp(response.data.dev_otp);
-      }
-      return response;
+      return await authApi.sendMobileOtp({ contact_number: otpContactNumber });
     } catch (err) {
       throw err;
     }
@@ -1493,7 +1451,12 @@ export default function LandingPage() {
                         setShowLoginModal(false);
                         setShowForgotModal(true);
                         setForgotStep(1);
-                        setForgotIdentifier(email || '');
+                        setForgotMethod('email');
+                        setForgotIdentifier(email?.includes('@') ? email : '');
+                        setForgotRecoveryToken('');
+                        setForgotOtp('');
+                        setForgotNewPassword('');
+                        setForgotConfirmPassword('');
                         setForgotError(null);
                         setForgotSuccess(null);
                       }}
@@ -1646,7 +1609,7 @@ export default function LandingPage() {
                       placeholder="e.g. maria@gmail.com (Opsyonal)"
                       className="w-full"
                     />
-                    <p className="text-[10px] text-slate-500 mt-1">May OTP verification kung lalagyan.</p>
+                    <p className="text-[10px] text-slate-500 mt-1">Opsyonal para sa mga update sa account.</p>
                   </div>
                 </div>
 
@@ -1704,13 +1667,14 @@ export default function LandingPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Contact Number</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Mobile Number <span className="text-red-500">*</span></label>
                     <Input
                       type="text"
                       value={regContactNumber}
                       onChange={(e) => setRegContactNumber(e.target.value)}
                       placeholder="0917xxxxxxx"
                       className="w-full"
+                      required
                     />
                   </div>
                 </div>
@@ -1814,12 +1778,6 @@ export default function LandingPage() {
                   </div>
                 )}
 
-                {devOtp && !showOtpModal && (
-                  <div className="rounded-xl bg-blue-50 p-3 border border-blue-200 text-xs font-bold text-[#00338D]">
-                    🔧 Dev OTP Code: <span className="font-mono text-base font-black">{devOtp}</span>
-                  </div>
-                )}
-
                 <Button
                   type="submit"
                   disabled={regSuccess || otpSending}
@@ -1828,14 +1786,12 @@ export default function LandingPage() {
                   {otpSending ? (
                     <span className="flex items-center justify-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      {regEmail && regEmail.trim() !== '' ? 'Sending Verification Code...' : 'Creating Account...'}
+                      Sending Mobile OTP...
                     </span>
                   ) : regSuccess ? (
                     'Account Created!'
-                  ) : regEmail && regEmail.trim() !== '' ? (
-                    'Send OTP & Verify Email'
                   ) : (
-                    'Create Beneficiary Account'
+                    'Send OTP & Register'
                   )}
                 </Button>
 
@@ -1864,11 +1820,10 @@ export default function LandingPage() {
       {/* ━━━ OTP MODAL ━━━ */}
       {showOtpModal && (
         <OtpVerificationModal
-          email={otpEmail}
+          contactNumber={otpContactNumber}
           onVerified={handleOtpVerified}
           onCancel={() => {
             setShowOtpModal(false);
-            setDevOtp(null);
           }}
           onResend={handleResendOtp}
         />
@@ -1895,8 +1850,8 @@ export default function LandingPage() {
               </h2>
               <p className="text-xs text-slate-500 mt-1">
                 {forgotStep === 1
-                  ? 'Ilagay ang iyong Username o Email upang makatanggap ng 6-digit verification code.'
-                  : `I-type ang code na ipinadala sa ${forgotMaskedEmail} at ilagay ang bagong password.`}
+                  ? 'Pumili kung saan mo gustong matanggap ang 6-digit verification code.'
+                  : `I-type ang code na ipinadala sa ${forgotMaskedDestination} at ilagay ang bagong password.`}
               </p>
             </div>
 
@@ -1914,21 +1869,58 @@ export default function LandingPage() {
               </div>
             )}
 
-            {/* STEP 1: Enter Username or Email */}
+            {/* STEP 1: Choose email or beneficiary mobile recovery */}
             {forgotStep === 1 && (
               <form onSubmit={handleForgotSendOtp} className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotMethod('mobile');
+                      setForgotIdentifier('');
+                      setForgotRecoveryToken('');
+                      setForgotError(null);
+                    }}
+                    aria-pressed={forgotMethod === 'mobile'}
+                    className={`rounded-xl border p-3 text-left transition-colors ${forgotMethod === 'mobile' ? 'border-[#00338D] bg-blue-50 text-[#00338D]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <Smartphone className="mb-2 h-5 w-5" />
+                    <span className="block text-xs font-bold">Mobile Number</span>
+                    <span className="mt-1 block text-[10px]">SMS sa registered beneficiary number</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotMethod('email');
+                      setForgotIdentifier('');
+                      setForgotRecoveryToken('');
+                      setForgotError(null);
+                    }}
+                    aria-pressed={forgotMethod === 'email'}
+                    className={`rounded-xl border p-3 text-left transition-colors ${forgotMethod === 'email' ? 'border-[#00338D] bg-blue-50 text-[#00338D]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <Mail className="mb-2 h-5 w-5" />
+                    <span className="block text-xs font-bold">Email / Gmail</span>
+                    <span className="mt-1 block text-[10px]">Sa email na ginamit sa registration</span>
+                  </button>
+                </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Username o Email Address
+                    {forgotMethod === 'mobile' ? 'Registered Mobile Number' : 'Registered Email Address'}
                   </label>
                   <Input
-                    type="text"
+                    type={forgotMethod === 'mobile' ? 'tel' : 'email'}
                     value={forgotIdentifier}
                     onChange={(e) => setForgotIdentifier(e.target.value)}
-                    placeholder="hal. maria_santos o maria@gmail.com"
+                    placeholder={forgotMethod === 'mobile' ? '0917xxxxxxx' : 'hal. maria@gmail.com'}
                     className="w-full"
                     required
                   />
+                  <span className="mt-1 block text-[11px] text-slate-400">
+                    {forgotMethod === 'mobile'
+                      ? 'Dapat ang numerong naka-save sa beneficiary account.'
+                      : 'Dapat ang email na ginamit sa pagrehistro sa system.'}
+                  </span>
                 </div>
 
                 <Button
@@ -1939,7 +1931,7 @@ export default function LandingPage() {
                   {forgotLoading ? (
                     <span className="flex items-center justify-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      Hinahanap ang Account...
+                      Ipinapadala ang Code...
                     </span>
                   ) : (
                     'Ipadala ang Verification Code'
@@ -1966,12 +1958,6 @@ export default function LandingPage() {
             {/* STEP 2: Enter OTP & New Password */}
             {forgotStep === 2 && (
               <form onSubmit={handleForgotReset} className="space-y-4">
-                {forgotDevOtp && (
-                  <div className="rounded-xl bg-amber-50 p-3 border border-amber-200 text-xs font-bold text-amber-900">
-                    🔧 Dev Mode OTP Code: <span className="font-mono text-base font-black text-[#00338D]">{forgotDevOtp}</span>
-                  </div>
-                )}
-
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                     6-Digit Verification Code
@@ -1986,7 +1972,9 @@ export default function LandingPage() {
                     required
                   />
                   <span className="text-[11px] text-slate-400 mt-1 block">
-                    I-check ang iyong email inbox o spam folder.
+                    {forgotMethod === 'mobile'
+                      ? 'I-check ang SMS inbox ng iyong registered mobile number.'
+                      : 'I-check ang iyong email inbox at spam folder.'}
                   </span>
                 </div>
 
@@ -2038,6 +2026,8 @@ export default function LandingPage() {
                     type="button"
                     onClick={() => {
                       setForgotStep(1);
+                      setForgotRecoveryToken('');
+                      setForgotOtp('');
                       setForgotError(null);
                     }}
                     className="text-slate-500 hover:text-slate-800 font-semibold"

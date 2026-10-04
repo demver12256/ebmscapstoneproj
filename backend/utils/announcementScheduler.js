@@ -10,21 +10,27 @@ const {
   AuditLog,
 } = require('../db');
 
+let autoCompleteInProgress = false;
+
 function parseDateTime(dateStr, timeStr) {
   if (!dateStr) return null;
   let hours = 23;
   let minutes = 59;
 
   if (timeStr) {
-    const timeMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+    const timeMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
     if (timeMatch) {
       let h = parseInt(timeMatch[1], 10);
       const m = parseInt(timeMatch[2], 10);
-      const ampm = timeMatch[3] ? timeMatch[3].toUpperCase() : null;
+      const seconds = timeMatch[3] ? parseInt(timeMatch[3], 10) : 59;
+      const ampm = timeMatch[4] ? timeMatch[4].toUpperCase() : null;
       if (ampm === 'PM' && h < 12) h += 12;
       if (ampm === 'AM' && h === 12) h = 0;
       hours = h;
       minutes = m;
+      const [year, month, day] = String(dateStr).split('-').map(Number);
+      if (!year || !month || !day) return null;
+      return new Date(year, month - 1, day, hours, minutes, seconds);
     }
   }
 
@@ -41,6 +47,9 @@ function parseDateTime(dateStr, timeStr) {
  * - Updates announcement status to 'completed'
  */
 async function autoCompleteExpiredAnnouncements() {
+  if (autoCompleteInProgress) return;
+  autoCompleteInProgress = true;
+
   try {
     const now = new Date();
 
@@ -97,17 +106,19 @@ async function autoCompleteExpiredAnnouncements() {
 
         for (const recipient of absentRecipients) {
           const b = recipient.Beneficiary;
-          if (!b || !b.User) continue;
+          if (!b) continue;
 
-          const existingNotif = await Notification.findOne({
-            where: {
-              user_id: b.User.id,
-              reference_id: ann.id,
-              reference_type: 'announcement_absence',
-            },
-          });
+          const existingNotif = b.User
+            ? await Notification.findOne({
+                where: {
+                  user_id: b.User.id,
+                  reference_id: ann.id,
+                  reference_type: 'announcement_absence',
+                },
+              })
+            : null;
 
-          if (!existingNotif) {
+          if (b.User && !existingNotif) {
             inAppNotifications.push({
               user_id: b.User.id,
               title: `Paunawa: Hindi Naka-attend sa ${ann.title}`,
@@ -119,13 +130,23 @@ async function autoCompleteExpiredAnnouncements() {
             });
           }
 
-          if (b.contact_number && absentCount > 0) {
-            smsNotifications.push({
+          const contactNumber = b.contact_number || b.User?.contact_number;
+          const existingAbsenceSms = await SMSNotification.findOne({
+            where: {
+              announcement_id: ann.id,
+              notification_type: 'announcement_absence',
               beneficiary_id: b.id,
-              phone_number: b.contact_number,
-              message: `[EBMS] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad "${ann.title}" noong ${ann.event_date || 'N/A'}. Makipag-ugnayan sa DSWD/MSWDO para sa detalye.`,
-              status: 'sent',
-              sent_at: new Date(),
+            },
+            attributes: ['id'],
+          });
+          if (contactNumber && !existingAbsenceSms) {
+            smsNotifications.push({
+              announcement_id: ann.id,
+              notification_type: 'announcement_absence',
+              beneficiary_id: b.id,
+              phone_number: contactNumber,
+              message: `[BeniAid DSWD Bongabong] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad "${ann.title}" noong ${ann.event_date || 'N/A'}. Makipag-ugnayan sa DSWD/MSWDO para sa detalye.`,
+              status: 'queued',
             });
           }
         }
@@ -150,6 +171,8 @@ async function autoCompleteExpiredAnnouncements() {
     }
   } catch (err) {
     console.error('Error in autoCompleteExpiredAnnouncements:', err);
+  } finally {
+    autoCompleteInProgress = false;
   }
 }
 

@@ -37,6 +37,15 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
       },
+      failed_login_attempts: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      login_locked_until: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
       contact_number: {
         type: DataTypes.STRING,
         allowNull: true,

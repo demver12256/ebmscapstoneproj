@@ -180,11 +180,30 @@ async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsI
 }
 
 // Helper to dispatch notifications for an announcement (Beneficiaries + Barangay Staff)
-async function dispatchAnnouncementNotifications(announcement, adminUserId) {
+async function dispatchAnnouncementNotifications(announcement, adminUserId, { forceResendSms = false } = {}) {
   const matchingBeneficiaries = await getMatchingBeneficiaries(
     announcement.target_programs,
     announcement.target_barangays
   );
+
+  const previousAnnouncementSms = matchingBeneficiaries.length > 0
+    ? await SMSNotification.findAll({
+      where: {
+        announcement_id: announcement.id,
+        notification_type: 'announcement',
+        beneficiary_id: { [Op.in]: matchingBeneficiaries.map((beneficiary) => beneficiary.id) },
+      },
+      attributes: ['beneficiary_id', 'status'],
+      order: [['created_at', 'DESC'], ['id', 'DESC']],
+    })
+    : [];
+  const latestSmsStatusByBeneficiary = new Map();
+  previousAnnouncementSms.forEach((sms) => {
+    const beneficiaryId = Number(sms.beneficiary_id);
+    if (!latestSmsStatusByBeneficiary.has(beneficiaryId)) {
+      latestSmsStatusByBeneficiary.set(beneficiaryId, sms.status);
+    }
+  });
 
   const matchingBeneficiaryIds = matchingBeneficiaries.map(b => b.id);
   const matchingUserIds = matchingBeneficiaries.map(b => b.user_id).filter(Boolean);
@@ -221,7 +240,7 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
         is_read: false,
         attendance_status: 'Pending',
         notification_sent: true,
-        sms_sent: !!b.contact_number,
+        sms_sent: false,
       });
 
       const formattedTime = `${announcement.event_time || ''}${announcement.end_time ? ` - ${announcement.end_time}` : ''}`.trim();
@@ -237,13 +256,17 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId) {
         is_read: false,
       });
 
-      if (b.contact_number) {
+      const contactNumber = b.contact_number || b.User?.contact_number;
+      const latestSmsStatus = latestSmsStatusByBeneficiary.get(Number(b.id));
+      const shouldQueueSms = !latestSmsStatus || (forceResendSms && latestSmsStatus !== 'queued');
+      if (contactNumber && shouldQueueSms) {
         smsNotifications.push({
+          announcement_id: announcement.id,
+          notification_type: 'announcement',
           beneficiary_id: b.id,
-          phone_number: b.contact_number,
-          message: `[EBMS ANNOUNCEMENT] ${announcement.title}: ${announcement.message.substring(0, 90)}... ${schedText}`,
-          status: 'sent',
-          sent_at: new Date(),
+          phone_number: contactNumber,
+          message: `[BeniAid DSWD Bongabong ANNOUNCEMENT] ${announcement.title}: ${announcement.message.substring(0, 90)}... ${schedText}`,
+          status: 'queued',
         });
       }
     }
@@ -962,7 +985,8 @@ router.get('/', async (req, res, next) => {
       const plain = a.toJSON();
       const recipients = plain.Recipients || [];
       plain.present_count = recipients.filter((r) => r.attendance_status === 'Present').length;
-      plain.absent_count = plain.recipient_count - plain.present_count;
+      plain.absent_count = recipients.filter((r) => r.attendance_status === 'Absent').length;
+      plain.pending_count = recipients.filter((r) => r.attendance_status === 'Pending').length;
       return plain;
     });
 
@@ -990,7 +1014,10 @@ router.get('/:id', async (req, res, next) => {
               model: Beneficiary,
               as: 'Beneficiary',
               attributes: ['id', 'first_name', 'last_name', 'contact_number', 'RFID_number', 'beneficiary_id_code', 'profile_photo', 'category'],
-              include: [{ model: Barangay, attributes: ['id', 'barangay_name'] }],
+              include: [
+                { model: Barangay, attributes: ['id', 'barangay_name'] },
+                { model: User, attributes: ['contact_number'] },
+              ],
             },
             {
               model: User,
@@ -1057,6 +1084,31 @@ router.get('/:id', async (req, res, next) => {
       }
     }
 
+    const announcementSms = await SMSNotification.findAll({
+      where: { announcement_id: announcement.id, notification_type: 'announcement' },
+      attributes: ['beneficiary_id', 'status', 'sent_at', 'failure_reason', 'createdAt'],
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
+    });
+    const absenceSms = await SMSNotification.findAll({
+      where: { announcement_id: announcement.id, notification_type: 'announcement_absence' },
+      attributes: ['beneficiary_id', 'status', 'sent_at', 'failure_reason', 'createdAt'],
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
+    });
+    const latestSmsByBeneficiary = new Map();
+    const latestAbsenceSmsByBeneficiary = new Map();
+    announcementSms.forEach((sms) => {
+      const beneficiaryId = Number(sms.beneficiary_id);
+      if (!latestSmsByBeneficiary.has(beneficiaryId)) {
+        latestSmsByBeneficiary.set(beneficiaryId, sms.toJSON());
+      }
+    });
+    absenceSms.forEach((sms) => {
+      const beneficiaryId = Number(sms.beneficiary_id);
+      if (!latestAbsenceSmsByBeneficiary.has(beneficiaryId)) {
+        latestAbsenceSmsByBeneficiary.set(beneficiaryId, sms.toJSON());
+      }
+    });
+
     const plain = announcement.toJSON();
     if (visibleBeneficiaryRecipient) {
       plain.Recipients = [visibleBeneficiaryRecipient.toJSON()];
@@ -1070,10 +1122,43 @@ router.get('/:id', async (req, res, next) => {
       }
     }
 
-    const recipients = plain.Recipients || [];
+    const recipients = (plain.Recipients || []).map((recipient) => {
+      const sms = latestSmsByBeneficiary.get(Number(recipient.beneficiary_id));
+      const absenceSmsRecord = latestAbsenceSmsByBeneficiary.get(Number(recipient.beneficiary_id));
+      const hasMobileNumber = Boolean(
+        recipient.Beneficiary?.contact_number || recipient.Beneficiary?.User?.contact_number
+      );
+      return {
+        ...recipient,
+        sms_status: sms?.status || (hasMobileNumber ? 'not_queued' : 'no_mobile'),
+        sms_sent_at: sms?.sent_at || null,
+        sms_failure_reason: sms?.failure_reason || null,
+        absence_sms_status: absenceSmsRecord?.status || (
+          recipient.attendance_status === 'Absent' ? (hasMobileNumber ? 'not_queued' : 'no_mobile') : 'not_applicable'
+        ),
+        absence_sms_sent_at: absenceSmsRecord?.sent_at || null,
+        absence_sms_failure_reason: absenceSmsRecord?.failure_reason || null,
+      };
+    });
+    plain.Recipients = recipients;
     plain.present_count = recipients.filter((r) => r.attendance_status === 'Present').length;
-    plain.absent_count = plain.recipient_count - plain.present_count;
-    plain.attendance_percentage = plain.recipient_count > 0 ? Math.round((plain.present_count / plain.recipient_count) * 100) : 0;
+    plain.absent_count = recipients.filter((r) => r.attendance_status === 'Absent').length;
+    plain.pending_count = recipients.filter((r) => r.attendance_status === 'Pending').length;
+    plain.attendance_percentage = recipients.length > 0 ? Math.round((plain.present_count / recipients.length) * 100) : 0;
+    plain.sms_summary = {
+      queued: recipients.filter((recipient) => recipient.sms_status === 'queued').length,
+      accepted: recipients.filter((recipient) => recipient.sms_status === 'sent').length,
+      failed: recipients.filter((recipient) => recipient.sms_status === 'failed').length,
+      no_mobile: recipients.filter((recipient) => recipient.sms_status === 'no_mobile').length,
+      not_queued: recipients.filter((recipient) => recipient.sms_status === 'not_queued').length,
+    };
+    plain.absence_sms_summary = {
+      queued: recipients.filter((recipient) => recipient.absence_sms_status === 'queued').length,
+      accepted: recipients.filter((recipient) => recipient.absence_sms_status === 'sent').length,
+      failed: recipients.filter((recipient) => recipient.absence_sms_status === 'failed').length,
+      no_mobile: recipients.filter((recipient) => recipient.absence_sms_status === 'no_mobile').length,
+      not_queued: recipients.filter((recipient) => recipient.absence_sms_status === 'not_queued').length,
+    };
 
     res.json({ success: true, data: plain });
   } catch (error) {
@@ -1414,17 +1499,19 @@ router.post('/:id/complete', authorize('admin', 'staff', 'barangay'), async (req
 
     for (const recipient of absentRecipients) {
       const b = recipient.Beneficiary;
-      if (!b || !b.User) continue;
+      if (!b) continue;
 
-      const existingNotif = await Notification.findOne({
-        where: {
-          user_id: b.User.id,
-          reference_id: announcement.id,
-          reference_type: 'announcement_absence',
-        },
-      });
+      const existingNotif = b.User
+        ? await Notification.findOne({
+            where: {
+              user_id: b.User.id,
+              reference_id: announcement.id,
+              reference_type: 'announcement_absence',
+            },
+          })
+        : null;
 
-      if (!existingNotif) {
+      if (b.User && !existingNotif) {
         inAppNotifications.push({
           user_id: b.User.id,
           title: `Paunawa: Hindi Naka-attend sa ${announcement.title}`,
@@ -1437,13 +1524,23 @@ router.post('/:id/complete', authorize('admin', 'staff', 'barangay'), async (req
       }
 
       // SMS notification (if contact number available)
-      if (b.contact_number) {
-        smsNotifications.push({
+      const contactNumber = b.contact_number || b.User?.contact_number;
+      const existingAbsenceSms = await SMSNotification.findOne({
+        where: {
+          announcement_id: announcement.id,
+          notification_type: 'announcement_absence',
           beneficiary_id: b.id,
-          phone_number: b.contact_number,
-          message: `[EBMS] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad "${announcement.title}" noong ${announcement.event_date || 'N/A'}. Makipag-ugnayan sa DSWD/MSWDO para sa detalye.`,
-          status: 'sent',
-          sent_at: new Date(),
+        },
+        attributes: ['id'],
+      });
+      if (contactNumber && !existingAbsenceSms) {
+        smsNotifications.push({
+          announcement_id: announcement.id,
+          notification_type: 'announcement_absence',
+          beneficiary_id: b.id,
+          phone_number: contactNumber,
+          message: `[BeniAid DSWD Bongabong] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad "${announcement.title}" noong ${announcement.event_date || 'N/A'}. Makipag-ugnayan sa DSWD/MSWDO para sa detalye.`,
+          status: 'queued',
         });
       }
     }
@@ -1462,18 +1559,18 @@ router.post('/:id/complete', authorize('admin', 'staff', 'barangay'), async (req
     // Log to audit trail
     await AuditLog.create({
       user_id: req.user.id,
-      action: `COMPLETED_ACTIVITY: "${announcement.title}" - Marked ${absentCount[0]} beneficiaries as absent and sent ${inAppNotifications.length} notifications`,
+      action: `COMPLETED_ACTIVITY: "${announcement.title}" - Marked ${absentCount[0]} beneficiaries as absent, created ${inAppNotifications.length} in-app notifications, and queued ${smsNotifications.length} SMS messages`,
       module: 'Announcements',
       timestamp: new Date(),
     });
 
     res.json({
       success: true,
-      message: `Activity completed successfully. ${absentCount[0]} beneficiaries marked as absent and notified.`,
+      message: `Activity completed. ${absentCount[0]} beneficiaries marked as absent; SMS messages were queued for dispatch.`,
       data: {
         total_absent: absentRecipients.length,
         notifications_sent: inAppNotifications.length,
-        sms_sent: smsNotifications.length,
+        sms_queued: smsNotifications.length,
       },
     });
   } catch (error) {
@@ -1507,7 +1604,10 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
         {
           model: Beneficiary,
           as: 'Beneficiary',
-          include: [{ model: Barangay, attributes: ['barangay_name'] }],
+          include: [
+            { model: Barangay, attributes: ['barangay_name'] },
+            { model: User, attributes: ['contact_number'] },
+          ],
         },
         {
           model: User,
@@ -1516,6 +1616,31 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
         },
       ],
       order: [['attendance_status', 'ASC'], ['scanned_at', 'ASC']],
+    });
+
+    const announcementSms = await SMSNotification.findAll({
+      where: { announcement_id: announcement.id, notification_type: 'announcement' },
+      attributes: ['beneficiary_id', 'status', 'createdAt'],
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
+    });
+    const absenceSms = await SMSNotification.findAll({
+      where: { announcement_id: announcement.id, notification_type: 'announcement_absence' },
+      attributes: ['beneficiary_id', 'status', 'createdAt'],
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
+    });
+    const latestSmsStatusByBeneficiary = new Map();
+    const latestAbsenceSmsStatusByBeneficiary = new Map();
+    announcementSms.forEach((sms) => {
+      const beneficiaryId = Number(sms.beneficiary_id);
+      if (!latestSmsStatusByBeneficiary.has(beneficiaryId)) {
+        latestSmsStatusByBeneficiary.set(beneficiaryId, sms.status);
+      }
+    });
+    absenceSms.forEach((sms) => {
+      const beneficiaryId = Number(sms.beneficiary_id);
+      if (!latestAbsenceSmsStatusByBeneficiary.has(beneficiaryId)) {
+        latestAbsenceSmsStatusByBeneficiary.set(beneficiaryId, sms.status);
+      }
     });
 
     await AuditLog.create({
@@ -1533,6 +1658,14 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
       rfid_number: r.Beneficiary?.RFID_number || 'N/A',
       contact_number: r.Beneficiary?.contact_number || 'N/A',
       attendance_status: r.attendance_status,
+      sms_status: latestSmsStatusByBeneficiary.get(Number(r.beneficiary_id)) || (
+        r.Beneficiary?.contact_number || r.Beneficiary?.User?.contact_number ? 'not_queued' : 'no_mobile'
+      ),
+      absence_sms_status: latestAbsenceSmsStatusByBeneficiary.get(Number(r.beneficiary_id)) || (
+        r.attendance_status === 'Absent'
+          ? (r.Beneficiary?.contact_number || r.Beneficiary?.User?.contact_number ? 'not_queued' : 'no_mobile')
+          : 'not_applicable'
+      ),
       scanned_at: r.scanned_at ? new Date(r.scanned_at).toLocaleString() : '—',
       facilitated_by: r.ScannedByStaff ? `${r.ScannedByStaff.first_name} ${r.ScannedByStaff.last_name}` : '—',
     }));
@@ -1542,6 +1675,7 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
       event: {
         id: announcement.id,
         title: announcement.title,
+        status: announcement.status,
         event_date: announcement.event_date,
         event_time: announcement.event_time,
         venue: announcement.venue,
@@ -1550,7 +1684,8 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
       summary: {
         total_recipients: recipients.length,
         total_present: recipients.filter((r) => r.attendance_status === 'Present').length,
-        total_absent: recipients.filter((r) => r.attendance_status !== 'Present').length,
+        total_absent: recipients.filter((r) => r.attendance_status === 'Absent').length,
+        total_pending: recipients.filter((r) => r.attendance_status === 'Pending').length,
       },
       report: reportRows,
     });
@@ -1649,7 +1784,7 @@ router.patch('/:id/resend', authorize('admin'), async (req, res, next) => {
     }
 
     await announcement.update({ beneficiary_visibility_at: new Date() });
-    const recipientCount = await dispatchAnnouncementNotifications(announcement, req.user.id);
+    const recipientCount = await dispatchAnnouncementNotifications(announcement, req.user.id, { forceResendSms: true });
 
     res.json({
       success: true,

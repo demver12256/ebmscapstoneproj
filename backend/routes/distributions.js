@@ -2467,4 +2467,3 @@ router.post('/transactions/:id/acknowledge', authorize('beneficiary', 'admin'), 
 });
 
 module.exports = router;
-

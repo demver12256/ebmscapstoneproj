@@ -102,6 +102,8 @@ export const authApi = {
   registerBeneficiary: (data) => apiClient.post('/auth/register-beneficiary', data),
   sendOtp: (data) => apiClient.post('/auth/send-otp', data),
   verifyOtp: (data) => apiClient.post('/auth/verify-otp', data),
+  sendMobileOtp: (data) => apiClient.post('/auth/send-mobile-otp', data),
+  verifyMobileOtp: (data) => apiClient.post('/auth/verify-mobile-otp', data),
   sendForgotPasswordOtp: (data) => apiClient.post('/auth/forgot-password/send-otp', data),
   resetPassword: (data) => apiClient.post('/auth/forgot-password/reset', data),
 };

@@ -429,7 +429,7 @@ router.patch('/:id/status', async (req, res, next) => {
       if (contactNo && updated.beneficiary_id) {
         await SMSNotification.create({
           beneficiary_id: updated.beneficiary_id,
-          message: `EBMS Ayuda Alert: Ang iyong ${request.type} sa ${request.agency} (#${request.id}) ay "${status}". ${admin_notes ? `Paalala: ${admin_notes}` : ''}`.trim(),
+          message: `BeniAid DSWD Bongabong Ayuda Alert: Ang iyong ${request.type} sa ${request.agency} (#${request.id}) ay "${status}". ${admin_notes ? `Paalala: ${admin_notes}` : ''}`.trim(),
           status: 'queued',
         });
       }
