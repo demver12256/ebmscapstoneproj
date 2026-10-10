@@ -38,8 +38,8 @@ router.post('/', authorize('admin', 'staff'), async (req, res, next) => {
     }
 
     if (ann) {
-      const timeToCheck = ann.end_time || ann.event_time || '23:59';
-      const expireTime = parseDateTime(ann.event_date, timeToCheck);
+      const timeToCheck = ann.end_time || '23:59';
+      const expireTime = parseDateTime(ann.event_date, timeToCheck, ann.event_time);
       const isPastEvent = expireTime && new Date() >= expireTime;
       const isPastExpiration = ann.expiration_date && new Date() > parseDateTime(ann.expiration_date, '23:59');
       const isEnded = ann.status === 'completed' || ann.status === 'archived' || isPastEvent || isPastExpiration;

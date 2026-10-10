@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users, ArrowLeft, Calendar, MapPin, Ban, XCircle } from 'lucide-react';
 import { announcementApi } from '../services/api';
 import * as XLSX from 'xlsx';
+import { getAnnouncementEndDateTime } from '../utils/announcementSchedule';
 
 // Helper to determine if announcement is active for attendance recording
 const isAnnouncementActiveForAttendance = (ann) => {
@@ -11,28 +12,8 @@ const isAnnouncementActiveForAttendance = (ann) => {
   if (ann.status !== 'published') return false;
 
   const now = new Date();
-  if (ann.event_date) {
-    const timeToCheck = ann.end_time || ann.event_time || '23:59';
-    let hours = 23;
-    let minutes = 59;
-    if (timeToCheck) {
-      const match = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
-      if (match) {
-        let h = parseInt(match[1], 10);
-        const m = parseInt(match[2], 10);
-        const ampm = match[3] ? match[3].toUpperCase() : null;
-        if (ampm === 'PM' && h < 12) h += 12;
-        if (ampm === 'AM' && h === 12) h = 0;
-        hours = h;
-        minutes = m;
-      }
-    }
-    const [y, m, d] = String(ann.event_date).split('-').map(Number);
-    if (y && m && d) {
-      const eventEndTime = new Date(y, m - 1, d, hours, minutes, 59);
-      if (now > eventEndTime) return false;
-    }
-  }
+  const eventEndTime = getAnnouncementEndDateTime(ann);
+  if (eventEndTime && now > eventEndTime) return false;
 
   if (ann.expiration_date) {
     const [y, m, d] = String(ann.expiration_date).split('-').map(Number);

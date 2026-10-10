@@ -198,23 +198,32 @@ export default function UserListPage() {
   const emptyLabel = currentUser?.role === 'staff' ? 'No beneficiary accounts found' : 'No staff accounts found';
 
   return (
-    <div className="space-y-8">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Users className="w-8 h-8 text-yellow-300" />
-            <h1 className="text-3xl font-black tracking-tight">{pageTitle}</h1>
-          </div>
-          <p className="text-blue-100 text-sm max-w-2xl">{pageDescription}</p>
-        </div>
+    <div className="space-y-6">
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
         <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              Access Control
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            {pageTitle}
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {pageDescription}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
           <button
+            type="button"
             onClick={() => setShowModal(true)}
-            className="flex items-center gap-2.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95 text-sm"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
           >
-            <UserPlus className="w-5 h-5 stroke-[3]" />
-            Create Account
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Create Account</span>
           </button>
         </div>
       </div>
@@ -227,19 +236,19 @@ export default function UserListPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl p-6 border border-indigo-200">
-          <p className="text-sm font-medium text-slate-600 mb-2">Total Accounts</p>
-          <p className="text-3xl font-bold text-indigo-600">{loading ? '...' : displayUsers.length}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Total Accounts</p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900">{loading ? '...' : displayUsers.length}</p>
         </div>
-        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-6 border border-emerald-200">
-          <p className="text-sm font-medium text-slate-600 mb-2">Active Accounts</p>
-          <p className="text-3xl font-bold text-emerald-600">{loading ? '...' : displayUsers.filter(u => u.status === 'active').length}</p>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider mb-1">Active Accounts</p>
+          <p className="text-xl sm:text-2xl font-bold text-emerald-600">{loading ? '...' : displayUsers.filter(u => u.status === 'active').length}</p>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+      <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>

@@ -12,31 +12,43 @@ const {
 
 let autoCompleteInProgress = false;
 
-function parseDateTime(dateStr, timeStr) {
+function parseDateTime(dateStr, timeStr, startTimeStr = null) {
   if (!dateStr) return null;
-  let hours = 23;
-  let minutes = 59;
-
-  if (timeStr) {
-    const timeMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
-    if (timeMatch) {
-      let h = parseInt(timeMatch[1], 10);
-      const m = parseInt(timeMatch[2], 10);
-      const seconds = timeMatch[3] ? parseInt(timeMatch[3], 10) : 59;
-      const ampm = timeMatch[4] ? timeMatch[4].toUpperCase() : null;
-      if (ampm === 'PM' && h < 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-      hours = h;
-      minutes = m;
-      const [year, month, day] = String(dateStr).split('-').map(Number);
-      if (!year || !month || !day) return null;
-      return new Date(year, month - 1, day, hours, minutes, seconds);
-    }
-  }
-
   const [year, month, day] = String(dateStr).split('-').map(Number);
   if (!year || !month || !day) return null;
-  return new Date(year, month - 1, day, hours, minutes, 59);
+
+  const parseClock = (value, fallback) => {
+    if (!value) return fallback;
+    const match = String(value).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+    if (!match) return fallback;
+
+    let hours = parseInt(match[1], 10);
+    const ampm = match[4] ? match[4].toUpperCase() : null;
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    return {
+      hours,
+      minutes: parseInt(match[2], 10),
+      seconds: match[3] ? parseInt(match[3], 10) : 59,
+    };
+  };
+
+  const datePart = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const toPhilippineDate = (clock) => new Date(
+    `${datePart}T${String(clock.hours).padStart(2, '0')}:${String(clock.minutes).padStart(2, '0')}:${String(clock.seconds).padStart(2, '0')}+08:00`
+  );
+  const endClock = parseClock(timeStr, { hours: 23, minutes: 59, seconds: 59 });
+  const endDate = toPhilippineDate(endClock);
+  if (Number.isNaN(endDate.getTime())) return null;
+
+  // An end time earlier than the start time means the event ends after midnight.
+  const startClock = parseClock(startTimeStr, null);
+  if (startClock) {
+    const startDate = toPhilippineDate(startClock);
+    if (endDate < startDate) endDate.setTime(endDate.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  return endDate;
 }
 
 /**
@@ -60,8 +72,9 @@ async function autoCompleteExpiredAnnouncements() {
     });
 
     for (const ann of announcementsToCheck) {
-      const timeToCheck = ann.end_time || ann.event_time || '23:59';
-      const expireTime = parseDateTime(ann.event_date, timeToCheck);
+      // event_time is the activity start time; without an end_time, keep attendance open through the day.
+      const timeToCheck = ann.end_time || '23:59';
+      const expireTime = parseDateTime(ann.event_date, timeToCheck, ann.event_time);
 
       const isPastEvent = expireTime && now >= expireTime;
       const isPastExpiration = ann.expiration_date && now > parseDateTime(ann.expiration_date, '23:59');

@@ -7,6 +7,7 @@ const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { Beneficiary, Barangay, User, BeneficiaryDocument, AuditLog, SMSNotification, Notification, Message, AnnouncementRecipient, Announcement, Attendance, DistributionTransaction, DistributionEvent, BenefitProgram, Enrollment } = require('../db');
 const { isMswdoRole, MSWDO_CATEGORY_FILTER, isMswdoCategory } = require('../utils/roles');
+const QRCode = require('qrcode');
 
 const router = express.Router();
 router.use(authenticate);
@@ -220,8 +221,32 @@ router.get('/me', authorize('beneficiary'), async (req, res, next) => {
       }
     }
     
+    // Auto-generate QR pass token if beneficiary is approved and does not have one yet
+    if (beneficiary.status === 'Approved' && !beneficiary.qr_token) {
+      beneficiary.qr_token = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
+      beneficiary.qr_generated_at = new Date();
+      await beneficiary.save();
+    }
+
+    let qrImageUrl = null;
+    if (beneficiary.qr_token) {
+      try {
+        qrImageUrl = await QRCode.toDataURL(`EBMS-QR:${beneficiary.qr_token}`, {
+          width: 320,
+          margin: 1,
+          color: { dark: '#002B49', light: '#FFFFFF' }
+        });
+      } catch (qrErr) {
+        console.error('[GET /me] Error generating QR data URL:', qrErr.message);
+      }
+    }
+
+    const benData = beneficiary.toJSON();
+    benData.qr_code = beneficiary.qr_token ? `EBMS-QR:${beneficiary.qr_token}` : null;
+    benData.qr_image_url = qrImageUrl;
+
     console.log('[GET /me] Successfully fetched beneficiary:', beneficiary.id);
-    res.json({ success: true, data: beneficiary });
+    res.json({ success: true, data: benData });
   } catch (error) {
     console.error('[GET /me] Error:', error);
     next(error);
@@ -1171,6 +1196,7 @@ router.post('/applications/:id/approve', authorize('admin'), async (req, res, ne
       customId = `BEN-${currentYear}-${suffix}`;
     }
 
+    const qrToken = beneficiary.qr_token || (Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase());
     await beneficiary.update({
       status: 'Approved',
       beneficiary_id_code: customId,
@@ -1179,7 +1205,9 @@ router.post('/applications/:id/approve', authorize('admin'), async (req, res, ne
       approved_at: beneficiary.status === 'Approved' ? beneficiary.approved_at : new Date(),
       approving_staff_id: req.user.id,
       rejection_reason: null,
-      missing_documents: null
+      missing_documents: null,
+      qr_token: qrToken,
+      qr_generated_at: beneficiary.qr_generated_at || new Date(),
     });
 
     // Log action to audit trail
@@ -1246,6 +1274,124 @@ router.post('/applications/:id/reject', authorize('admin'), async (req, res, nex
     });
 
     res.json({ success: true, message: 'Application rejected successfully', data: beneficiary });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── GET /:id/qr-pass ── Get printable Digital QR Pass for approved beneficiary
+router.get('/:id/qr-pass', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (req, res, next) => {
+  try {
+    const beneficiary = await Beneficiary.findByPk(req.params.id, {
+      include: [Barangay, User],
+    });
+
+    if (!beneficiary) {
+      return res.status(404).json({ success: false, message: 'Beneficiary not found' });
+    }
+
+    // Role safety: Beneficiaries can only access their own pass
+    if (req.user.role === 'beneficiary' && beneficiary.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Staff/Barangay can only access beneficiaries in their barangay
+    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
+      return res.status(403).json({ success: false, message: 'Access denied: Beneficiary belongs to a different barangay' });
+    }
+
+    if (beneficiary.status !== 'Approved') {
+      return res.status(400).json({ success: false, message: 'QR Pass is only available for Approved beneficiaries' });
+    }
+
+    // Ensure qr_token is generated
+    if (!beneficiary.qr_token) {
+      beneficiary.qr_token = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
+      beneficiary.qr_generated_at = new Date();
+      await beneficiary.save();
+    }
+
+    const qrPayload = `EBMS-QR:${beneficiary.qr_token}`;
+    const qrDataUrl = await QRCode.toDataURL(qrPayload, {
+      width: 360,
+      margin: 1,
+      color: { dark: '#002B49', light: '#FFFFFF' },
+      errorCorrectionLevel: 'H',
+    });
+
+    res.json({
+      success: true,
+      data: {
+        beneficiary_id: beneficiary.id,
+        first_name: beneficiary.first_name,
+        last_name: beneficiary.last_name,
+        middle_name: beneficiary.middle_name,
+        full_name: `${beneficiary.first_name} ${beneficiary.middle_name ? beneficiary.middle_name + ' ' : ''}${beneficiary.last_name}`.trim(),
+        beneficiary_id_code: beneficiary.beneficiary_id_code,
+        household_id_number: beneficiary.household_id_number,
+        category: beneficiary.category,
+        barangay: beneficiary.Barangay?.barangay_name || 'N/A',
+        address: beneficiary.address || '',
+        contact_number: beneficiary.contact_number || '',
+        profile_photo: beneficiary.profile_photo || null,
+        RFID_number: beneficiary.RFID_number || null,
+        qr_token: beneficiary.qr_token,
+        qr_code: qrPayload,
+        qr_image_url: qrDataUrl,
+        qr_generated_at: beneficiary.qr_generated_at,
+        approval_date: beneficiary.approval_date || beneficiary.approved_at,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── POST /:id/regenerate-qr ── Regenerate Digital QR Pass (Admin/Staff only)
+router.post('/:id/regenerate-qr', authorize('admin', 'staff'), async (req, res, next) => {
+  try {
+    const beneficiary = await Beneficiary.findByPk(req.params.id, {
+      include: [Barangay],
+    });
+
+    if (!beneficiary) {
+      return res.status(404).json({ success: false, message: 'Beneficiary not found' });
+    }
+
+    if (beneficiary.status !== 'Approved') {
+      return res.status(400).json({ success: false, message: 'Only Approved beneficiaries can have a QR Pass' });
+    }
+
+    const newToken = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
+
+    beneficiary.qr_token = newToken;
+    beneficiary.qr_generated_at = new Date();
+    await beneficiary.save();
+
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: `Regenerated QR Pass for ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code})`,
+      module: 'Beneficiary Management',
+    });
+
+    const qrPayload = `EBMS-QR:${newToken}`;
+    const qrDataUrl = await QRCode.toDataURL(qrPayload, {
+      width: 360,
+      margin: 1,
+      color: { dark: '#002B49', light: '#FFFFFF' },
+      errorCorrectionLevel: 'H',
+    });
+
+    res.json({
+      success: true,
+      message: 'Digital QR Pass regenerated successfully',
+      data: {
+        qr_token: newToken,
+        qr_code: qrPayload,
+        qr_image_url: qrDataUrl,
+        qr_generated_at: beneficiary.qr_generated_at,
+      },
+    });
   } catch (error) {
     next(error);
   }

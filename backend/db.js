@@ -173,6 +173,23 @@ const connectDatabase = async () => {
   // preventing the duplicate _2, _3... index buildup that hits MySQL's 64-key limit.
   await sequelize.sync({ alter: { drop: false } });
   console.log('MySQL database connection established successfully.');
+
+  // Issue QR passes to approved beneficiaries that don't have one yet
+  try {
+    const missing = await Beneficiary.findAll({
+      where: { status: 'Approved', qr_token: null },
+      attributes: ['id'],
+    });
+    for (const b of missing) {
+      await Beneficiary.update(
+        { qr_token: Beneficiary.generateQrToken(), qr_generated_at: new Date() },
+        { where: { id: b.id }, hooks: false }
+      );
+    }
+    if (missing.length) console.log(`Issued QR passes to ${missing.length} approved beneficiaries.`);
+  } catch (err) {
+    console.warn('QR pass backfill skipped:', err.message);
+  }
 };
 
 module.exports = {

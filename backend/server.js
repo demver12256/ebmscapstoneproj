@@ -70,7 +70,7 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || isLocalNetworkFrontend(origin)) {
+      if (!origin || process.env.NODE_ENV === 'development' || allowedOrigins.includes(origin) || isLocalNetworkFrontend(origin)) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
@@ -78,7 +78,6 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -155,6 +154,14 @@ app.use('/api/interventions', (req, res, next) => {
   try {
     delete require.cache[require.resolve('./routes/interventions')];
     return require('./routes/interventions')(req, res, next);
+  } catch (err) {
+    return next(err);
+  }
+});
+app.use('/api/bot', (req, res, next) => {
+  try {
+    delete require.cache[require.resolve('./routes/bot')];
+    return require('./routes/bot')(req, res, next);
   } catch (err) {
     return next(err);
   }
@@ -243,8 +250,8 @@ connectDatabase()
       checkAndProcessExpiredDistributions().catch(err => console.error('[SCHEDULER] Error:', err));
     }, 60000);
 
-    const server = app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server is running on port ${PORT} (0.0.0.0)`);
       console.log(`API available at http://localhost:${PORT}/api`);
     });
 
@@ -273,16 +280,16 @@ connectDatabase()
           });
           // Retry listening after 1.5s
           setTimeout(() => {
-            server.listen(PORT, () => {
-              console.log(`Server is running on port ${PORT}`);
+            server.listen(PORT, '0.0.0.0', () => {
+              console.log(`Server is running on port ${PORT} (0.0.0.0)`);
               console.log(`API available at http://localhost:${PORT}/api`);
             });
           }, 1500);
         } catch (killErr) {
           console.warn(`⚠️ Port ${PORT} busy, retrying listen in 2s...`);
           setTimeout(() => {
-            server.listen(PORT, () => {
-              console.log(`Server is running on port ${PORT}`);
+            server.listen(PORT, '0.0.0.0', () => {
+              console.log(`Server is running on port ${PORT} (0.0.0.0)`);
               console.log(`API available at http://localhost:${PORT}/api`);
             });
           }, 2000);

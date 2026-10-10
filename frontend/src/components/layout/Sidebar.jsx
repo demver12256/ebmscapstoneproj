@@ -1,26 +1,46 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { 
   Home, Users, MapPin, ListChecks, BarChart3, UserCog, MessageSquare,
   Smartphone, Package, FileText, Award, FileCheck, Bell, HelpCircle, Settings, Megaphone, HandHeart,
-  Stethoscope, CalendarCheck, FileHeart
+  Stethoscope, CalendarCheck, FileHeart, ScrollText, Server, ShieldCheck, ChevronDown, X
 } from 'lucide-react';
 
 const staffNavItems = [
+  // ── Overview ──
   { path: '/dashboard', label: 'Dashboard', icon: Home, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
+
+  // ── Community Master Records ──
   { path: '/dashboard/beneficiaries', label: 'Beneficiaries', icon: Users, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
-  { path: '/dashboard/programs', label: 'Programs', icon: ListChecks, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/barangays', label: 'Barangays', icon: MapPin, roles: ['admin', 'mswdo_admin'] },
+
+  // ── Social Welfare & Assistance Services ──
+  { path: '/dashboard/programs', label: 'Programs', icon: ListChecks, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/distributions', label: 'Distributions', icon: Package, roles: ['admin', 'staff', 'barangay'] },
-  { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
   { path: '/dashboard/rfid-scanner', label: 'Distribution Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
   { path: '/dashboard/rfid-attendance', label: 'Attendance Scanner', icon: Smartphone, roles: ['staff', 'barangay'] },
-  { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, badge: 'messages', roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
   { path: '/dashboard/assistance-requests', label: 'Assistance Requests', icon: HandHeart, roles: ['admin', 'staff', 'barangay'] },
   { path: '/dashboard/interventions-management', label: 'Interventions', icon: FileHeart, roles: ['admin', 'staff', 'barangay'] },
+
+  // ── Communication & Community ──
+  { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
+  { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, badge: 'messages', roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
+
+  // ── Analytics & System Administration ──
   { path: '/dashboard/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'mswdo_admin', 'staff', 'barangay'] },
   { path: '/dashboard/users', label: 'Users', icon: UserCog, roles: ['admin', 'mswdo_admin', 'staff'] },
+  { 
+    path: '/dashboard/logs', 
+    label: 'Logs', 
+    icon: ScrollText, 
+    roles: ['admin'],
+    subItems: [
+      { path: '/dashboard/logs/system', label: 'System Log', icon: Server },
+      { path: '/dashboard/logs/sms', label: 'SMS Log', icon: Smartphone },
+      { path: '/dashboard/logs/audit', label: 'Audit Logs', icon: ShieldCheck },
+    ]
+  },
 ];
 
 const beneficiaryNavItems = [
@@ -33,9 +53,33 @@ const beneficiaryNavItems = [
   { path: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: 'notifications', requiresApproval: true, section: 'main' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onClose = () => {} }) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isLogsActive = location.pathname.startsWith('/dashboard/logs') || 
+                       location.pathname.startsWith('/dashboard/sms') || 
+                       location.pathname.startsWith('/dashboard/system') || 
+                       location.pathname.startsWith('/dashboard/audit');
+  const [logsOpen, setLogsOpen] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!mobileOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileOpen, onClose]);
+
+  React.useEffect(() => {
+    if (isLogsActive) {
+      setLogsOpen(true);
+    }
+  }, [isLogsActive]);
+
   const [beneficiaryStatus, setBeneficiaryStatus] = React.useState(null);
   const [unreadCount, setUnreadCount] = React.useState(0);
   const [unreadMessageCount, setUnreadMessageCount] = React.useState(0);
@@ -127,7 +171,22 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white px-4 py-6 lg:flex lg:flex-col lg:justify-between h-screen sticky top-0 self-start overflow-y-auto">
+    <>
+    {mobileOpen && (
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close navigation menu"
+        className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-[1px] lg:hidden"
+      />
+    )}
+    <aside
+      id="mobile-navigation-panel"
+      role={mobileOpen ? 'dialog' : undefined}
+      aria-modal={mobileOpen ? 'true' : undefined}
+      aria-label="Main navigation"
+      className={`fixed inset-y-0 left-0 z-50 flex h-[100dvh] w-72 max-w-[90vw] shrink-0 flex-col justify-between overflow-y-auto border-r border-slate-200 bg-white px-4 py-6 shadow-xl transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:bottom-auto lg:left-auto lg:z-auto lg:h-screen lg:w-64 lg:translate-x-0 lg:shadow-none ${mobileOpen ? 'visible translate-x-0' : 'invisible -translate-x-full lg:visible lg:translate-x-0'}`}
+    >
       <div className="space-y-8 pr-1">
         {/* DSWD Brand Header */}
         <div className="flex items-center gap-3">
@@ -136,6 +195,14 @@ export default function Sidebar() {
             <span className="text-2xl font-black tracking-tighter text-dswd-blue block leading-none">BeniAid</span>
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mt-0.5">Beneficiary System</span>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close navigation menu"
+            className="ml-auto rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 lg:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         {/* Navigation Items */}
@@ -152,6 +219,7 @@ export default function Sidebar() {
                       key={item.path}
                       to={item.path}
                       end={item.path === '/dashboard'}
+                      onClick={onClose}
                       className={({ isActive }) =>
                         `flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition relative ${isActive
                           ? 'bg-dswd-lightBlue text-white shadow-lg shadow-blue-100'
@@ -179,6 +247,7 @@ export default function Sidebar() {
                       <NavLink
                         key={item.path}
                         to={item.path}
+                        onClick={onClose}
                         className={({ isActive }) =>
                           `flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition ${isActive
                             ? 'bg-dswd-lightBlue text-white shadow-lg shadow-blue-100'
@@ -200,11 +269,71 @@ export default function Sidebar() {
           <nav className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
+
+              if (item.subItems && item.subItems.length > 0) {
+                const isChildActive = item.subItems.some(sub => location.pathname === sub.path) || 
+                                      location.pathname.startsWith('/dashboard/logs') ||
+                                      location.pathname.startsWith('/dashboard/system-logs') ||
+                                      location.pathname.startsWith('/dashboard/sms-logs') ||
+                                      location.pathname.startsWith('/dashboard/audit-logs');
+                return (
+                  <div key={item.path} className="space-y-1 pt-1">
+                    <div
+                      onClick={() => setLogsOpen(!logsOpen)}
+                      className={`flex items-center justify-between gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition cursor-pointer select-none ${
+                        isChildActive
+                          ? 'bg-blue-50 text-dswd-blue font-bold border border-blue-100'
+                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <Icon className="h-5 w-5 shrink-0" />
+                        <span>{item.label}</span>
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 transition-transform duration-200 text-slate-400 ${
+                          logsOpen ? 'rotate-180 text-dswd-blue' : ''
+                        }`}
+                      />
+                    </div>
+                    {logsOpen && (
+                      <div className="pl-4 pr-1 space-y-1 border-l-2 border-slate-100 ml-5 my-1">
+                        {item.subItems.map((sub) => {
+                          const SubIcon = sub.icon;
+                          const isSubActive = location.pathname === sub.path || 
+                            (sub.path === '/dashboard/logs/system' && (location.pathname === '/dashboard/system-logs' || (location.pathname === '/dashboard/logs' && !location.search.includes('tab=')))) ||
+                            (sub.path === '/dashboard/logs/sms' && (location.pathname === '/dashboard/sms' || location.pathname === '/dashboard/sms-logs' || location.search.includes('tab=sms'))) ||
+                            (sub.path === '/dashboard/logs/audit' && (location.pathname === '/dashboard/audit-logs' || location.search.includes('tab=audit')));
+                          return (
+                            <NavLink
+                              key={sub.path}
+                              to={sub.path}
+                              onClick={onClose}
+                              className={() =>
+                                `flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                                  isSubActive
+                                    ? 'bg-dswd-lightBlue text-white shadow-md shadow-blue-100 font-bold'
+                                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                                }`
+                              }
+                            >
+                              <SubIcon className="h-4 w-4 shrink-0" />
+                              <span>{sub.label}</span>
+                            </NavLink>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               return (
                 <NavLink
                   key={item.path}
                   to={item.path}
                   end={item.path === '/dashboard'}
+                  onClick={onClose}
                   className={({ isActive }) =>
                     `flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition relative ${isActive
                       ? 'bg-dswd-lightBlue text-white shadow-lg shadow-blue-100'
@@ -245,5 +374,6 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }

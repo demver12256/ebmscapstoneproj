@@ -1,5 +1,6 @@
 node_modules
 build
+.local-https/
 .env.local
 .env.development.local
 .env.test.local

@@ -90,16 +90,23 @@ export default function BarangayListPage() {
   ];
 
   return (
-    <div className="space-y-8">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
-        <div className="flex items-center gap-2">
-          <MapPin className="w-8 h-8 text-yellow-300" />
-          <h1 className="text-3xl font-black tracking-tight">Barangay Directory & Demographics</h1>
+    <div className="space-y-6">
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              Jurisdiction & Coverage
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Barangay Directory & Demographics
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Overview of officially approved beneficiaries, 4Ps households, senior citizens, PWDs, and IP classifications across barangays.
+          </p>
         </div>
-        <p className="text-blue-100 text-sm mt-1 max-w-2xl">
-          Overview of officially approved municipal beneficiaries, 4Ps households, senior citizens, PWDs, and IP classifications across barangays.
-        </p>
       </div>
 
       {error && (
@@ -110,20 +117,20 @@ export default function BarangayListPage() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {statCards.map((card) => (
-          <div key={card.label} className={`bg-gradient-to-br ${card.from} ${card.to} rounded-xl p-4 border ${card.border}`}>
-            <div className="flex items-center gap-2 mb-2">
-              <card.icon className={`w-4 h-4 ${card.iconColor}`} />
-              <p className="text-xs font-medium text-slate-600">{card.label}</p>
+          <div key={card.label} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <card.icon className={`w-3.5 h-3.5 ${card.iconColor}`} />
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{card.label}</p>
             </div>
-            <p className={`text-2xl font-bold ${card.color}`}>{loading ? '...' : card.value}</p>
+            <p className={`text-xl sm:text-2xl font-bold ${card.color}`}>{loading ? '...' : card.value}</p>
           </div>
         ))}
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+      <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>

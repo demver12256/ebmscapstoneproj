@@ -6,7 +6,7 @@ const { OAuth2Client } = require('google-auth-library');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { Op } = require('sequelize');
-const { sequelize, User, Beneficiary, Otp } = require('../db');
+const { sequelize, User, Beneficiary, Barangay, Otp } = require('../db');
 const { sendSms } = require('../services/smsService');
 
 const router = express.Router();
@@ -414,6 +414,9 @@ router.post('/google', async (req, res, next) => {
       await clearExpiredLoginLock(user);
     }
 
+    const defaultBarangay = await Barangay.findOne({ order: [['id', 'ASC']] });
+    const defaultBarangayId = defaultBarangay ? defaultBarangay.id : 1;
+
     if (!user) {
       // Auto-create beneficiary account for new Google users
       const randomPassword = crypto.randomBytes(32).toString('hex');
@@ -436,7 +439,7 @@ router.post('/google', async (req, res, next) => {
         last_name: family_name || 'User',
         sex: 'Other',
         birthdate: '2000-01-01',
-        barangay_id: null,
+        barangay_id: defaultBarangayId,
         category: 'Persons with Disabilities (PWD)',
         ip_classification: 'Non-IP',
         contact_number: '',
@@ -454,7 +457,7 @@ router.post('/google', async (req, res, next) => {
           last_name: user.last_name || family_name || 'User',
           sex: 'Other',
           birthdate: '2000-01-01',
-          barangay_id: null,
+          barangay_id: defaultBarangayId,
           category: 'Persons with Disabilities (PWD)',
           ip_classification: 'Non-IP',
           contact_number: user.phone || '',

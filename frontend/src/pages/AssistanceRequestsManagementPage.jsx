@@ -297,69 +297,63 @@ export default function AssistanceRequestsManagementPage() {
         </div>
       )}
 
-      {/* Unified Header Banner */}
-      <div className={`text-white rounded-2xl p-6 shadow-xl relative overflow-hidden ${
-        isMswdo
-          ? 'bg-gradient-to-r from-emerald-800 via-teal-900 to-slate-900'
-          : 'bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900'
-      }`}>
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-4 right-8 w-32 h-32 rounded-full bg-white/30 blur-2xl" />
-          <div className="absolute bottom-2 left-16 w-24 h-24 rounded-full bg-yellow-300/30 blur-xl" />
-        </div>
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-yellow-300 border border-white/20 text-xs font-bold uppercase tracking-wider mb-2">
-              <Sparkles className="w-3.5 h-3.5" />
-              {isMswdo ? 'MSWDO Municipal Office Console' : 'Social Welfare Assistance Console'}
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-2.5">
-              <HandHeart className="w-8 h-8 text-yellow-300" />
-              Assistance Requests
-            </h1>
-            <p className="text-blue-100 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
-              {isMswdo
-                ? 'Manage municipal assistance requests directed to MSWDO for Senior Citizens and Persons with Disabilities (PWD).'
-                : 'Review and manage beneficiary assistance requests directed to DSWD and Municipal offices: Medical, Hospital, Educational, Financial, and Burial assistance.'}
-            </p>
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              {isMswdo ? 'MSWDO Console' : 'Welfare Assistance'}
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Assistance Requests
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {isMswdo
+              ? 'Manage municipal assistance requests directed to MSWDO for Senior Citizens and Persons with Disabilities (PWD).'
+              : 'Review and manage beneficiary assistance requests directed to DSWD and Municipal offices.'}
+          </p>
+        </div>
 
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
           <button
             type="button"
             onClick={loadRequestsData}
-            className="shrink-0 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 backdrop-blur-md flex items-center gap-2 transition-all self-start sm:self-center shadow-sm"
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition shadow-2xs active:scale-95"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh Data
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? 'animate-spin text-blue-600' : ''}`} />
+            <span>Refresh</span>
           </button>
         </div>
       </div>
 
       {/* KPI Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-          <span className="text-xs font-semibold text-slate-500 block mb-1">Total Requests</span>
-          <span className="text-2xl font-black text-slate-900">{stats.total || 0}</span>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Total</span>
+          <span className="text-xl sm:text-2xl font-bold text-slate-900">{stats.total || 0}</span>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-amber-200 bg-amber-50/30 shadow-sm">
-          <span className="text-xs font-semibold text-amber-700 block mb-1">Pending</span>
-          <span className="text-2xl font-black text-amber-800">{stats.Pending || 0}</span>
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+          <span className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider block mb-1">Pending</span>
+          <span className="text-xl sm:text-2xl font-bold text-amber-600">{stats.Pending || 0}</span>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-blue-200 bg-blue-50/30 shadow-sm">
-          <span className="text-xs font-semibold text-blue-700 block mb-1">Under Review</span>
-          <span className="text-2xl font-black text-blue-800">{stats['Under Review'] || 0}</span>
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+          <span className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider block mb-1">Review</span>
+          <span className="text-xl sm:text-2xl font-bold text-blue-600">{stats['Under Review'] || 0}</span>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-emerald-200 bg-emerald-50/30 shadow-sm">
-          <span className="text-xs font-semibold text-emerald-700 block mb-1">Approved</span>
-          <span className="text-2xl font-black text-emerald-800">{stats.Approved || 0}</span>
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+          <span className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider block mb-1">Approved</span>
+          <span className="text-xl sm:text-2xl font-bold text-emerald-600">{stats.Approved || 0}</span>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-rose-200 bg-rose-50/30 shadow-sm">
-          <span className="text-xs font-semibold text-rose-700 block mb-1">Rejected</span>
-          <span className="text-2xl font-black text-rose-800">{stats.Rejected || 0}</span>
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+          <span className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider block mb-1">Rejected</span>
+          <span className="text-xl sm:text-2xl font-bold text-rose-600">{stats.Rejected || 0}</span>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-purple-200 bg-purple-50/30 shadow-sm">
-          <span className="text-xs font-semibold text-purple-700 block mb-1">Completed</span>
-          <span className="text-2xl font-black text-purple-800">{stats.Completed || 0}</span>
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+          <span className="text-[11px] font-semibold text-purple-600 uppercase tracking-wider block mb-1">Completed</span>
+          <span className="text-xl sm:text-2xl font-bold text-purple-600">{stats.Completed || 0}</span>
         </div>
       </div>
 

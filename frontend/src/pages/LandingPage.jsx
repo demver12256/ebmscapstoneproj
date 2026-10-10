@@ -11,6 +11,9 @@ import {
   Smartphone, Radio, Eye, EyeOff, Download,
   AlertCircle, ChevronDown, RefreshCw, X, Mail
 } from 'lucide-react';
+import BeniAidBot from '../components/BeniAidBot';
+
+const MOBILE_APK_VERSION = '1.2.0-20261011';
 
 // Google Sign-In Button component
 const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
@@ -54,12 +57,13 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
             },
           });
           window.google.accounts.id.renderButton(buttonRef.current, {
+            type: 'standard',
             theme: 'outline',
-            size: 'large',
-            width: 360,
-            text: text,
+            size: 'medium',
+            text: text || 'signin_with',
             shape: 'rectangular',
-            logo_alignment: 'center',
+            logo_alignment: 'left',
+            width: 360,
           });
           setScriptLoaded(true);
           setScriptFailed(false);
@@ -157,6 +161,11 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
           </svg>
           {googleLoading ? 'Connecting...' : (text === 'signup_with' ? 'Sign up with Google' : 'Sign in with Google')}
         </button>
+      )}
+      {typeof window !== 'undefined' && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(window.location.hostname) && (
+        <p className="text-[11px] text-amber-700 bg-amber-50/80 p-2 rounded-lg border border-amber-200 mt-2 text-center leading-relaxed">
+          ⚠️ <strong>Google Sign-In:</strong> I-access ang app sa <strong className="font-mono text-slate-800">http://localhost:3000</strong> sa computer upang gumana ang Google (hindi pinapayagan ng Google ang direktang IP address).
+        </p>
       )}
     </div>
   );
@@ -394,7 +403,7 @@ export default function LandingPage() {
   const handleInstallApp = () => {
     const downloadLink = document.createElement('a');
     // Cache-bust the APK so the landing page never serves a stale browser/CDN copy.
-    downloadLink.href = `/downloads/BeniAid.apk?v=${encodeURIComponent(process.env.REACT_APP_MOBILE_APK_VERSION || 'dswd-logo-20261004')}`;
+    downloadLink.href = `/downloads/BeniAid.apk?v=${encodeURIComponent(MOBILE_APK_VERSION)}`;
     downloadLink.download = 'BeniAid.apk';
     document.body.appendChild(downloadLink);
     downloadLink.click();
@@ -788,7 +797,7 @@ export default function LandingPage() {
               aria-label="Download BeniAid APK"
             >
               <Download className="h-4 w-4" />
-              Install App
+              Android App
             </button>
             <Button
               onClick={() => {
@@ -859,9 +868,12 @@ export default function LandingPage() {
                   className="px-6 py-4 rounded-xl border-2 border-[#00338D] text-[#00338D] hover:bg-blue-50 font-bold text-sm transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-2"
                 >
                   <Download className="w-5 h-5" />
-                  Install App
+                  Download Android App
                 </button>
               </div>
+              <p className="text-xs text-slate-500 font-medium">
+                BeniAid for Android · Version 1.2 · Updated October 11, 2026
+              </p>
 
               {/* Metrics Row */}
               <div className="pt-6 grid grid-cols-3 gap-6 border-t border-slate-200 text-left max-w-lg mx-auto lg:mx-0">
@@ -1120,7 +1132,7 @@ export default function LandingPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           <div className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-blue-300 hover:shadow-sm transition">
             <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#00338D] border border-blue-100 flex items-center justify-center mb-4">
               <Radio className="w-6 h-6" />
@@ -1158,6 +1170,16 @@ export default function LandingPage() {
             <h3 className="text-base font-bold text-slate-900 mb-1.5">Transparent Reports</h3>
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
               Full transaction ledger, timestamped event tracking, and exportable audit reports.
+            </p>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-emerald-300 hover:shadow-sm transition">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center justify-center mb-4">
+              <QrCode className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1.5">Digital QR Pass</h3>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Approved beneficiaries can show a temporary QR ID in the mobile app for payout and attendance when an RFID card is unavailable.
             </p>
           </div>
         </div>
@@ -2049,6 +2071,8 @@ export default function LandingPage() {
         </div>
       )}
 
+      {/* Floating BeniAid AI Assistant */}
+      <BeniAidBot />
     </div>
   );
 }

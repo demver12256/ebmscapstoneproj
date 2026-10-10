@@ -568,9 +568,9 @@ router.get('/export/beneficiaries', authorize('admin', 'staff', 'barangay'), asy
       if (!cat || (!lower.includes('senior') && !lower.includes('pwd') && !lower.includes('disabilit') && !lower.includes('4ps') && !lower.includes('pantawid'))) {
         where[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
       } else {
-        where.category = category;
+        where.category = { [Op.like]: `%${category}%` };
       }
-    } else if (category) where.category = category;
+    } else if (category) where.category = { [Op.like]: `%${category}%` };
 
     const beneficiaries = await Beneficiary.findAll({
       where,
@@ -767,13 +767,21 @@ router.get('/table/beneficiaries', authorize('admin', 'staff', 'barangay'), asyn
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
     const barangayId = req.user.barangay_id;
-    const { barangay_id: qBarangay, program_id, page = 1, limit = 10 } = req.query;
+    const { barangay_id: qBarangay, program_id, category, page = 1, limit = 10 } = req.query;
 
     const where = { status: 'Approved' };
     if (isBarangayScoped && barangayId) where.barangay_id = barangayId;
     else if (qBarangay) where.barangay_id = qBarangay;
     if (isMswdoRole(req.user.role)) {
-      where[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+      const cat = category || '';
+      const lower = String(cat).toLowerCase();
+      if (!cat || (!lower.includes('senior') && !lower.includes('pwd') && !lower.includes('disabilit') && !lower.includes('4ps') && !lower.includes('pantawid'))) {
+        where[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+      } else {
+        where.category = { [Op.like]: `%${category}%` };
+      }
+    } else if (category) {
+      where.category = { [Op.like]: `%${category}%` };
     }
 
     // Filter by program if specified
@@ -1007,31 +1015,64 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
     const barangayId = req.user.barangay_id;
-    const { page = 1, limit = 10 } = req.query;
+    const { barangay_id: qBarangay, category, start_date, end_date, page = 1, limit = 10 } = req.query;
 
     const announcementScopeWhere = {};
     if (isMswdoRole(req.user.role)) {
+      const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
+      const mswdoUserIds = mswdoUsers.map(u => u.id);
       const mswdoAnnouncements = await Announcement.findAll({
-        where: { created_by_user_id: req.user.id },
+        where: {
+          [Op.or]: [
+            { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
+            { notify_mswdo: true },
+            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
+            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
+            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
+          ],
+        },
         attributes: ['id'],
       });
       announcementScopeWhere.id = { [Op.in]: mswdoAnnouncements.map(a => a.id) };
     }
 
     const benWhere = {};
-    if (isBarangayScoped && barangayId) {
-      benWhere.barangay_id = barangayId;
+    const effectiveBarangay = isBarangayScoped && barangayId ? barangayId : qBarangay;
+    if (effectiveBarangay) {
+      benWhere.barangay_id = effectiveBarangay;
+    }
+    if (isMswdoRole(req.user.role)) {
+      if (category) {
+        benWhere.category = { [Op.like]: `%${category}%` };
+      } else {
+        benWhere[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+      }
+    } else if (category) {
+      benWhere.category = { [Op.like]: `%${category}%` };
     }
 
     const attendanceWhere = {};
     if (Object.keys(announcementScopeWhere).length > 0) {
       attendanceWhere.announcement_id = { [Op.in]: (await Announcement.findAll({ where: announcementScopeWhere, attributes: ['id'] })).map(a => a.id) };
     }
+    if (start_date && end_date) {
+      attendanceWhere.attendance_date = { [Op.between]: [start_date, end_date] };
+    } else if (start_date) {
+      attendanceWhere.attendance_date = { [Op.gte]: start_date };
+    } else if (end_date) {
+      attendanceWhere.attendance_date = { [Op.lte]: end_date };
+    }
 
     const attendanceRows = await Attendance.findAll({
       where: attendanceWhere,
       include: [
-        { model: Beneficiary, attributes: ['id', 'first_name', 'last_name', 'category'], where: Object.keys(benWhere).length > 0 ? benWhere : undefined, required: Object.keys(benWhere).length > 0 },
+        {
+          model: Beneficiary,
+          attributes: ['id', 'first_name', 'last_name', 'category'],
+          where: Object.keys(benWhere).length > 0 ? benWhere : undefined,
+          required: Object.keys(benWhere).length > 0,
+          include: [{ model: Barangay, attributes: ['id', 'barangay_name'] }],
+        },
         { model: Announcement, as: 'Announcement', attributes: ['id', 'title', 'event_date'], required: false },
       ],
       order: [['attendance_date', 'DESC'], ['createdAt', 'DESC']],
@@ -1045,7 +1086,14 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
     const absentRows = await AnnouncementRecipient.findAll({
       where: absentWhere,
       include: [
-        { model: Beneficiary, as: 'Beneficiary', attributes: ['id', 'first_name', 'last_name', 'category'], where: Object.keys(benWhere).length > 0 ? benWhere : undefined, required: Object.keys(benWhere).length > 0 },
+        {
+          model: Beneficiary,
+          as: 'Beneficiary',
+          attributes: ['id', 'first_name', 'last_name', 'category'],
+          where: Object.keys(benWhere).length > 0 ? benWhere : undefined,
+          required: Object.keys(benWhere).length > 0,
+          include: [{ model: Barangay, attributes: ['id', 'barangay_name'] }],
+        },
         { model: Announcement, attributes: ['id', 'title', 'event_date'], required: false },
       ],
       order: [['scanned_at', 'DESC'], ['id', 'DESC']],
@@ -1056,6 +1104,7 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
         id: r.id,
         beneficiary_name: r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : 'N/A',
         category: r.Beneficiary?.category || '—',
+        barangay_name: r.Beneficiary?.Barangay?.barangay_name || '—',
         event_name: r.event_name || r.Announcement?.title || 'N/A',
         attendance_date: r.attendance_date || r.Announcement?.event_date || null,
         time_in: r.time_in || '—',
@@ -1066,6 +1115,7 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
         id: `a-${r.id}`,
         beneficiary_name: r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : 'N/A',
         category: r.Beneficiary?.category || '—',
+        barangay_name: r.Beneficiary?.Barangay?.barangay_name || '—',
         event_name: r.Announcement?.title || 'N/A',
         attendance_date: r.Announcement?.event_date || null,
         time_in: '—',
@@ -1073,6 +1123,125 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
         remarks: 'Marked absent',
       })),
     ].sort((a, b) => new Date(b.attendance_date || 0) - new Date(a.attendance_date || 0));
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const paginated = mapped.slice(offset, offset + parseInt(limit));
+
+    res.json({
+      success: true,
+      data: paginated,
+      pagination: {
+        total: mapped.length,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(mapped.length / parseInt(limit)) || 1
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Announcements Table JSON ──
+router.get('/table/announcements', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+  try {
+    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const barangayId = req.user.barangay_id;
+    const { barangay_id: qBarangay, category, priority, status, start_date, end_date, page = 1, limit = 10 } = req.query;
+
+    const where = {};
+    if (priority) where.priority = priority;
+    if (status) where.status = status;
+    if (start_date && end_date) {
+      where.event_date = { [Op.between]: [start_date, end_date] };
+    } else if (start_date) {
+      where.event_date = { [Op.gte]: start_date };
+    } else if (end_date) {
+      where.event_date = { [Op.lte]: end_date };
+    }
+
+    const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
+    const mswdoUserIds = mswdoUsers.map(u => u.id);
+
+    if (isMswdoRole(req.user.role)) {
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        [Op.or]: [
+          { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
+          { notify_mswdo: true },
+          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
+          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
+          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
+        ],
+      });
+    }
+
+    let allAnnouncements = await Announcement.findAll({
+      where,
+      include: [
+        { model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email'] },
+        { model: AnnouncementRecipient, as: 'Recipients', attributes: ['id', 'attendance_status'] },
+        { model: Attendance, as: 'Attendances', attributes: ['id', 'status'], required: false },
+      ],
+      order: [['event_date', 'DESC'], ['created_at', 'DESC']],
+    });
+
+    const targetBarangayId = isBarangayScoped && barangayId ? Number(barangayId) : (qBarangay ? Number(qBarangay) : null);
+    if (targetBarangayId) {
+      allAnnouncements = allAnnouncements.filter(a => {
+        let bIds = [];
+        try { bIds = typeof a.target_barangays === 'string' ? JSON.parse(a.target_barangays) : (a.target_barangays || []); } catch (e) { bIds = [a.target_barangays]; }
+        if (!Array.isArray(bIds) || bIds.length === 0) return true;
+        return bIds.map(Number).includes(targetBarangayId);
+      });
+    }
+
+    if (category) {
+      const catLower = category.toLowerCase();
+      allAnnouncements = allAnnouncements.filter(a => {
+        let cats = [];
+        try { cats = typeof a.target_programs === 'string' ? JSON.parse(a.target_programs) : (a.target_programs || []); } catch (e) { cats = [a.target_programs]; }
+        if (!Array.isArray(cats) || cats.length === 0) return true;
+        return cats.some(c => String(c).toLowerCase().includes(catLower));
+      });
+    }
+
+    const allBarangays = await Barangay.findAll({ attributes: ['id', 'barangay_name'] });
+    const barangayMap = new Map(allBarangays.map(b => [b.id, b.barangay_name]));
+
+    const mapped = allAnnouncements.map(a => {
+      let catNames = [];
+      try {
+        const parsed = typeof a.target_programs === 'string' ? JSON.parse(a.target_programs) : (a.target_programs || []);
+        catNames = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) { catNames = [a.target_programs]; }
+
+      let bNames = [];
+      try {
+        const parsed = typeof a.target_barangays === 'string' ? JSON.parse(a.target_barangays) : (a.target_barangays || []);
+        const ids = (Array.isArray(parsed) ? parsed : [parsed]).map(Number).filter(Boolean);
+        bNames = ids.length === 0 ? ['All Barangays'] : ids.map(id => barangayMap.get(id) || `Brgy ${id}`);
+      } catch (e) { bNames = ['All Barangays']; }
+
+      const totalRecipients = a.Recipients?.length || 0;
+      const presentCount = (a.Attendances?.length || 0) + (a.Recipients?.filter(r => r.attendance_status === 'Present').length || 0);
+
+      return {
+        id: a.id,
+        title: a.title,
+        venue: a.venue || '—',
+        event_date: a.event_date ? new Date(a.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—',
+        event_time: a.event_time ? (a.end_time ? `${a.event_time} - ${a.end_time}` : a.event_time) : '—',
+        target_categories: catNames.filter(Boolean).join(', ') || 'All Sectors',
+        target_barangays: bNames.join(', ') || 'All Barangays',
+        priority: a.priority || 'Normal',
+        status: a.status,
+        attendees: presentCount,
+        recipients_count: totalRecipients,
+        created_by: a.CreatedBy ? `${a.CreatedBy.first_name} ${a.CreatedBy.last_name}` : 'System',
+        created_at: a.createdAt,
+      };
+    });
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const paginated = mapped.slice(offset, offset + parseInt(limit));
@@ -1190,28 +1359,63 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
   try {
     const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
     const barangayId = req.user.barangay_id;
+    const { barangay_id: qBarangay, category, start_date, end_date } = req.query;
 
     const announcementScopeWhere = {};
     if (isMswdoRole(req.user.role)) {
+      const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
+      const mswdoUserIds = mswdoUsers.map(u => u.id);
       const mswdoAnnouncements = await Announcement.findAll({
-        where: { created_by_user_id: req.user.id },
+        where: {
+          [Op.or]: [
+            { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
+            { notify_mswdo: true },
+            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
+            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
+            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
+          ],
+        },
         attributes: ['id'],
       });
       announcementScopeWhere.id = { [Op.in]: mswdoAnnouncements.map(a => a.id) };
     }
 
     const benWhere = {};
-    if (isBarangayScoped && barangayId) benWhere.barangay_id = barangayId;
+    const effectiveBarangay = isBarangayScoped && barangayId ? barangayId : qBarangay;
+    if (effectiveBarangay) benWhere.barangay_id = effectiveBarangay;
+
+    if (isMswdoRole(req.user.role)) {
+      if (category) {
+        benWhere.category = { [Op.like]: `%${category}%` };
+      } else {
+        benWhere[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+      }
+    } else if (category) {
+      benWhere.category = { [Op.like]: `%${category}%` };
+    }
 
     const attendanceWhere = {};
     if (Object.keys(announcementScopeWhere).length > 0) {
       attendanceWhere.announcement_id = { [Op.in]: (await Announcement.findAll({ where: announcementScopeWhere, attributes: ['id'] })).map(a => a.id) };
     }
+    if (start_date && end_date) {
+      attendanceWhere.attendance_date = { [Op.between]: [start_date, end_date] };
+    } else if (start_date) {
+      attendanceWhere.attendance_date = { [Op.gte]: start_date };
+    } else if (end_date) {
+      attendanceWhere.attendance_date = { [Op.lte]: end_date };
+    }
 
     const records = await Attendance.findAll({
       where: attendanceWhere,
       include: [
-        { model: Beneficiary, attributes: ['first_name', 'last_name', 'category'], where: Object.keys(benWhere).length > 0 ? benWhere : undefined, required: Object.keys(benWhere).length > 0 },
+        {
+          model: Beneficiary,
+          attributes: ['first_name', 'last_name', 'category'],
+          where: Object.keys(benWhere).length > 0 ? benWhere : undefined,
+          required: Object.keys(benWhere).length > 0,
+          include: [{ model: Barangay, attributes: ['barangay_name'] }],
+        },
         { model: Announcement, as: 'Announcement', attributes: ['title', 'event_date'], required: false },
       ],
       order: [['attendance_date', 'DESC']],
@@ -1225,7 +1429,14 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
     const absentRecords = await AnnouncementRecipient.findAll({
       where: absentWhere,
       include: [
-        { model: Beneficiary, as: 'Beneficiary', attributes: ['first_name', 'last_name', 'category'], where: Object.keys(benWhere).length > 0 ? benWhere : undefined, required: Object.keys(benWhere).length > 0 },
+        {
+          model: Beneficiary,
+          as: 'Beneficiary',
+          attributes: ['first_name', 'last_name', 'category'],
+          where: Object.keys(benWhere).length > 0 ? benWhere : undefined,
+          required: Object.keys(benWhere).length > 0,
+          include: [{ model: Barangay, attributes: ['barangay_name'] }],
+        },
         { model: Announcement, attributes: ['title', 'event_date'], required: false },
       ],
       order: [['scanned_at', 'DESC']],
@@ -1236,6 +1447,7 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
         r.id,
         r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : '',
         r.Beneficiary?.category || '',
+        r.Beneficiary?.Barangay?.barangay_name || '',
         r.event_name || r.Announcement?.title || '',
         r.attendance_date || r.Announcement?.event_date || '',
         r.time_in || '',
@@ -1246,6 +1458,7 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
         `a-${r.id}`,
         r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : '',
         r.Beneficiary?.category || '',
+        r.Beneficiary?.Barangay?.barangay_name || '',
         r.Announcement?.title || '',
         r.Announcement?.event_date || '',
         '',
@@ -1254,10 +1467,120 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
       ])
     ];
 
-    const headers = ['ID', 'Beneficiary Name', 'Category', 'Event Name', 'Date', 'Time In', 'Status', 'Remarks'];
+    const headers = ['ID', 'Beneficiary Name', 'Category', 'Barangay', 'Event Name', 'Date', 'Time In', 'Status', 'Remarks'];
     const csv = toCSV(headers, rows);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="attendance-report.csv"');
+    res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Export Announcements as CSV ──
+router.get('/export/announcements', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+  try {
+    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const barangayId = req.user.barangay_id;
+    const { barangay_id: qBarangay, category, priority, status, start_date, end_date } = req.query;
+
+    const where = {};
+    if (priority) where.priority = priority;
+    if (status) where.status = status;
+    if (start_date && end_date) {
+      where.event_date = { [Op.between]: [start_date, end_date] };
+    } else if (start_date) {
+      where.event_date = { [Op.gte]: start_date };
+    } else if (end_date) {
+      where.event_date = { [Op.lte]: end_date };
+    }
+
+    const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
+    const mswdoUserIds = mswdoUsers.map(u => u.id);
+
+    if (isMswdoRole(req.user.role)) {
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        [Op.or]: [
+          { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
+          { notify_mswdo: true },
+          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
+          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
+          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
+        ],
+      });
+    }
+
+    let allAnnouncements = await Announcement.findAll({
+      where,
+      include: [
+        { model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email'] },
+        { model: AnnouncementRecipient, as: 'Recipients', attributes: ['id', 'attendance_status'] },
+        { model: Attendance, as: 'Attendances', attributes: ['id', 'status'], required: false },
+      ],
+      order: [['event_date', 'DESC'], ['created_at', 'DESC']],
+    });
+
+    const targetBarangayId = isBarangayScoped && barangayId ? Number(barangayId) : (qBarangay ? Number(qBarangay) : null);
+    if (targetBarangayId) {
+      allAnnouncements = allAnnouncements.filter(a => {
+        let bIds = [];
+        try { bIds = typeof a.target_barangays === 'string' ? JSON.parse(a.target_barangays) : (a.target_barangays || []); } catch (e) { bIds = [a.target_barangays]; }
+        if (!Array.isArray(bIds) || bIds.length === 0) return true;
+        return bIds.map(Number).includes(targetBarangayId);
+      });
+    }
+
+    if (category) {
+      const catLower = category.toLowerCase();
+      allAnnouncements = allAnnouncements.filter(a => {
+        let cats = [];
+        try { cats = typeof a.target_programs === 'string' ? JSON.parse(a.target_programs) : (a.target_programs || []); } catch (e) { cats = [a.target_programs]; }
+        if (!Array.isArray(cats) || cats.length === 0) return true;
+        return cats.some(c => String(c).toLowerCase().includes(catLower));
+      });
+    }
+
+    const allBarangays = await Barangay.findAll({ attributes: ['id', 'barangay_name'] });
+    const barangayMap = new Map(allBarangays.map(b => [b.id, b.barangay_name]));
+
+    const headers = ['ID', 'Title', 'Date', 'Time', 'Venue', 'Target Sector', 'Target Barangay', 'Priority', 'Status', 'Attendees', 'Recipients', 'Created By'];
+    const rows = allAnnouncements.map(a => {
+      let catNames = [];
+      try {
+        const parsed = typeof a.target_programs === 'string' ? JSON.parse(a.target_programs) : (a.target_programs || []);
+        catNames = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) { catNames = [a.target_programs]; }
+
+      let bNames = [];
+      try {
+        const parsed = typeof a.target_barangays === 'string' ? JSON.parse(a.target_barangays) : (a.target_barangays || []);
+        const ids = (Array.isArray(parsed) ? parsed : [parsed]).map(Number).filter(Boolean);
+        bNames = ids.length === 0 ? ['All Barangays'] : ids.map(id => barangayMap.get(id) || `Brgy ${id}`);
+      } catch (e) { bNames = ['All Barangays']; }
+
+      const totalRecipients = a.Recipients?.length || 0;
+      const presentCount = (a.Attendances?.length || 0) + (a.Recipients?.filter(r => r.attendance_status === 'Present').length || 0);
+
+      return [
+        a.id,
+        a.title,
+        a.event_date ? new Date(a.event_date).toLocaleDateString('en-US') : '',
+        a.event_time ? (a.end_time ? `${a.event_time} - ${a.end_time}` : a.event_time) : '',
+        a.venue || '',
+        catNames.filter(Boolean).join('; ') || 'All Sectors',
+        bNames.join('; ') || 'All Barangays',
+        a.priority || 'Normal',
+        a.status,
+        presentCount,
+        totalRecipients,
+        a.CreatedBy ? `${a.CreatedBy.first_name} ${a.CreatedBy.last_name}` : 'System',
+      ];
+    });
+
+    const csv = toCSV(headers, rows);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="announcement-report.csv"');
     res.send(csv);
   } catch (error) {
     next(error);

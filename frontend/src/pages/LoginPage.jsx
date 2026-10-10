@@ -56,12 +56,13 @@ const GoogleSignInButton = ({ onSuccess, onError }) => {
           });
           
           window.google.accounts.id.renderButton(buttonRef.current, {
-            theme: 'filled_black',
-            size: 'large',
-            width: 360,
+            type: 'standard',
+            theme: 'outline',
+            size: 'medium',
             text: 'signin_with',
             shape: 'rectangular',
-            logo_alignment: 'center',
+            logo_alignment: 'left',
+            width: 360,
           });
           
           console.log('[Google Sign-In] Button rendered successfully');
@@ -172,6 +173,11 @@ const GoogleSignInButton = ({ onSuccess, onError }) => {
             <p className="text-amber-300/80">If the problem persists, you can still sign in using email and password above.</p>
           </div>
         </div>
+      )}
+      {typeof window !== 'undefined' && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(window.location.hostname) && (
+        <p className="text-[11px] text-amber-300 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 mt-2 text-center leading-relaxed">
+          ⚠️ <strong>Google Sign-In:</strong> Buksan ang app sa <strong className="font-mono text-white">http://localhost:3000</strong> upang gumana ang Google (hindi pinapayagan ng Google ang direct IP address sa OAuth).
+        </p>
       )}
     </div>
   );

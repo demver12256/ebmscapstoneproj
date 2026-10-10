@@ -66,6 +66,7 @@ export const reportsApi = {
   getTableEnrollments: (params) => apiClient.get('/reports/table/enrollments', { params }),
   getTableAssistanceRequests: (params) => apiClient.get('/reports/table/assistance-requests', { params }),
   getTableAttendance: (params) => apiClient.get('/reports/table/attendance', { params }),
+  getTableAnnouncements: (params) => apiClient.get('/reports/table/announcements', { params }),
   getTableAuditLogs: (params) => apiClient.get('/reports/table/audit-logs', { params }),
   exportBeneficiaries: (params) => apiClient.get('/reports/export/beneficiaries', { params, responseType: 'blob' }),
   exportDistributions: (params) => apiClient.get('/reports/export/distributions', { params, responseType: 'blob' }),
@@ -73,6 +74,7 @@ export const reportsApi = {
   exportEnrollments: (params) => apiClient.get('/reports/export/enrollments', { params, responseType: 'blob' }),
   exportAssistanceRequests: (params) => apiClient.get('/reports/export/assistance-requests', { params, responseType: 'blob' }),
   exportAttendance: (params) => apiClient.get('/reports/export/attendance', { params, responseType: 'blob' }),
+  exportAnnouncements: (params) => apiClient.get('/reports/export/announcements', { params, responseType: 'blob' }),
   exportAuditLogs: (params) => apiClient.get('/reports/export/audit-logs', { params, responseType: 'blob' }),
 };
 
@@ -108,6 +110,8 @@ export const beneficiaryApi = {
   updateMyPayoutAccount: (data) => apiClient.put('/beneficiaries/me/payout-account', data),
   addExtraPayoutAccount: (data) => apiClient.post('/beneficiaries/me/extra-payout-accounts', data),
   removeExtraPayoutAccount: (index) => apiClient.delete(`/beneficiaries/me/extra-payout-accounts/${index}`),
+  getQrPass: (id) => apiClient.get(`/beneficiaries/${id}/qr-pass`),
+  regenerateQrPass: (id) => apiClient.post(`/beneficiaries/${id}/regenerate-qr`),
 };
 
 export const programApi = {
@@ -168,7 +172,13 @@ export const distributionApi = {
 };
 
 export const smsApi = {
-  list: () => apiClient.get('/sms'),
+  list: (params) => apiClient.get('/sms', { params }),
+  resend: (id) => apiClient.post('/sms/' + id + '/resend'), 
+};
+
+export const auditApi = {
+  list: (params) => apiClient.get('/audit', { params }),
+  getSystemLogs: () => apiClient.get('/audit/system-logs'),
 };
 
 export const userApi = {

@@ -36,6 +36,7 @@ import InterventionsScreen from './screens/InterventionsScreen';
 import PendingApprovalScreen from './screens/PendingApprovalScreen';
 import ApplicationSubmissionScreen from './screens/ApplicationSubmissionScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import BotAssistantScreen from './screens/BotAssistantScreen';
 import AuthScreen from './screens/AuthScreen';
 import SidebarDrawer from './components/SidebarDrawer';
 import BottomNavBar from './components/BottomNavBar';
@@ -954,6 +955,14 @@ const App = () => {
           )}
 
           {/* Messages Screen */}
+          {currentScreen === 'botAssistant' && (
+            <BotAssistantScreen
+              onBack={() => handleNavSelect('dashboard')}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
           {currentScreen === 'messages' && (
             <MessagesScreen
               onBack={() => handleNavSelect('dashboard')}
@@ -1059,6 +1068,23 @@ const App = () => {
               <Text style={styles.successBody}>You are now an official beneficiary. You can now view your benefits and upcoming distributions.</Text>
             </View>
           </View> : null}
+
+          {/* BeniAid AI Assistant Banner */}
+          <TouchableOpacity
+            style={styles.botBanner}
+            onPress={() => handleNavSelect('botAssistant')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.botBannerLeft}>
+              <View style={styles.botBannerIcon}>
+                <Text style={{ fontSize: 22 }}>🤖</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.botBannerTitle}>BeniAid AI Assistant</Text>
+                <Text style={styles.botBannerSub} numberOfLines={1}>Magtanong ukol sa QR, requirements, at schedule ›</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
 
           {/* 4 Status Cards Row (Image 4) */}
           <View style={styles.statusRow}>
@@ -2695,6 +2721,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,
+  },
+  botBanner: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  botBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  botBannerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#DBEAFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  botBannerTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#00338D',
+  },
+  botBannerSub: {
+    fontSize: 11,
+    color: '#3B82F6',
+    marginTop: 2,
   },
   bottomNavBadgeText: {
     color: '#ffffff',

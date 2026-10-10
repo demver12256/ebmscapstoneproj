@@ -91,78 +91,63 @@ export default function BeneficiaryAttendancePage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12 print:p-0 print:m-0 print:max-w-none">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-dswd-blue via-blue-900 to-indigo-900 text-white rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden print:bg-white print:text-slate-900 print:shadow-none print:border-b-2 print:border-slate-300 print:rounded-none">
-        {/* Subtle Background Glow */}
-        <div className="absolute -right-12 -top-12 w-64 h-64 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -left-12 -bottom-12 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-inner">
-                <CalendarCheck className="w-7 h-7 text-yellow-300" />
-              </div>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-black tracking-tight">
-                  Meeting Attendance & RFID Records
-                </h1>
-                <p className="text-blue-100 text-xs md:text-sm font-medium">
-                  Opisyal na talaan ng iyong pagdalo sa mga pulong, assemblies, at orientations.
-                </p>
-              </div>
-            </div>
-
-            {/* Beneficiary Meta Chips */}
-            <div className="flex items-center gap-2 flex-wrap pt-2">
-              <div className="bg-white/15 backdrop-blur-md border border-white/20 px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-blue-200" />
-                <span>{beneficiary.first_name} {beneficiary.last_name}</span>
-              </div>
-
-              {beneficiary.RFID_number && (
-                <div className="bg-emerald-500/25 border border-emerald-400/40 text-emerald-100 px-3 py-1 rounded-xl text-xs font-black flex items-center gap-1.5 font-mono shadow-sm">
-                  <CreditCard className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>RFID: {beneficiary.RFID_number}</span>
-                </div>
-              )}
-
-              {beneficiary.category && (
-                <div className="bg-yellow-400/20 border border-yellow-300/30 text-yellow-100 px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-yellow-300" />
-                  <span>{beneficiary.category}</span>
-                </div>
-              )}
-
-              {beneficiary.barangay && (
-                <div className="bg-white/15 backdrop-blur-md border border-white/20 px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5">
-                  <Building2 className="w-3.5 h-3.5 text-blue-200" />
-                  <span>Brgy. {beneficiary.barangay}</span>
-                </div>
-              )}
-            </div>
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80 print:border-slate-300">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              Attendance Record
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-3 print:hidden">
-            <button
-              onClick={handlePrint}
-              className="bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-md transition flex items-center gap-2 backdrop-blur-sm border border-white/20 active:scale-95"
-              title="I-print ang Attendance Record"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Print Record</span>
-            </button>
-            <button
-              onClick={() => fetchAttendance(true)}
-              disabled={refreshing}
-              className="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs shadow-md transition flex items-center gap-2 active:scale-95 disabled:opacity-50"
-              title="I-refresh ang Attendance Data"
-            >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Meeting Attendance & RFID Records
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Opisyal na talaan ng iyong pagdalo sa mga pulong, assemblies, at orientations.
+          </p>
+          <div className="flex items-center gap-2 flex-wrap pt-2">
+            <span className="px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+              {beneficiary.first_name} {beneficiary.last_name}
+            </span>
+            {beneficiary.RFID_number && (
+              <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                RFID: {beneficiary.RFID_number}
+              </span>
+            )}
+            {beneficiary.category && (
+              <span className="px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                {beneficiary.category}
+              </span>
+            )}
+            {beneficiary.barangay && (
+              <span className="px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                Brgy. {beneficiary.barangay}
+              </span>
+            )}
           </div>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0 print:hidden">
+          <button
+            type="button"
+            onClick={() => fetchAttendance(true)}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-2xs active:scale-95 disabled:opacity-50"
+            title="I-refresh ang Attendance Data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
+            <span>Refresh</span>
+          </button>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
+            title="I-print ang Attendance Record"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span>Print Record</span>
+          </button>
         </div>
       </div>
 

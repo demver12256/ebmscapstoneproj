@@ -158,12 +158,45 @@ module.exports = (sequelize, DataTypes) => {
           this.setDataValue('extra_payout_accounts', val ? JSON.stringify(val) : null);
         }
       },
+      // ── Digital QR Pass (temporary / backup ID when no RFID card yet) ──
+      qr_token: {
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        comment: 'Random secret token encoded in the beneficiary QR pass (EBMS-QR:<token>). Generated on approval.',
+      },
+      qr_generated_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
     },
     {
       tableName: 'beneficiaries',
       underscored: true,
+      hooks: {
+        // Auto-issue a QR pass once a beneficiary becomes Approved
+        beforeSave: (beneficiary) => {
+          if (beneficiary.status === 'Approved' && !beneficiary.qr_token) {
+            beneficiary.qr_token = Beneficiary.generateQrToken();
+            beneficiary.qr_generated_at = new Date();
+          }
+        },
+      },
     }
   );
+
+  Beneficiary.QR_PREFIX = 'EBMS-QR:';
+
+  Beneficiary.generateQrToken = () => require('crypto').randomBytes(16).toString('hex').toUpperCase();
+
+  // Accepts raw scanner input ("EBMS-QR:ABC..." or "ABC...") and returns the bare token, or null
+  Beneficiary.parseQrInput = (input) => {
+    if (!input) return null;
+    const value = String(input).trim();
+    if (value.toUpperCase().startsWith(Beneficiary.QR_PREFIX)) {
+      return value.slice(Beneficiary.QR_PREFIX.length).trim().toUpperCase() || null;
+    }
+    return /^[A-F0-9]{32}$/i.test(value) ? value.toUpperCase() : null;
+  };
 
   return Beneficiary;
 };

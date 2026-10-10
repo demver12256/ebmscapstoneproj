@@ -436,28 +436,32 @@ export default function MyBenefitsPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Package className="w-8 h-8 text-yellow-300" />
-              <h1 className="text-3xl font-black tracking-tight">My Benefits Overview</h1>
-            </div>
-            <p className="text-blue-100 text-sm mt-1 max-w-2xl leading-relaxed">
-              View your released and approved assistance payouts, claimed benefit history, and active program enrollments.
-            </p>
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              Assistance Record
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
-          <div className="flex items-center gap-2.5 self-start md:self-auto">
-            <button
-              onClick={() => navigate('/dashboard/request-assistance')}
-              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition border border-white/20 flex items-center gap-1.5 backdrop-blur-md shadow-sm"
-            >
-              <Plus className="w-4 h-4 text-yellow-300" />
-              Request Assistance
-            </button>
-          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            My Benefits Overview
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            View your released and approved assistance payouts, claimed benefit history, and active program enrollments.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard/request-assistance')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Request Assistance</span>
+          </button>
         </div>
       </div>
 

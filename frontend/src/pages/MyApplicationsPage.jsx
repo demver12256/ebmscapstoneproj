@@ -40,15 +40,22 @@ export default function MyApplicationsPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
-        <div className="flex items-center gap-2">
-          <FileText className="w-8 h-8 text-yellow-300" />
-          <h1 className="text-3xl font-black tracking-tight">My Applications</h1>
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              Application Portal
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            My Applications
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Track your municipal benefit application status and review official verification details.
+          </p>
         </div>
-        <p className="text-blue-100 text-sm mt-1 max-w-2xl">
-          Track your municipal benefit application status and review official verification details.
-        </p>
       </div>
 
       {/* Current Application Status */}

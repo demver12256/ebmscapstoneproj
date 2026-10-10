@@ -377,32 +377,33 @@ export default function MessagesPage() {
         </div>
       )}
 
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-white/10 backdrop-blur rounded-xl">
-                <MessageSquare className="w-7 h-7 text-yellow-300" />
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Messages Portal</h1>
-            </div>
-            <p className="text-blue-100 text-xs sm:text-sm mt-2 max-w-2xl leading-relaxed">
-              {user.role === 'beneficiary'
-                ? 'Direct communication line with your assigned Barangay Staff and System Administrator.'
-                : ['admin','mswdo_admin'].includes(user.role)
-                ? 'Communicate with Barangay Staff and Beneficiaries in real time.'
-                : 'Communicate with the System Administrator, fellow Barangay Staff, and registered Beneficiaries.'}
-            </p>
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              Direct Communication
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
-
-          {user.role === 'beneficiary' && (
-            <div className="bg-white/10 backdrop-blur border border-white/20 rounded-xl px-4 py-2 text-xs text-white shrink-0">
-              <span className="block text-yellow-300 font-bold uppercase tracking-wider text-[10px]">Your Direct Contacts:</span>
-              <span className="font-semibold">Barangay Staff & System Admin</span>
-            </div>
-          )}
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Messages Portal
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {user.role === 'beneficiary'
+              ? 'Direct communication line with your assigned Barangay Staff and System Administrator.'
+              : ['admin','mswdo_admin'].includes(user.role)
+              ? 'Communicate with Barangay Staff and Beneficiaries in real time.'
+              : 'Communicate with the System Administrator, fellow Barangay Staff, and registered Beneficiaries.'}
+          </p>
         </div>
+
+        {user.role === 'beneficiary' && (
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 shadow-2xs">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Direct Contacts:</span>
+            <span className="font-semibold text-slate-900">Barangay Staff & System Admin</span>
+          </div>
+        )}
       </div>
 
       {/* Chat Container */}

@@ -43,6 +43,7 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
   const [passwordVisibility, setPasswordVisibility] = useState({ current: false, next: false, confirm: false });
   const [savingPassword, setSavingPassword] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [qrModalVisible, setQrModalVisible] = useState(false);
 
   const fullName = `${profile?.first_name || user?.first_name || ''} ${profile?.middle_name || ''} ${profile?.last_name || user?.last_name || ''}`
     .replace(/\s+/g, ' ').trim() || 'Beneficiary';
@@ -194,6 +195,37 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
           </View>
         </View>
 
+        {/* Digital QR Pass / Temporary ID Banner */}
+        {profile?.status === 'Approved' && (
+          <View style={styles.qrBannerCard}>
+            <View style={styles.qrBannerTop}>
+              <View style={styles.qrBannerIconWrap}>
+                <Text style={styles.qrBannerIconText}>☵</Text>
+              </View>
+              <View style={styles.qrBannerContent}>
+                <View style={styles.qrBannerBadgeRow}>
+                  <Text style={styles.qrBannerTitle}>Digital ID & QR Pass</Text>
+                  <View style={styles.qrActiveBadge}>
+                    <Text style={styles.qrActiveBadgeText}>Active Backup</Text>
+                  </View>
+                </View>
+                <Text style={styles.qrBannerDesc}>
+                  {profile?.RFID_number 
+                    ? 'Maaari ring gamitin bilang alternatibong pagkakakilanlan.' 
+                    : 'Pansamantalang ID sa mga payout at attendance habang wala pang RFID card.'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.viewQrPassButton}
+              onPress={() => setQrModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.viewQrPassButtonText}>Tingnan ang QR ID Pass</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.infoCard}>
           <Text style={styles.sectionTitle}>Personal Information</Text>
           <ProfileField label="Birthdate" value={formatDate(profile?.birthdate)} icon="▦" />
@@ -247,6 +279,93 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* DIGITAL QR PASS MODAL */}
+      <Modal visible={qrModalVisible} transparent animationType="slide" onRequestClose={() => setQrModalVisible(false)}>
+        <SafeAreaView style={styles.qrModalOverlay}>
+          <View style={styles.qrModalCard}>
+            {/* Header */}
+            <View style={styles.qrModalHeader}>
+              <View style={styles.qrModalHeaderTitleWrap}>
+                <Text style={styles.qrModalRepublic}>Republic of the Philippines</Text>
+                <Text style={styles.qrModalAgency}>DSWD / MSWDO Bongabong</Text>
+              </View>
+              <TouchableOpacity onPress={() => setQrModalVisible(false)} style={styles.qrModalCloseBtn} accessibilityLabel="Close">
+                <Text style={styles.qrModalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.qrModalBody} showsVerticalScrollIndicator={false}>
+              {/* Temporary ID Pass Badge */}
+              <View style={styles.qrIdPassBadgeWrap}>
+                <Text style={styles.qrIdPassBadgeText}>TEMPORARY DIGITAL ID • CLAIM PASS</Text>
+              </View>
+
+              {/* Beneficiary Header inside Card */}
+              <View style={styles.qrBenInfoRow}>
+                {profileImageUri ? (
+                  <Image source={{ uri: profileImageUri }} style={styles.qrModalAvatar} />
+                ) : (
+                  <View style={styles.qrModalAvatarFallback}>
+                    <Text style={styles.qrModalAvatarInitials}>{initials || 'B'}</Text>
+                  </View>
+                )}
+                <View style={styles.qrModalBenTextWrap}>
+                  <Text style={styles.qrModalFullName}>{fullName}</Text>
+                  <Text style={styles.qrModalBenId}>
+                    {profile?.household_id_number || profile?.beneficiary_id_code || 'Approved Beneficiary'}
+                  </Text>
+                  <View style={styles.qrCategoryPill}>
+                    <Text style={styles.qrCategoryPillText}>{profile?.category || 'Beneficiary'}</Text>
+                  </View>
+                  <Text style={styles.qrBrgyText}>Brgy. {barangayName}</Text>
+                </View>
+              </View>
+
+              {/* QR Image Box */}
+              <View style={styles.qrImageBox}>
+                {profile?.qr_image_url ? (
+                  <Image
+                    source={{ uri: profile.qr_image_url }}
+                    style={styles.qrCodeImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.qrLoadingBox}>
+                    <ActivityIndicator size="large" color="#0b3b9b" />
+                    <Text style={styles.qrLoadingText}>Kinukuha ang QR Code...</Text>
+                  </View>
+                )}
+                <Text style={styles.qrTokenText}>
+                  {profile?.qr_code || `EBMS-QR:${profile?.qr_token || 'TOKEN'}`}
+                </Text>
+              </View>
+
+              {/* Notice */}
+              <View style={styles.qrNoticeCard}>
+                <Text style={styles.qrNoticeTitle}>Paalala para sa Benepisyaryo:</Text>
+                <Text style={styles.qrNoticeDesc}>
+                  Ipakita ang QR code na ito sa staff scanner tuwing distribution payout o meeting attendance kung wala ka pang physical RFID card.
+                </Text>
+              </View>
+
+              {/* Status info */}
+              <View style={styles.qrMetaRow}>
+                <Text style={styles.qrMetaLabel}>RFID Card:</Text>
+                <Text style={styles.qrMetaValue}>
+                  {profile?.RFID_number || 'Walang RFID Card (QR Pass Active)'}
+                </Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.qrModalFooter}>
+              <TouchableOpacity style={styles.qrCloseButton} onPress={() => setQrModalVisible(false)}>
+                <Text style={styles.qrCloseButtonText}>Isara</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -309,4 +428,55 @@ const styles = StyleSheet.create({
   cancelButtonText: { color: '#17324f', fontSize: 14, fontWeight: '800' },
   saveButton: { flex: 1, minHeight: 48, borderRadius: 13, backgroundColor: '#0b3b9b', alignItems: 'center', justifyContent: 'center' },
   saveButtonText: { color: '#fff', fontSize: 14, fontWeight: '900' },
+
+  // QR Banner Card Styles
+  qrBannerCard: { backgroundColor: '#f0fdf4', borderRadius: 18, borderWidth: 1.5, borderColor: '#86efac', padding: 16, gap: 12 },
+  qrBannerTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  qrBannerIconWrap: { width: 44, height: 44, borderRadius: 13, backgroundColor: '#15803d', alignItems: 'center', justifyContent: 'center' },
+  qrBannerIconText: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  qrBannerContent: { flex: 1 },
+  qrBannerBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
+  qrBannerTitle: { color: '#14532d', fontSize: 16, fontWeight: '900' },
+  qrActiveBadge: { backgroundColor: '#bbf7d0', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  qrActiveBadgeText: { color: '#166534', fontSize: 10, fontWeight: '800' },
+  qrBannerDesc: { color: '#15803d', fontSize: 12, marginTop: 3, lineHeight: 17 },
+  viewQrPassButton: { backgroundColor: '#16a34a', borderRadius: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  viewQrPassButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+
+  // QR Modal Styles
+  qrModalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.7)', justifyContent: 'center', padding: 16 },
+  qrModalCard: { backgroundColor: '#fff', borderRadius: 24, overflow: 'hidden', maxHeight: '94%', elevation: 16 },
+  qrModalHeader: { minHeight: 64, paddingHorizontal: 18, backgroundColor: '#0b3b9b', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  qrModalHeaderTitleWrap: { flex: 1 },
+  qrModalRepublic: { color: '#93c5fd', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
+  qrModalAgency: { color: '#fff', fontSize: 16, fontWeight: '900', textTransform: 'uppercase' },
+  qrModalCloseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  qrModalCloseText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  qrModalBody: { padding: 18, gap: 14, alignItems: 'center' },
+  qrIdPassBadgeWrap: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 4 },
+  qrIdPassBadgeText: { color: '#1e40af', fontSize: 10, fontWeight: '900', letterSpacing: 0.6 },
+  qrBenInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 14, width: '100%', backgroundColor: '#f8fafc', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  qrModalAvatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#e2e8f0' },
+  qrModalAvatarFallback: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#0b3b9b', alignItems: 'center', justifyContent: 'center' },
+  qrModalAvatarInitials: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  qrModalBenTextWrap: { flex: 1, minWidth: 0 },
+  qrModalFullName: { color: '#0f172a', fontSize: 16, fontWeight: '900' },
+  qrModalBenId: { color: '#1d4ed8', fontSize: 12, fontWeight: '800', marginTop: 1, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  qrCategoryPill: { alignSelf: 'flex-start', backgroundColor: '#f3e8ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginTop: 4 },
+  qrCategoryPillText: { color: '#7e22ce', fontSize: 10, fontWeight: '800' },
+  qrBrgyText: { color: '#64748b', fontSize: 11, marginTop: 3 },
+  qrImageBox: { width: '100%', backgroundColor: '#fff', borderRadius: 18, borderWidth: 1.5, borderColor: '#e2e8f0', padding: 16, alignItems: 'center', gap: 10, elevation: 2 },
+  qrCodeImage: { width: 220, height: 220 },
+  qrLoadingBox: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  qrLoadingText: { color: '#64748b', fontSize: 12, fontWeight: '600' },
+  qrTokenText: { color: '#64748b', fontSize: 10, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  qrNoticeCard: { width: '100%', backgroundColor: '#f0fdf4', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#bbf7d0', gap: 3 },
+  qrNoticeTitle: { color: '#166534', fontSize: 12, fontWeight: '800' },
+  qrNoticeDesc: { color: '#15803d', fontSize: 11, lineHeight: 16 },
+  qrMetaRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  qrMetaLabel: { color: '#64748b', fontSize: 12, fontWeight: '600' },
+  qrMetaValue: { color: '#0f172a', fontSize: 12, fontWeight: '800' },
+  qrModalFooter: { padding: 14, borderTopWidth: 1, borderTopColor: '#f1f5f9', backgroundColor: '#fafafa' },
+  qrCloseButton: { minHeight: 46, backgroundColor: '#0b3b9b', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  qrCloseButtonText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 });

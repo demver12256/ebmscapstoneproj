@@ -38,22 +38,23 @@ export default function MobileBottomNav() {
       aria-label="Mobile navigation"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden"
     >
-      <div className="mx-auto flex max-w-lg items-stretch justify-between overflow-x-auto">
+      <div className="mx-auto grid w-full max-w-2xl grid-cols-6 items-stretch">
         {items.map(({ path, label, icon: Icon, end }) => (
           <NavLink
             key={path}
             to={path}
             end={end}
+            aria-label={label}
             className={({ isActive }) =>
-              `flex min-w-[62px] flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[10px] font-semibold transition ${
+              `flex min-w-0 flex-col items-center justify-center gap-1 px-0.5 py-2 text-[9px] font-semibold leading-tight transition sm:text-[10px] ${
                 isActive ? 'text-blue-600' : 'text-slate-400 hover:text-slate-700'
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <Icon className={`h-5 w-5 ${isActive ? 'stroke-[2.5]' : 'stroke-2'}`} />
-                <span className="whitespace-nowrap">{label}</span>
+                <Icon className={`h-5 w-5 shrink-0 ${isActive ? 'stroke-[2.5]' : 'stroke-2'}`} />
+                <span className="line-clamp-2 text-center">{label}</span>
               </>
             )}
           </NavLink>

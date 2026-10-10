@@ -1,16 +1,21 @@
 const axios = require('axios');
 
-const PHILSMS_API_BASE_URL = (
-  process.env.PHILSMS_API_BASE_URL || 'https://app.philsms.com/api/v3'
-)
-  .trim()
-  // Older local .env files may still use the dashboard host. Route those to
-  // PhilSMS's documented API host without requiring the secret-bearing file
-  // to be opened or rewritten.
-  .replace(/^(https?:\/\/)dashboard\.philsms\.com(?=\/|$)/i, '$1app.philsms.com')
-  .replace(/\/+$/, '');
-const PHILSMS_ENDPOINT = `${PHILSMS_API_BASE_URL}/sms/send`;
+const PRIMARY_DEFAULT_BASE_URL = 'https://dashboard.philsms.com/api/v3';
 const SMS_BRAND = 'BeniAid DSWD Bongabong';
+
+function getPhilSmsBaseUrls() {
+  const custom = (process.env.PHILSMS_API_BASE_URL || '').trim().replace(/\/+$/, '');
+  const primary = custom || PRIMARY_DEFAULT_BASE_URL;
+
+  // Prepare fallback candidate (dashboard.philsms.com <-> app.philsms.com)
+  const urls = [primary];
+  if (primary.includes('dashboard.philsms.com')) {
+    urls.push(primary.replace('dashboard.philsms.com', 'app.philsms.com'));
+  } else if (primary.includes('app.philsms.com')) {
+    urls.push(primary.replace('app.philsms.com', 'dashboard.philsms.com'));
+  }
+  return urls;
+}
 
 function isConfigured() {
   return Boolean(process.env.PHILSMS_API_TOKEN?.trim() && process.env.PHILSMS_SENDER_ID?.trim());
@@ -83,43 +88,69 @@ async function sendSms(recipient, message) {
   if (!String(message || '').trim()) throw new Error('SMS message is required.');
   const brandedMessage = String(message).trim().replace(/\bEBMS\b/gi, SMS_BRAND);
 
-  let response;
-  try {
-    response = await axios.post(PHILSMS_ENDPOINT, {
-      recipient: normalizedRecipient,
-      sender_id: senderId,
-      type: 'plain',
-      message: brandedMessage,
-    }, {
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      timeout: 15000,
-      responseType: 'text',
-      transformResponse: [(body) => body],
-      validateStatus: () => true,
-    });
-  } catch (error) {
-    const code = error.code || 'network error';
-    const transportError = new Error(
-      `PhilSMS connection failed before a complete response was received (${code}). The message may have been accepted; check provider delivery status before retrying.`
-    );
-    transportError.cause = error;
-    throw transportError;
-  }
+  const baseUrls = getPhilSmsBaseUrls();
+  let lastError = null;
 
-  const rawBody = typeof response.data === 'string' ? response.data : '';
-  const contentType = response.headers['content-type'] || '';
-  let result = null;
-  try { result = JSON.parse(rawBody); } catch { /* Keep the raw body out of logs unless it is safe plain text. */ }
+  for (let i = 0; i < baseUrls.length; i++) {
+    const baseUrl = baseUrls[i];
+    const endpoint = `${baseUrl}/sms/send`;
 
-  const providerStatus = String(result?.status || result?.data?.status || '').toLowerCase();
-  const providerAccepted = providerStatus === 'success' || result?.success === true;
-  const httpSuccess = response.status >= 200 && response.status < 300;
-  if (!httpSuccess || !providerAccepted) {
+    let response;
+    try {
+      response = await axios.post(endpoint, {
+        recipient: normalizedRecipient,
+        sender_id: senderId,
+        type: 'plain',
+        message: brandedMessage,
+      }, {
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+        responseType: 'text',
+        transformResponse: [(body) => body],
+        validateStatus: () => true,
+      });
+    } catch (error) {
+      const code = error.code || 'network error';
+      lastError = new Error(
+        `PhilSMS connection failed before a complete response was received (${code}). The message may have been accepted; check provider delivery status before retrying.`
+      );
+      lastError.cause = error;
+      if (i < baseUrls.length - 1) continue;
+      throw lastError;
+    }
+
+    const rawBody = typeof response.data === 'string' ? response.data : '';
+    const contentType = response.headers['content-type'] || '';
+    let result = null;
+    try { result = JSON.parse(rawBody); } catch { /* Keep raw body out of logs */ }
+
+    const providerStatus = String(result?.status || result?.data?.status || '').toLowerCase();
+    const providerAccepted = providerStatus === 'success' || result?.success === true;
+    const httpSuccess = response.status >= 200 && response.status < 300;
+
+    if (httpSuccess && providerAccepted) {
+      const firstResult = Array.isArray(result.data) ? result.data[0] : result.data;
+      return {
+        providerMessageId: firstResult?.uid || firstResult?.id || result.uid || result.id || null,
+        recipient: normalizedRecipient,
+      };
+    }
+
+    const details = getProviderError(result, rawBody, contentType);
+    const isAuthError = details.toLowerCase().includes('unauthenticated') || response.status === 401;
+
+    // If unauthenticated or route not found, and there is a fallback host, try it
+    if (isAuthError && i < baseUrls.length - 1) {
+      console.warn(`[PhilSMS] Auth failed on ${baseUrl} (${details}). Retrying fallback host ${baseUrls[i + 1]}...`);
+      continue;
+    }
+
     console.log('[PhilSMS DEBUG]', {
+      endpoint,
       httpStatus: response.status,
       contentType,
       providerStatus: providerStatus || 'unknown',
@@ -130,15 +161,9 @@ async function sendSms(recipient, message) {
         ? Object.keys(result).slice(0, 8)
         : result === null ? 'null' : typeof result,
     });
-    const details = getProviderError(result, rawBody, contentType);
+
     throw new Error(`PhilSMS request failed (HTTP ${response.status}; provider status: ${providerStatus || 'unknown'}): ${details}`);
   }
-
-  const firstResult = Array.isArray(result.data) ? result.data[0] : result.data;
-  return {
-    providerMessageId: firstResult?.uid || firstResult?.id || result.uid || result.id || null,
-    recipient: normalizedRecipient,
-  };
 }
 
 module.exports = { isConfigured, normalizePhilippineNumber, sendSms };

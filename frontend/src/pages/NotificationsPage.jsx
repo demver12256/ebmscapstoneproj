@@ -170,33 +170,41 @@ export default function NotificationsPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <Bell className="w-8 h-8 text-yellow-300 animate-bounce" />
-            <h1 className="text-3xl font-black tracking-tight">Notifications & Announcements</h1>
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              Alerts & Inbox
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
-          <p className="text-blue-100 text-sm">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Notifications & Announcements
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
             Official municipal communications, absence notifications, and RFID attendance records.
           </p>
         </div>
 
-        {totalUnread > 0 && (
-          <div className="flex items-center gap-3 self-start md:self-auto">
-            <div className="bg-yellow-400 text-slate-950 font-black px-4 py-2 rounded-xl text-sm shadow-md flex items-center gap-2">
-              <Megaphone className="w-4 h-4" />
-              <span>{totalUnread} Unread</span>
-            </div>
-            <button
-              onClick={handleMarkAllAsRead}
-              className="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm shadow-md flex items-center gap-2 transition backdrop-blur-sm"
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-              <span>Mark All Read</span>
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
+          {totalUnread > 0 && (
+            <>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold">
+                <Megaphone className="w-3.5 h-3.5 text-amber-600" />
+                {totalUnread} Unread
+              </span>
+              <button
+                type="button"
+                onClick={handleMarkAllAsRead}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-2xs active:scale-95"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Mark All Read</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* View Mode Toggle */}

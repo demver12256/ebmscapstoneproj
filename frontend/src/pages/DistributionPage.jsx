@@ -767,52 +767,61 @@ export default function DistributionPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Package className="w-8 h-8 text-yellow-300" />
-            <h1 className="text-3xl font-black tracking-tight">Distribution & Assistance Module</h1>
-          </div>
-          <p className="text-blue-100 text-sm max-w-xl">
-            Create, manage, and monitor benefit distributions and assistance events in real time.
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              {['admin', 'mswdo_admin'].includes(user?.role) ? 'Aid Operations' : 'Distributions'}
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
             {lastUpdated && (
-              <span className="ml-2 text-xs text-yellow-300 font-semibold">
-                • Updated: {lastUpdated.toLocaleTimeString()}
-              </span>
+              <span className="text-xs text-slate-400">• Updated: {lastUpdated.toLocaleTimeString()}</span>
             )}
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Aid Distribution Events
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Create, manage, and monitor benefit distributions and assistance events in real time.
           </p>
         </div>
-        <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
+
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
           <button
+            type="button"
             onClick={() => { loadEvents(); loadDashboardStats(); }}
             disabled={loading}
-            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-3.5 py-2.5 rounded-xl shadow transition border border-white/20 text-sm disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition shadow-2xs active:scale-95 disabled:opacity-50"
             title="Refresh data"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? 'animate-spin text-blue-600' : ''}`} />
+            <span>Refresh</span>
           </button>
-          {['admin','mswdo_admin'].includes(user?.role) && (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95 text-sm whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              Create Distribution
-            </button>
-          )}
+
           <button
+            type="button"
             onClick={() => setStatusFilter(statusFilter === 'archived' ? 'all' : 'archived')}
-            className={`flex items-center gap-1.5 font-bold px-3.5 py-2.5 rounded-xl shadow transition text-sm whitespace-nowrap ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition shadow-2xs active:scale-95 ${
               statusFilter === 'archived'
-                ? 'bg-yellow-400 text-slate-950 border border-yellow-400'
-                : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
+                ? 'bg-slate-900 text-white hover:bg-slate-800'
+                : 'border border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
             }`}
           >
-            <Archive className="w-4 h-4 text-purple-300" />
+            <Archive className="w-3.5 h-3.5 text-slate-500" />
             <span>Archived ({events.filter(e => e.status === 'archived').length})</span>
           </button>
+
+          {['admin','mswdo_admin'].includes(user?.role) && (
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Distribution</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -832,45 +841,45 @@ export default function DistributionPage() {
 
       {/* Dashboard Stats */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-blue-600">Total Events</p>
-              <Calendar className="w-5 h-5 text-blue-600" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Events</p>
+              <Calendar className="w-4 h-4 text-slate-400" />
             </div>
-            <p className="text-3xl font-bold text-blue-900">{stats.events?.total || 0}</p>
-            <p className="text-xs text-blue-600 mt-1">All distribution events</p>
+            <p className="text-xl sm:text-2xl font-bold text-slate-900">{stats.events?.total || 0}</p>
+            <p className="text-xs text-slate-400 mt-1">All distribution events</p>
           </div>
 
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-6 border border-green-200">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-green-600">Completed</p>
-              <CheckCircle className="w-5 h-5 text-green-600" />
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider">Completed</p>
+              <CheckCircle className="w-4 h-4 text-emerald-500" />
             </div>
-            <p className="text-3xl font-bold text-green-900">{stats.events?.completed || 0}</p>
-            <p className="text-xs text-green-600 mt-1">Successfully completed</p>
+            <p className="text-xl sm:text-2xl font-bold text-emerald-600">{stats.events?.completed || 0}</p>
+            <p className="text-xs text-slate-400 mt-1">Successfully completed</p>
           </div>
 
-          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-6 border border-yellow-200">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-yellow-600">Release Rate</p>
-              <TrendingUp className="w-5 h-5 text-yellow-600" />
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider">Release Rate</p>
+              <TrendingUp className="w-4 h-4 text-amber-500" />
             </div>
-            <p className="text-3xl font-bold text-yellow-900">
+            <p className="text-xl sm:text-2xl font-bold text-amber-600">
               {stats.transactions?.release_percentage || 0}%
             </p>
-            <p className="text-xs text-yellow-600 mt-1">Benefits released</p>
+            <p className="text-xs text-slate-400 mt-1">Benefits released</p>
           </div>
 
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-6 border border-purple-200">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-purple-600">Total Released</p>
-              <span className="w-5 h-5 text-purple-600 flex items-center justify-center text-xl font-semibold leading-none">₱</span>
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider">Total Released</p>
+              <span className="text-xs font-bold text-blue-500">₱</span>
             </div>
-            <p className="text-2xl font-bold text-purple-900">
+            <p className="text-xl sm:text-2xl font-bold text-blue-600">
               ₱{parseFloat(stats.transactions?.total_amount_released || 0).toLocaleString()}
             </p>
-            <p className="text-xs text-purple-600 mt-1">Amount distributed</p>
+            <p className="text-xs text-slate-400 mt-1">Amount distributed</p>
           </div>
         </div>
       )}

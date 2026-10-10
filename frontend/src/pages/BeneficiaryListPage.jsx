@@ -3,8 +3,10 @@ import { useLocation } from 'react-router-dom';
 import { 
   X, Users, Clock, Eye, EyeOff, AlertTriangle, FileCheck, ShieldAlert, 
   Download, Archive, Edit3, CreditCard, User, MapPin, Calendar, Phone, Lock, ShieldCheck,
-  CheckCircle2, XCircle, Clock4, Award, RefreshCw, Package, Layers, BookmarkCheck, Wallet, Building2, ExternalLink, Sparkles, Gift
+  CheckCircle2, XCircle, Clock4, Award, RefreshCw, Package, Layers, BookmarkCheck, Wallet, Building2, ExternalLink, Sparkles, Gift,
+  QrCode, Printer
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import Table from '../components/ui/Table';
 import Pagination from '../components/ui/Pagination';
 import { usePagination } from '../hooks/usePagination';
@@ -62,6 +64,13 @@ export default function BeneficiaryListPage() {
   const [missingDocs, setMissingDocs] = useState([]);
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
+
+  // Digital QR Pass Modal State
+  const [qrModalBeneficiary, setQrModalBeneficiary] = useState(null);
+  const [qrPassData, setQrPassData] = useState(null);
+  const [qrPassLoading, setQrPassLoading] = useState(false);
+  const [qrPassRegenerating, setQrPassRegenerating] = useState(false);
+  const [qrPassError, setQrPassError] = useState(null);
 
   const isMswdoAdmin = user?.role === 'mswdo_admin';
   const CATEGORIES = [
@@ -133,10 +142,10 @@ export default function BeneficiaryListPage() {
     }
     const params = new URLSearchParams(location.search);
     const payoutParam = params.get('payout_status') || location.state?.payout_status;
-    if (payoutParam) {
+    if (payoutParam && !isMswdoAdmin) {
       setSelectedPayoutStatus(payoutParam);
     }
-  }, [location, user]);
+  }, [location, user, isMswdoAdmin]);
 
   const openPendingModal = async () => {
     if (!['admin','mswdo_admin'].includes(user?.role)) return;
@@ -468,6 +477,117 @@ export default function BeneficiaryListPage() {
     }
   };
 
+  const handleOpenQrPass = async (ben) => {
+    setQrModalBeneficiary(ben);
+    setQrPassData(null);
+    setQrPassError(null);
+    setQrPassLoading(true);
+    try {
+      const res = await beneficiaryApi.getQrPass(ben.id);
+      if (res.data?.success) {
+        setQrPassData(res.data.data);
+      } else {
+        setQrPassError(res.data?.message || 'Hindi nakuha ang datos ng QR pass.');
+      }
+    } catch (err) {
+      setQrPassError(err.response?.data?.message || err.message || 'Error loading QR Pass');
+    } finally {
+      setQrPassLoading(false);
+    }
+  };
+
+  const handleRegenerateQrPass = async () => {
+    if (!qrModalBeneficiary) return;
+    if (!window.confirm(`Sigurado ka bang nais mong palitan ang QR Pass ni ${qrModalBeneficiary.first_name} ${qrModalBeneficiary.last_name}? Ang dating QR code ay hindi na tatanggapin sa scanning.`)) {
+      return;
+    }
+    setQrPassRegenerating(true);
+    try {
+      const res = await beneficiaryApi.regenerateQrPass(qrModalBeneficiary.id);
+      if (res.data?.success) {
+        setQrPassData(prev => ({
+          ...prev,
+          qr_token: res.data.data.qr_token,
+          qr_code: res.data.data.qr_code,
+          qr_image_url: res.data.data.qr_image_url,
+          qr_generated_at: res.data.data.qr_generated_at,
+        }));
+        setBeneficiaries(prev => prev.map(b => b.id === qrModalBeneficiary.id ? { ...b, qr_token: res.data.data.qr_token } : b));
+        alert('Matagumpay na na-regenerate ang QR Pass!');
+      } else {
+        alert(res.data?.message || 'Nabigong i-regenerate ang QR pass.');
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Error regenerating QR pass');
+    } finally {
+      setQrPassRegenerating(false);
+    }
+  };
+
+  const handlePrintQrPass = () => {
+    if (!qrPassData) return;
+    const printWindow = window.open('', '_blank', 'width=600,height=700');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Digital QR Pass - ${qrPassData.full_name}</title>
+          <style>
+            @page { size: auto; margin: 15mm; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #1e293b; margin: 0; padding: 20px; }
+            .card { max-width: 380px; margin: 0 auto; border: 2px solid #0038A8; border-radius: 16px; padding: 20px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+            .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 14px; }
+            .republic { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: bold; margin: 0; }
+            .agency { font-size: 13px; font-weight: 800; color: #002B49; text-transform: uppercase; margin: 4px 0; }
+            .badge { display: inline-block; background: #e0f2fe; color: #0369a1; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; margin-top: 4px; }
+            .name { font-size: 18px; font-weight: 900; color: #0f172a; margin: 10px 0 2px 0; text-transform: uppercase; }
+            .id-code { font-family: monospace; font-size: 13px; font-weight: 700; color: #0038A8; margin: 0 0 6px 0; }
+            .category { display: inline-block; background: #f3e8ff; color: #6b21a8; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; margin-bottom: 6px; }
+            .barangay { font-size: 12px; color: #475569; margin: 0 0 14px 0; }
+            .qr-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px; display: inline-block; margin-bottom: 12px; }
+            .qr-box img { width: 180px; height: 180px; display: block; margin: 0 auto; }
+            .token { font-family: monospace; font-size: 9px; color: #64748b; word-break: break-all; margin: 6px 0 0 0; }
+            .instructions { font-size: 11px; color: #334155; font-weight: 600; margin: 4px 0 12px 0; }
+            .footer { border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 10px; color: #64748b; display: flex; justify-content: space-between; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="header">
+              <p class="republic">Republic of the Philippines</p>
+              <h2 class="agency">${user?.role === 'mswdo_admin' ? 'Municipal Social Welfare & Development Office' : 'DSWD / MSWDO Bongabong'}</h2>
+              <div class="badge">Temporary Digital ID • Claim Pass</div>
+            </div>
+            <div class="name">${qrPassData.full_name}</div>
+            <div class="id-code">${qrPassData.household_id_number || qrPassData.beneficiary_id_code}</div>
+            <div class="category">${qrPassData.category}</div>
+            <div class="barangay">Barangay ${qrPassData.barangay}</div>
+            <div class="qr-box">
+              <img src="${qrPassData.qr_image_url}" alt="QR Pass" />
+              <div class="token">${qrPassData.qr_code}</div>
+            </div>
+            <div class="instructions">Ipakita ang QR code na ito para sa payout verification at attendance.</div>
+            <div class="footer">
+              <span>RFID: ${qrPassData.RFID_number || 'Walang RFID Card'}</span>
+              <span>Issued: ${new Date(qrPassData.qr_generated_at || Date.now()).toLocaleDateString('en-PH')}</span>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   const columns = [
     { header: 'Beneficiary / Household ID', accessor: 'beneficiary_id_code', cell: (row) => {
       const is4Ps = row.category?.toLowerCase().includes('4ps');
@@ -525,27 +645,31 @@ export default function BeneficiaryListPage() {
       </span>
     )},
     { header: 'Barangay', accessor: 'barangay_id', cell: (row) => row.Barangay?.barangay_name || '—' },
-    { header: 'Payout / Ayuda Channel', accessor: 'payout_preference', cell: (row) => (
-      row.payout_preference === 'digital' ? (
-        row.account_verification_status === 'verified' ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-green-50 text-green-700 border border-green-200">
-            ⚡ {row.payout_provider || 'GCash'} (Verified)
-          </span>
-        ) : row.account_verification_status === 'rejected' ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
-            ❌ {row.payout_provider || 'Digital'} (Rejected)
-          </span>
+    ...(!isMswdoAdmin ? [{
+      header: 'Payout / Ayuda Channel',
+      accessor: 'payout_preference',
+      cell: (row) => (
+        row.payout_preference === 'digital' ? (
+          row.account_verification_status === 'verified' ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-green-50 text-green-700 border border-green-200">
+              ⚡ {row.payout_provider || 'GCash'} (Verified)
+            </span>
+          ) : row.account_verification_status === 'rejected' ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
+              ❌ {row.payout_provider || 'Digital'} (Rejected)
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-300 animate-pulse" title="Needs Admin Verification">
+              🟡 {row.payout_provider || 'GCash'} (For Verification)
+            </span>
+          )
         ) : (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-300 animate-pulse" title="Needs Admin Verification">
-            🟡 {row.payout_provider || 'GCash'} (For Verification)
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200">
+            🏢 Cash OTC / RFID
           </span>
         )
-      ) : (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200">
-          🏢 Cash OTC / RFID
-        </span>
       )
-    )},
+    }] : []),
     { header: 'Date Approved', accessor: 'approval_date', cell: (row) => row.approval_date || '—' },
     { header: 'Status', accessor: 'status', cell: (row) => (
       <div className="flex flex-col gap-1 items-start">
@@ -573,6 +697,13 @@ export default function BeneficiaryListPage() {
             className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition"
           >
             <Eye className="w-4 h-4 text-blue-600" />
+          </button>
+          <button
+            onClick={() => handleOpenQrPass(row)}
+            title="Digital QR Pass / Temporary ID"
+            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition"
+          >
+            <QrCode className="w-4 h-4 text-emerald-600" />
           </button>
           {['admin','mswdo_admin'].includes(user?.role) && (
             <button
@@ -625,7 +756,7 @@ export default function BeneficiaryListPage() {
     const barangayMatch = !selectedBarangayId || b.barangay_id === Number(selectedBarangayId);
     const catMatch = categoryMatches(b.category, selectedCategory);
     const ipMatch = !selectedIpClassification || b.ip_classification === selectedIpClassification;
-    const payoutMatch = !selectedPayoutStatus || (
+    const payoutMatch = isMswdoAdmin || !selectedPayoutStatus || (
       selectedPayoutStatus === 'unverified' ? (b.payout_preference === 'digital' && b.account_verification_status !== 'verified') :
       selectedPayoutStatus === 'verified' ? (b.payout_preference === 'digital' && b.account_verification_status === 'verified') :
       selectedPayoutStatus === 'cash_otc' ? (b.payout_preference === 'cash_otc' || !b.payout_preference) :
@@ -636,38 +767,47 @@ export default function BeneficiaryListPage() {
 
   return (
     <div className="mx-auto max-w-[1220px] space-y-6 px-1 pb-8 pt-2 sm:px-2 lg:px-3">
-      {/* Header Banner */}
-      <div className="flex flex-col gap-4 rounded-[24px] bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 p-4 text-white shadow-xl sm:p-6 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Users className="h-7 w-7 shrink-0 text-yellow-300 sm:h-8 sm:w-8" />
-            <h1 className="text-xl font-black tracking-tight sm:text-2xl xl:text-[2rem]">Official Beneficiary Records</h1>
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              {isMswdoAdmin ? 'MSWDO Registry' : 'Beneficiary Management'}
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
-          <p className="max-w-2xl text-xs text-blue-100 sm:text-sm">
-            {showArchivedOnly ? 'Viewing archived beneficiary records.' : 'Manage verified municipal beneficiary records, track program enrollment, and audit beneficiary statuses.'}
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            {showArchivedOnly ? 'Archived Beneficiary Records' : 'Official Beneficiary Records'}
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {showArchivedOnly 
+              ? 'Viewing archived and deactivated municipal records.' 
+              : isMswdoAdmin 
+                ? 'Municipal registry for Senior Citizens, Persons with Disabilities (PWD), and 4Ps households.'
+                : 'Verified municipal beneficiary records, program enrollment, and status tracking.'}
           </p>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* View Pending Beneficiaries Button - Admin Only */}
+
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
           {['admin','mswdo_admin'].includes(user?.role) && (
             <button
               onClick={openPendingModal}
-              className="flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold px-4 py-3 rounded-xl shadow transition text-sm border border-amber-500"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold transition shadow-2xs active:scale-95"
             >
-              <Clock className="w-5 h-5" />
-              <span>Pending ({pendingApplications.length})</span>
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
+              <span>Pending Review ({pendingApplications.length})</span>
             </button>
           )}
-          
+
           <button
             onClick={() => setShowArchivedOnly(!showArchivedOnly)}
-            className={`flex items-center gap-2 font-bold px-4 py-3 rounded-xl shadow transition text-sm ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition shadow-2xs active:scale-95 ${
               showArchivedOnly
-                ? 'bg-yellow-400 text-slate-950 border border-yellow-400'
-                : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
+                ? 'bg-slate-900 text-white hover:bg-slate-800'
+                : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-700'
             }`}
           >
-            <Archive className="w-5 h-5 text-purple-300" />
+            <Archive className="w-3.5 h-3.5 text-slate-500" />
             <span>Archived ({archivedCount})</span>
           </button>
         </div>
@@ -692,7 +832,7 @@ export default function BeneficiaryListPage() {
 
       {/* Filters */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md sm:p-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${isMswdoAdmin ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
           <div className="min-w-0">
             <label className="mb-2 block text-sm font-semibold text-slate-700">Barangay</label>
             <select
@@ -741,19 +881,21 @@ export default function BeneficiaryListPage() {
             </select>
           </div>
 
-          <div className="min-w-0">
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Disbursement Channel</label>
-            <select
-              value={selectedPayoutStatus}
-              onChange={(e) => setSelectedPayoutStatus(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200 font-medium"
-            >
-              <option value="">All Payout Channels</option>
-              <option value="unverified">🟡 For Verification (Digital Accounts)</option>
-              <option value="verified">✅ Verified Digital (GCash / Maya / Bank)</option>
-              <option value="cash_otc">🏢 Cash OTC / Physical RFID</option>
-            </select>
-          </div>
+          {!isMswdoAdmin && (
+            <div className="min-w-0">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Disbursement Channel</label>
+              <select
+                value={selectedPayoutStatus}
+                onChange={(e) => setSelectedPayoutStatus(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200 font-medium"
+              >
+                <option value="">All Payout Channels</option>
+                <option value="unverified">🟡 For Verification (Digital Accounts)</option>
+                <option value="verified">✅ Verified Digital (GCash / Maya / Bank)</option>
+                <option value="cash_otc">🏢 Cash OTC / Physical RFID</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1175,6 +1317,38 @@ export default function BeneficiaryListPage() {
                     )}
                   </div>
 
+                  {/* Digital QR Pass (Temporary ID Card) Card */}
+                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-5 border border-emerald-200 shadow-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs">
+                          <QrCode className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm text-emerald-950">Digital QR Pass / Temporary ID</h4>
+                            <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-800">
+                              Active Backup
+                            </span>
+                          </div>
+                          <p className="text-xs text-emerald-700">
+                            {viewingBeneficiary.RFID_number 
+                              ? 'Maaari ring gamitin bilang alternatibong pagkakakilanlan.' 
+                              : 'Gamitin bilang pansamantalang ID sa mga payout at attendance habang wala pang RFID card.'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenQrPass(viewingBeneficiary)}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 shrink-0"
+                      >
+                        <QrCode className="w-4 h-4" />
+                        Tingnan at I-print ang QR Pass
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Personal Details & Location Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     
@@ -1259,6 +1433,7 @@ export default function BeneficiaryListPage() {
                   </div>
 
                   {/* Payout & Disbursement Details */}
+                  {!isMswdoAdmin && (
                   <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
                     <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                       <CreditCard className="w-3.5 h-3.5 text-purple-600" /> Payout & Disbursement Details
@@ -1488,6 +1663,7 @@ export default function BeneficiaryListPage() {
                       )}
                     </div>
                   </div>
+                  )}
                 </>
               )}
 
@@ -2217,6 +2393,7 @@ export default function BeneficiaryListPage() {
                 )}
 
                 {/* ── Payout & Disbursement Details ── */}
+                {!isMswdoAdmin && (
                 <div className="border-t border-slate-200 pt-4">
                   <h4 className="text-sm font-bold text-purple-700 mb-3 flex items-center gap-1.5">
                     <CreditCard className="w-4 h-4" /> Payout & Disbursement
@@ -2286,6 +2463,7 @@ export default function BeneficiaryListPage() {
                     )}
                   </div>
                 </div>
+                )}
 
                 {editError && (
                   <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
@@ -2677,6 +2855,176 @@ export default function BeneficiaryListPage() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DIGITAL QR PASS MODAL */}
+      {qrModalBeneficiary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/10 rounded-xl">
+                  <QrCode className="w-5 h-5 text-yellow-300" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base leading-tight">Digital QR Pass / Temporary ID</h3>
+                  <p className="text-xs text-blue-200">Official Municipal Beneficiary Claim Pass</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQrModalBeneficiary(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6">
+              {qrPassLoading ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-3">
+                  <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
+                  <p className="text-sm font-semibold text-slate-600">Kinukuha ang Digital QR Pass...</p>
+                </div>
+              ) : qrPassError ? (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm space-y-2">
+                  <div className="flex items-center gap-2 font-bold">
+                    <AlertTriangle className="w-4 h-4" /> May problema sa pagkuha ng QR Pass
+                  </div>
+                  <p className="text-xs">{qrPassError}</p>
+                </div>
+              ) : qrPassData ? (
+                <>
+                  {/* PRINTABLE ID PASS CONTAINER */}
+                  <div id="printable-qr-pass" className="bg-gradient-to-b from-white to-slate-50 border-2 border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                    {/* ID Card Header */}
+                    <div className="border-b border-slate-200 pb-3 text-center space-y-0.5">
+                      <p className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">Republic of the Philippines</p>
+                      <h4 className="font-black text-sm text-blue-950 uppercase tracking-wide">
+                        {user?.role === 'mswdo_admin' ? 'Municipal Social Welfare & Development Office' : 'DSWD / MSWDO Bongabong'}
+                      </h4>
+                      <div className="inline-block px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase tracking-wider mt-1">
+                        Temporary Digital ID • Claim Pass
+                      </div>
+                    </div>
+
+                    {/* Beneficiary Details Row */}
+                    <div className="flex items-start gap-4">
+                      {/* Photo or Avatar */}
+                      <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 border-2 border-blue-200 shrink-0 flex items-center justify-center shadow-xs">
+                        {qrPassData.profile_photo ? (
+                          <img
+                            src={qrPassData.profile_photo.startsWith('http') ? qrPassData.profile_photo : `${backendUrl}${qrPassData.profile_photo}`}
+                            alt={qrPassData.full_name}
+                            className="w-full h-full object-cover"
+                            crossOrigin="anonymous"
+                          />
+                        ) : (
+                          <User className="w-10 h-10 text-slate-400" />
+                        )}
+                      </div>
+
+                      {/* Info Text */}
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <h3 className="font-extrabold text-base text-slate-900 leading-tight truncate">
+                          {qrPassData.full_name}
+                        </h3>
+                        <p className="text-xs font-mono font-bold text-blue-700">
+                          {qrPassData.category?.toLowerCase().includes('4ps') ? 'HH No: ' : 'ID: '}
+                          {qrPassData.household_id_number || qrPassData.beneficiary_id_code}
+                        </p>
+                        <div className="inline-block text-[11px] font-bold px-2 py-0.5 rounded-md bg-purple-100 text-purple-800">
+                          {qrPassData.category}
+                        </div>
+                        <p className="text-xs text-slate-600 truncate flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                          Brgy. {qrPassData.barangay}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* QR Code Container */}
+                    <div className="flex flex-col items-center justify-center py-4 px-2 bg-white rounded-xl border border-slate-200 shadow-xs space-y-2">
+                      <div className="p-3 bg-white rounded-lg shadow-inner border border-slate-100 flex items-center justify-center">
+                        <QRCodeSVG
+                          value={qrPassData.qr_code}
+                          size={180}
+                          level="H"
+                          includeMargin={false}
+                          fgColor="#002B49"
+                        />
+                      </div>
+                      <div className="text-center space-y-0.5">
+                        <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">
+                          Security Token: {qrPassData.qr_token?.slice(0, 16)}...
+                        </span>
+                        <p className="text-[11px] font-semibold text-slate-700">
+                          I-scan ang QR code na ito para sa payout verification & attendance
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Card Footer */}
+                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+                      <div>
+                        RFID Card: <strong className="text-slate-800">{qrPassData.RFID_number || 'Walang RFID (Temporary QR Active)'}</strong>
+                      </div>
+                      <div>
+                        Issued: <strong className="text-slate-800">{new Date(qrPassData.qr_generated_at || Date.now()).toLocaleDateString('en-PH')}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Security Advisory */}
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2">
+                    <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">
+                      Ang QR code na ito ay may natatanging encrypted token na ligtas laban sa pamemeke. Maaaring i-print at ibigay sa benepisyaryo bilang temporary ID stub habang hinihintay ang kanilang physical RFID card.
+                    </p>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              {['admin', 'mswdo_admin', 'staff'].includes(user?.role) && qrPassData && (
+                <button
+                  type="button"
+                  onClick={handleRegenerateQrPass}
+                  disabled={qrPassRegenerating}
+                  className="px-3.5 py-2 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition flex items-center gap-1.5 disabled:opacity-50"
+                  title="Palitan ang QR code kung nawala o nakopya ang lumang pass"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${qrPassRegenerating ? 'animate-spin' : ''}`} />
+                  {qrPassRegenerating ? 'Regenerating...' : 'Regenerate QR'}
+                </button>
+              )}
+
+              <div className="flex items-center gap-2 ml-auto">
+                {qrPassData && (
+                  <button
+                    type="button"
+                    onClick={handlePrintQrPass}
+                    className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    I-print ang Pass
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setQrModalBeneficiary(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition"
+                >
+                  Isara
+                </button>
               </div>
             </div>
           </div>

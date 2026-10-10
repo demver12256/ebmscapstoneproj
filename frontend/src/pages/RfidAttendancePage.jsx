@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users, XCircle, Ban } from 'lucide-react';
+import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Ban, QrCode, Camera, CameraOff, RefreshCw, CreditCard } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { announcementApi } from '../services/api';
 import * as XLSX from 'xlsx';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
+import { getAnnouncementEndDateTime } from '../utils/announcementSchedule';
 
 // Helper to determine if announcement is active for attendance recording
 const isAnnouncementActiveForAttendance = (ann) => {
@@ -12,28 +14,8 @@ const isAnnouncementActiveForAttendance = (ann) => {
   if (ann.status !== 'published') return false;
 
   const now = new Date();
-  if (ann.event_date) {
-    const timeToCheck = ann.end_time || ann.event_time || '23:59';
-    let hours = 23;
-    let minutes = 59;
-    if (timeToCheck) {
-      const match = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
-      if (match) {
-        let h = parseInt(match[1], 10);
-        const m = parseInt(match[2], 10);
-        const ampm = match[3] ? match[3].toUpperCase() : null;
-        if (ampm === 'PM' && h < 12) h += 12;
-        if (ampm === 'AM' && h === 12) h = 0;
-        hours = h;
-        minutes = m;
-      }
-    }
-    const [y, m, d] = String(ann.event_date).split('-').map(Number);
-    if (y && m && d) {
-      const eventEndTime = new Date(y, m - 1, d, hours, minutes, 59);
-      if (now > eventEndTime) return false;
-    }
-  }
+  const eventEndTime = getAnnouncementEndDateTime(ann);
+  if (eventEndTime && now > eventEndTime) return false;
 
   if (ann.expiration_date) {
     const [y, m, d] = String(ann.expiration_date).split('-').map(Number);
@@ -57,6 +39,13 @@ export default function RfidAttendancePage() {
   const [success, setSuccess] = useState(null);
   const rfidInputRef = useRef(null);
   const recordPagination = usePagination(scannedRecords, 10);
+
+  // Camera QR Scanner State
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraError, setCameraError] = useState(null);
+  const html5QrCodeRef = useRef(null);
+  const isProcessingScanRef = useRef(false);
 
   useEffect(() => {
     const fetchAnnouncements = async () => {
@@ -144,9 +133,30 @@ export default function RfidAttendancePage() {
   const activeAnnouncements = announcements.filter(isAnnouncementActiveForAttendance);
   const endedAnnouncements = announcements.filter((a) => !isAnnouncementActiveForAttendance(a));
 
-  const handleScan = async () => {
+  const playSuccessBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.15);
+    } catch (e) {}
+  };
+
+  const executeScan = async (rawInput) => {
+    const code = String(rawInput || '').trim();
+    if (!code) {
+      setError('Mag-tap ng RFID card o i-scan ang QR code');
+      return;
+    }
+
     if (!selectedAnnouncement) {
-      setError('Please select an announcement first');
+      setError('Pumili muna ng aktibidad/announcement sa itaas');
       return;
     }
 
@@ -155,56 +165,42 @@ export default function RfidAttendancePage() {
       return;
     }
 
-    if (!rfidInput.trim()) {
-      setError('Please scan an RFID card');
-      return;
-    }
+    if (isProcessingScanRef.current) return;
+    isProcessingScanRef.current = true;
 
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const rfidNumber = rfidInput.trim();
       const now = new Date();
       const scanDate = now.toISOString().split('T')[0];
       const scanTime = now.toTimeString().split(' ')[0];
 
-      // Check for duplicate scan in today's records
-      const isDuplicate = scannedRecords.some(
-        (r) => r.rfid === rfidNumber && r.date === scanDate
-      );
-
-      if (isDuplicate) {
-        setError(`RFID ${rfidNumber} already scanned for this event today`);
-        setRfidInput('');
-        setTimeout(() => {
-          if (rfidInputRef.current) rfidInputRef.current.focus();
-        }, 100);
-        setLoading(false);
-        return;
-      }
-
       // Record attendance via announcement API
       const response = await announcementApi.scanRfid(selectedAnnouncement, {
-        rfid_number: rfidNumber
+        rfid_number: code,
+        RFID_number: code,
       });
 
       const beneficiary = response.data.beneficiary;
 
-      setSuccess(`✓ ${beneficiary.first_name} ${beneficiary.last_name} - Attendance recorded!`);
-      setScannedRecords([
+      playSuccessBeep();
+      setSuccess(`✓ ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code}) - Naitala ang Attendance!`);
+      
+      setScannedRecords((prev) => [
         {
           id: Date.now(),
-          rfid: rfidNumber,
+          rfid: beneficiary.RFID_number || 'N/A (QR Pass)',
+          qr_code: code.startsWith('EBMS-QR:') ? code : null,
           name: `${beneficiary.first_name} ${beneficiary.last_name}`,
           beneficiary_id_code: beneficiary.beneficiary_id_code,
           category: beneficiary.category,
           time: scanTime,
           date: scanDate,
-          status: 'present'
+          status: 'present',
         },
-        ...scannedRecords
+        ...prev,
       ]);
 
       setRfidInput('');
@@ -212,18 +208,17 @@ export default function RfidAttendancePage() {
         rfidInputRef.current.focus();
       }
 
-      setTimeout(() => setSuccess(null), 3000);
+      setTimeout(() => setSuccess(null), 3500);
     } catch (err) {
-      console.error('Error:', err);
-      
+      console.error('Scan Error:', err);
       if (err.response) {
         const status = err.response.status;
         const message = err.response.data?.message || err.message;
-        
         if (status === 409) {
-          setError(`⚠️ Duplicate scan: ${message}`);
+          setError(null);
+          setSuccess(`✓ ${message} Naitala na ang attendance ng benepisyaryo.`);
         } else if (status === 404) {
-          setError(`❌ RFID not found: ${message}`);
+          setError(`❌ Hindi rehistrado ang RFID o QR Pass: ${message}`);
         } else {
           setError(`Error: ${message}`);
         }
@@ -232,12 +227,120 @@ export default function RfidAttendancePage() {
       } else {
         setError(err.message || 'Failed to record attendance');
       }
-      
       setTimeout(() => setError(null), 5000);
     } finally {
       setLoading(false);
+      setTimeout(() => {
+        isProcessingScanRef.current = false;
+      }, 1500);
     }
   };
+
+  const handleScan = () => {
+    executeScan(rfidInput);
+  };
+
+  const startCameraScanner = async () => {
+    if (!selectedAnnouncement) {
+      setError('Pumili muna ng aktibidad/announcement sa itaas bago buksan ang camera');
+      return;
+    }
+    if (isSelectedEnded) {
+      setError('Sarado na ang attendance para sa event na ito.');
+      return;
+    }
+
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setIsCameraActive(true);
+      setCameraLoading(false);
+      setCameraError('Naka-block ang live camera sa HTTP address. Patakbuhin ang npm run start:camera sa frontend folder, i-install ang ebms-local-ca.cer sa phone, at buksan ang HTTPS address na ipi-print ng terminal.');
+      return;
+    }
+
+    setIsCameraActive(true);
+    setCameraLoading(true);
+    setCameraError(null);
+
+    setTimeout(async () => {
+      try {
+        const scanner = new Html5Qrcode('qr-camera-reader');
+        html5QrCodeRef.current = scanner;
+        await scanner.start(
+          { facingMode: 'environment' },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0,
+          },
+          async (decodedText) => {
+            if (!isProcessingScanRef.current) {
+              setRfidInput(decodedText);
+              const scanPromise = executeScan(decodedText);
+              await stopCameraScanner();
+              await scanPromise;
+            }
+          },
+          () => {}
+        );
+        setCameraLoading(false);
+      } catch (err) {
+        console.error('Camera init error:', err);
+        const failedScanner = html5QrCodeRef.current;
+        if (failedScanner) {
+          try {
+            if (failedScanner.isScanning) await failedScanner.stop();
+            await failedScanner.clear();
+          } catch (cleanupError) {
+            console.warn('Camera startup cleanup error:', cleanupError);
+          }
+          html5QrCodeRef.current = null;
+        }
+        setCameraError(err.name === 'NotAllowedError'
+          ? 'Hindi pinayagan ang camera. I-enable ang camera permission para sa site sa browser settings, pagkatapos ay subukang muli.'
+          : err.name === 'NotFoundError'
+            ? 'Walang camera na makita sa device na ito.'
+            : err.message || 'Hindi ma-access ang camera. Pakitiyak na pinayagan ang camera permission sa browser.');
+        setCameraLoading(false);
+      }
+    }, 250);
+  };
+
+  const stopCameraScanner = async () => {
+    if (html5QrCodeRef.current) {
+      try {
+        if (html5QrCodeRef.current.isScanning) {
+          await html5QrCodeRef.current.stop();
+        }
+        await html5QrCodeRef.current.clear();
+      } catch (e) {
+        console.error('Stop camera error:', e);
+      }
+      html5QrCodeRef.current = null;
+    }
+    setIsCameraActive(false);
+    setCameraLoading(false);
+    setCameraError(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (html5QrCodeRef.current) {
+        try {
+          if (html5QrCodeRef.current.isScanning) {
+            html5QrCodeRef.current.stop().catch(() => {});
+          }
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAnnouncement || isSelectedEnded) {
+      if (isCameraActive) {
+        stopCameraScanner();
+      }
+    }
+  }, [selectedAnnouncement, isSelectedEnded, isCameraActive]);
 
   return (
     <div className="space-y-6">
@@ -345,68 +448,182 @@ export default function RfidAttendancePage() {
         </div>
       </div>
 
-      {/* RFID Scanner Input */}
-      <div className={`bg-white rounded-lg shadow-sm border-2 p-6 transition ${
+      {/* RFID & QR CODE SCANNER CARD */}
+      <div className={`bg-white rounded-2xl shadow-sm border-2 p-6 transition ${
         isSelectedEnded
           ? 'border-red-300 bg-red-50/50'
           : selectedAnnouncement
-          ? 'border-green-300 bg-green-50'
+          ? 'border-emerald-400 bg-gradient-to-b from-white to-emerald-50/30'
           : 'border-slate-200'
       }`}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className={`text-lg font-semibold ${isSelectedEnded ? 'text-red-900' : 'text-slate-900'}`}>
-            {isSelectedEnded ? 'Attendance Closed (Sarado Na)' : 'RFID Scanner Ready'}
-          </h2>
-          <div className={`flex items-center gap-2 text-sm ${
-            isSelectedEnded ? 'text-red-600 font-bold' : selectedAnnouncement ? 'text-green-600' : 'text-slate-400'
-          }`}>
-            <div className={`w-3 h-3 rounded-full ${
-              isSelectedEnded ? 'bg-red-500' : selectedAnnouncement ? 'bg-green-500 animate-pulse' : 'bg-slate-300'
-            }`} />
-            {isSelectedEnded ? 'Sarado / Bawal Mag-scan' : selectedAnnouncement ? 'Ready to scan' : 'Not ready'}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className={`text-lg font-bold ${isSelectedEnded ? 'text-red-900' : 'text-slate-900'}`}>
+                {isSelectedEnded ? 'Attendance Closed (Sarado Na)' : 'RFID & QR Code Scanner Ready'}
+              </h2>
+              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 uppercase tracking-wider">
+                RFID + QR Dual Scan
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {isSelectedEnded
+                ? 'Isinara na ang pagtanggap ng attendance para sa natapos nang event na ito.'
+                : 'I-tap ang RFID card o i-scan ang Digital QR Pass ng benepisyaryo para sa attendance'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full ${
+              isSelectedEnded 
+                ? 'bg-red-100 text-red-700' 
+                : selectedAnnouncement 
+                ? 'bg-emerald-100 text-emerald-800' 
+                : 'bg-slate-100 text-slate-500'
+            }`}>
+              <div className={`w-2.5 h-2.5 rounded-full ${
+                isSelectedEnded ? 'bg-red-500' : selectedAnnouncement ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+              }`} />
+              {isSelectedEnded ? 'Sarado' : selectedAnnouncement ? 'Ready to Scan' : 'Select Event'}
+            </div>
+
+            {/* Toggle Camera QR Scanner Button */}
+            {!isSelectedEnded && selectedAnnouncement && (
+              <button
+                type="button"
+                onClick={isCameraActive ? stopCameraScanner : startCameraScanner}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
+                  isCameraActive
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                {isCameraActive ? (
+                  <>
+                    <CameraOff className="w-3.5 h-3.5" />
+                    Isara ang Camera
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-3.5 h-3.5" />
+                    I-scan gamit ang Camera (QR)
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
-        <p className="text-sm text-slate-600 mb-4">
-          {isSelectedEnded
-            ? 'Isinara na ang pagtanggap ng RFID attendance para sa natapos nang event na ito.'
-            : 'Tap cards here to record attendance'}
-        </p>
+        {/* LIVE CAMERA QR SCANNER VIEWPORT */}
+        {isCameraActive && (
+          <div className="mb-5 p-4 bg-slate-900 rounded-2xl border-2 border-blue-500 shadow-lg text-white space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2 text-xs font-bold text-blue-300 uppercase tracking-wider">
+                <QrCode className="w-4 h-4 text-yellow-400 animate-pulse" />
+                {cameraError ? 'Live Camera Unavailable' : 'Live Camera QR Scanner Active'}
+              </div>
+              <button
+                type="button"
+                onClick={stopCameraScanner}
+                className="text-xs bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg text-white font-semibold transition"
+              >
+                ✕ Isara Camera
+              </button>
+            </div>
 
-        <input
-          ref={rfidInputRef}
-          type="text"
-          value={rfidInput}
-          onChange={(e) => setRfidInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleScan();
-            }
-          }}
-          placeholder={isSelectedEnded ? 'Sarado na ang attendance para sa event na ito...' : 'Tap RFID card here...'}
-          disabled={!selectedAnnouncement || isSelectedEnded || loading}
-          className="w-full px-4 py-3 text-center text-lg border-2 border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed"
-        />
+            {cameraLoading && (
+              <div className="py-8 flex flex-col items-center justify-center gap-2">
+                <RefreshCw className="w-6 h-6 text-blue-400 animate-spin" />
+                <p className="text-xs text-slate-300">Binubuksan ang camera...</p>
+              </div>
+            )}
 
-        <button
-          onClick={handleScan}
-          disabled={!selectedAnnouncement || isSelectedEnded || !rfidInput.trim() || loading}
-          className={`w-full mt-3 px-4 py-3 text-white font-semibold rounded-lg transition ${
-            isSelectedEnded
-              ? 'bg-slate-400 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed'
-          }`}
-        >
-          {isSelectedEnded ? '⛔ Sarado na ang Attendance' : loading ? 'Processing...' : 'Tap card or press Enter'}
-        </button>
+            {cameraError && (
+              <div className="p-3 bg-red-900/60 border border-red-500/50 rounded-xl text-xs text-red-200">
+                {cameraError}
+              </div>
+            )}
+
+            {/* Html5Qrcode video mount div */}
+            <div className="flex justify-center overflow-hidden rounded-xl bg-black">
+              <div id="qr-camera-reader" className="w-full max-w-sm rounded-xl overflow-hidden" />
+            </div>
+
+            <p className="text-center text-[11px] text-slate-300">
+              Itapat ang QR code pass ng benepisyaryo sa harap ng camera para awtomatikong maitala ang attendance.
+            </p>
+          </div>
+        )}
+
+        {/* TAP CARD / HARDWARE BARCODE SCANNER INPUT */}
+        <div className="space-y-3">
+          <div className="relative">
+            <input
+              ref={rfidInputRef}
+              type="text"
+              value={rfidInput}
+              onChange={(e) => setRfidInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleScan();
+                }
+              }}
+              placeholder={
+                isSelectedEnded
+                  ? 'Sarado na ang attendance para sa event na ito...'
+                  : 'I-tap ang RFID card o i-scan ang QR code dito (o i-type ang code)...'
+              }
+              disabled={!selectedAnnouncement || isSelectedEnded || loading}
+              className="w-full px-4 py-3.5 text-center text-base sm:text-lg font-mono font-bold border-2 border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-inner disabled:bg-slate-100 disabled:cursor-not-allowed transition"
+            />
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 text-slate-400 pointer-events-none">
+              <CreditCard className="w-4 h-4" />
+              <span className="text-[11px] font-sans">RFID</span>
+            </div>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 text-slate-400 pointer-events-none">
+              <QrCode className="w-4 h-4 text-emerald-600" />
+              <span className="text-[11px] font-sans text-emerald-700 font-bold">QR Pass</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              onClick={handleScan}
+              disabled={!selectedAnnouncement || isSelectedEnded || !rfidInput.trim() || loading}
+              className={`flex-1 py-3 px-4 text-white font-bold text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-xs ${
+                isSelectedEnded
+                  ? 'bg-slate-400 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed'
+              }`}
+            >
+              <Smartphone className="w-4 h-4" />
+              {isSelectedEnded
+                ? '⛔ Sarado na ang Attendance'
+                : loading
+                ? 'Kinukumpirma...'
+                : 'I-record ang Attendance (Enter)'}
+            </button>
+
+            {!isCameraActive && !isSelectedEnded && selectedAnnouncement && (
+              <button
+                type="button"
+                onClick={startCameraScanner}
+                className="py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-xs"
+              >
+                <Camera className="w-4 h-4" />
+                Buksan ang Camera QR Scanner
+              </button>
+            )}
+          </div>
+        </div>
 
         {!selectedAnnouncement && (
-          <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-2">
-            <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-amber-700">
-              <p className="font-medium">Scanner not ready</p>
-              <p>Select an announcement/event to begin scanning RFID cards for attendance.</p>
+          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3.5 flex items-start gap-2.5">
+            <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-800">
+              <p className="font-bold">Scanner not ready</p>
+              <p className="mt-0.5">Pumili ng aktibidad/announcement sa itaas para magsimulang mag-scan ng RFID cards o QR codes para sa attendance.</p>
             </div>
           </div>
         )}

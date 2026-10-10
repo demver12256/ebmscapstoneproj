@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FileText, Calendar, Filter, X, Download, FileSpreadsheet, Printer, Eye, CheckCircle, AlertCircle, TrendingUp, Users, Shield, ClipboardList } from 'lucide-react';
-import { reportsApi, programApi, barangayApi, beneficiaryApi, distributionApi } from '../services/api';
+import { FileText, Calendar, Filter, X, Download, FileSpreadsheet, Printer, Eye, CheckCircle, AlertCircle, TrendingUp, Users } from 'lucide-react';
+import { reportsApi, programApi, barangayApi, beneficiaryApi, distributionApi, announcementApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx';
 import { usePagination } from '../hooks/usePagination';
@@ -336,14 +336,16 @@ function DistributionDetailModal({ distribution, onClose }) {
 // ─── Main Report Page ──────────────────────────────────────────────
 export default function ReportsPage() {
   const { user } = useAuth();
+  const isMswdoAdmin = user?.role === 'mswdo_admin';
   const [loading, setLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState('');
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
 
   // Filters
-  const [reportType, setReportType] = useState('');
+  const [reportType, setReportType] = useState(user?.role === 'mswdo_admin' ? 'beneficiary' : '');
   const [programFilter, setProgramFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [barangayFilter, setBarangayFilter] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
@@ -381,9 +383,9 @@ export default function ReportsPage() {
 
   // Re-fetch table data whenever any filter, reportType, or page changes
   useEffect(() => {
-    loadReportData(reportType, programFilter, barangayFilter, dateRange, currentPage, itemsPerPage);
+    loadReportData(reportType, programFilter, categoryFilter, barangayFilter, dateRange, currentPage, itemsPerPage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportType, programFilter, barangayFilter, dateRange.start, dateRange.end, currentPage, itemsPerPage]);
+  }, [reportType, programFilter, categoryFilter, barangayFilter, dateRange.start, dateRange.end, currentPage, itemsPerPage]);
 
   const loadFiltersData = async () => {
     try {
@@ -391,7 +393,11 @@ export default function ReportsPage() {
         programApi.list(),
         barangayApi.list(),
       ]);
-      setPrograms(programsRes.data.data || []);
+      const allPrograms = programsRes.data.data || [];
+      const mswdoPrograms = isMswdoAdmin
+        ? allPrograms.filter(p => p.agency === 'MSWDO' || (p.eligibility_category && (p.eligibility_category.includes('Senior') || p.eligibility_category.includes('PWD'))))
+        : allPrograms;
+      setPrograms(mswdoPrograms);
       setBarangays(barangaysRes.data.data || []);
     } catch (err) {
       console.error('Failed to load filter data:', err);
@@ -402,6 +408,7 @@ export default function ReportsPage() {
   const loadReportData = async (
     rType = reportType,
     pFilter = programFilter,
+    cFilter = categoryFilter,
     bFilter = barangayFilter,
     dRange = dateRange,
     page = currentPage,
@@ -410,8 +417,10 @@ export default function ReportsPage() {
     setLoading(true);
     setError(null);
     try {
+      const effectiveRType = (isMswdoAdmin && (!rType || rType === 'distribution')) ? 'beneficiary' : rType;
       const params = { page, limit };
-      if (pFilter) params.program_id = pFilter;
+      if (pFilter && !isMswdoAdmin) params.program_id = pFilter;
+      if (cFilter) params.category = cFilter;
       if (bFilter) params.barangay_id = bFilter;
       if (dRange.start) params.start_date = dRange.start;
       if (dRange.end) params.end_date = dRange.end;
@@ -427,7 +436,7 @@ export default function ReportsPage() {
       setMonthlyAid(monthlyRes.data.data || []);
 
       // Fetch table data based on selected report type with fallback
-      if (rType === 'beneficiary') {
+      if (effectiveRType === 'beneficiary') {
         let benList = [];
         try {
           const res = await reportsApi.getTableBeneficiaries(params);
@@ -439,6 +448,7 @@ export default function ReportsPage() {
           const res = await beneficiaryApi.list();
           let allData = res.data.data || [];
           if (bFilter) allData = allData.filter(b => String(b.barangay_id) === String(bFilter));
+          if (cFilter) allData = allData.filter(b => b.category && b.category.toLowerCase().includes(cFilter.toLowerCase()));
           const startIdx = (page - 1) * limit;
           benList = allData.slice(startIdx, startIdx + limit).map(b => ({
             id: b.id,
@@ -515,6 +525,11 @@ export default function ReportsPage() {
         setTableData(res.data.data || []);
         setTableTotal(res.data.pagination?.total || 0);
         setTotalPages(res.data.pagination?.totalPages || 1);
+      } else if (rType === 'announcement') {
+        const res = await reportsApi.getTableAnnouncements(params);
+        setTableData(res.data.data || []);
+        setTableTotal(res.data.pagination?.total || 0);
+        setTotalPages(res.data.pagination?.totalPages || 1);
       } else if (rType === 'audit-logs') {
         const res = await reportsApi.getTableAuditLogs(params);
         setTableData(res.data.data || []);
@@ -522,10 +537,30 @@ export default function ReportsPage() {
         setTotalPages(res.data.pagination?.totalPages || 1);
       } else {
         // Default: distribution (also used for 'distribution' type and 'all')
-        const distRes = await reportsApi.recentDistributions(params);
-        setTableData(distRes.data.data || []);
-        setTableTotal(distRes.data.pagination?.total || 0);
-        setTotalPages(distRes.data.pagination?.totalPages || 1);
+        if (isMswdoAdmin) {
+          try {
+            const res = await reportsApi.getTableBeneficiaries(params);
+            const benList = res.data.data || [];
+            setTableData(benList);
+            setTableTotal(res.data.pagination?.total || benList.length);
+            setTotalPages(res.data.pagination?.totalPages || 1);
+          } catch (e) {
+            const res = await beneficiaryApi.list();
+            let allData = res.data.data || [];
+            if (bFilter) allData = allData.filter(b => String(b.barangay_id) === String(bFilter));
+            if (cFilter) allData = allData.filter(b => b.category && b.category.toLowerCase().includes(cFilter.toLowerCase()));
+            const startIdx = (page - 1) * limit;
+            const benList = allData.slice(startIdx, startIdx + limit);
+            setTableData(benList);
+            setTableTotal(allData.length);
+            setTotalPages(Math.ceil(allData.length / limit) || 1);
+          }
+        } else {
+          const distRes = await reportsApi.recentDistributions(params);
+          setTableData(distRes.data.data || []);
+          setTableTotal(distRes.data.pagination?.total || 0);
+          setTotalPages(distRes.data.pagination?.totalPages || 1);
+        }
       }
     } catch (err) {
       console.error('Load report data error:', err);
@@ -540,8 +575,9 @@ export default function ReportsPage() {
   };
 
   const resetFilters = () => {
-    setReportType('');
+    setReportType(isMswdoAdmin ? 'beneficiary' : '');
     setProgramFilter('');
+    setCategoryFilter('');
     setBarangayFilter('');
     setDateRange({ start: '', end: '' });
     setCurrentPage(1);
@@ -549,7 +585,8 @@ export default function ReportsPage() {
 
   // ── Table Configuration per Report Type ─────────────────────────
   const getTableConfig = () => {
-    switch (reportType) {
+    const effectiveType = (isMswdoAdmin && (!reportType || reportType === 'distribution')) ? 'beneficiary' : reportType;
+    switch (effectiveType) {
       case 'beneficiary':
         return {
           title: 'Beneficiary List',
@@ -667,6 +704,38 @@ export default function ReportsPage() {
                 }`}>{row.status}</span>
               </td>
               <td className="px-6 py-4 text-sm text-slate-600 max-w-[150px] truncate">{row.remarks || '—'}</td>
+            </>
+          ),
+        };
+      case 'announcement':
+        return {
+          title: 'Announcement & Meeting Reports',
+          exportType: 'announcements',
+          emptyMsg: 'No announcements or meetings found matching the filters',
+          columns: ['ID', 'Title', 'Date', 'Time', 'Venue', 'Target Sector', 'Priority', 'Status', 'Attendees'],
+          renderRow: (row) => (
+            <>
+              <td className="px-6 py-4 text-sm text-slate-500 font-mono">{row.id}</td>
+              <td className="px-6 py-4 text-sm font-medium text-slate-900">{row.title}</td>
+              <td className="px-6 py-4 text-sm text-slate-700 whitespace-nowrap">{row.event_date || '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-600 whitespace-nowrap">{row.event_time || '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-700">{row.venue || '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-700 max-w-[200px] truncate">{row.target_categories || 'All Sectors'}</td>
+              <td className="px-6 py-4">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  row.priority === 'High' ? 'bg-red-100 text-red-700 font-bold' :
+                  row.priority === 'Normal' ? 'bg-blue-100 text-blue-700' :
+                  'bg-slate-100 text-slate-600'
+                }`}>{row.priority || 'Normal'}</span>
+              </td>
+              <td className="px-6 py-4">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
+                  row.status === 'completed' ? 'bg-green-100 text-green-700' :
+                  row.status === 'published' ? 'bg-blue-100 text-blue-700' :
+                  'bg-slate-100 text-slate-600'
+                }`}>{row.status}</span>
+              </td>
+              <td className="px-6 py-4 text-sm font-semibold text-slate-900 text-center">{row.attendees ?? 0} / {row.recipients_count ?? 0}</td>
             </>
           ),
         };
@@ -793,7 +862,8 @@ export default function ReportsPage() {
   // ── Export Helpers ──────────────────────────────────────────────
   const getExportParams = () => {
     const params = {};
-    if (programFilter) params.program_id = programFilter;
+    if (programFilter && !isMswdoAdmin) params.program_id = programFilter;
+    if (categoryFilter) params.category = categoryFilter;
     if (barangayFilter) params.barangay_id = barangayFilter;
     if (dateRange.start) params.start_date = dateRange.start;
     if (dateRange.end) params.end_date = dateRange.end;
@@ -948,6 +1018,10 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
           const res = await reportsApi.exportAttendance(params);
           blob = res.data;
           filename = 'attendance-report.csv';
+        } else if (type === 'announcements') {
+          const res = await reportsApi.exportAnnouncements(params);
+          blob = res.data;
+          filename = 'announcement-report.csv';
         } else if (type === 'audit-logs') {
           const res = await reportsApi.exportAuditLogs(params);
           blob = res.data;
@@ -961,6 +1035,7 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
           const res = await beneficiaryApi.list();
           let list = res.data.data || [];
           if (barangayFilter) list = list.filter(b => String(b.barangay_id) === String(barangayFilter));
+          if (categoryFilter) list = list.filter(b => b.category && b.category.toLowerCase().includes(categoryFilter.toLowerCase()));
           const headers = ['ID', 'First Name', 'Last Name', 'Category', 'Barangay', 'Status', 'Date Registered'];
           const rows = list.map(b => [
             b.id, b.first_name, b.last_name, b.category || '', b.Barangay?.barangay_name || '', b.status, b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-US') : ''
@@ -993,6 +1068,15 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
           const headers = ['Enrollment ID', 'Beneficiary Name', 'Category', 'Barangay', 'Program', 'Status', 'Date Enrolled'];
           const rows = list.map(e => [
             e.id, `${e.first_name || ''} ${e.last_name || ''}`.trim(), e.category || '', e.Barangay?.barangay_name || '', e.program_name || 'General Aid', 'active', e.createdAt ? new Date(e.createdAt).toLocaleDateString('en-US') : ''
+          ]);
+          blob = generateClientCSV(headers, rows);
+        } else if (type === 'announcements') {
+          filename = 'announcement-report.csv';
+          const res = await announcementApi.list();
+          let list = res.data.data || [];
+          const headers = ['ID', 'Title', 'Date', 'Time', 'Venue', 'Priority', 'Status', 'Attendees'];
+          const rows = list.map(a => [
+            a.id, a.title, a.event_date || '', a.event_time || '', a.venue || '', a.priority || 'Normal', a.status || '', a.Recipients?.filter(r => r.attendance_status === 'Present').length || 0
           ]);
           blob = generateClientCSV(headers, rows);
         }
@@ -1095,6 +1179,20 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
           <td>${r.status || ''}</td>
           <td>${r.remarks || ''}</td>
         </tr>`).join('');
+    } else if (reportType === 'announcement') {
+      tableHeaders = '<th>ID</th><th>Title</th><th>Date</th><th>Time</th><th>Venue</th><th>Sector</th><th>Priority</th><th>Status</th><th>Attendees</th>';
+      rowsHTML = tableData.map(a => `
+        <tr>
+          <td>${a.id || ''}</td>
+          <td>${a.title || ''}</td>
+          <td>${a.event_date || '—'}</td>
+          <td>${a.event_time || '—'}</td>
+          <td>${a.venue || '—'}</td>
+          <td>${a.target_categories || 'All Sectors'}</td>
+          <td>${a.priority || ''}</td>
+          <td>${a.status || ''}</td>
+          <td>${a.attendees ?? 0} / ${a.recipients_count ?? 0}</td>
+        </tr>`).join('');
     } else if (reportType === 'audit-logs') {
       tableHeaders = '<th>ID</th><th>User</th><th>Email</th><th>Role</th><th>Action</th><th>Module</th><th>Timestamp</th>';
       rowsHTML = tableData.map(log => `
@@ -1150,16 +1248,25 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
   <div class="header">
     <h1>BeniAid Beneficiary Management System</h1>
     <p>Official Report &mdash; Generated: ${now}</p>
-    ${programFilter ? `<p>Program Filter: ${programs.find(p => String(p.id) === String(programFilter))?.name || ''}</p>` : ''}
+    ${!isMswdoAdmin && programFilter ? `<p>Program Filter: ${programs.find(p => String(p.id) === String(programFilter))?.name || ''}</p>` : ''}
+    ${categoryFilter ? `<p>Category Filter: ${categoryFilter}</p>` : ''}
     ${barangayFilter ? `<p>Barangay Filter: ${barangays.find(b => String(b.id) === String(barangayFilter))?.barangay_name || ''}</p>` : ''}
     ${dateRange.start || dateRange.end ? `<p>Date Range: ${dateRange.start || '—'} to ${dateRange.end || '—'}</p>` : ''}
   </div>
   <div class="stats">
-    <div class="stat-box"><div class="value">${totalBeneficiaries}</div><div class="label">Total Beneficiaries</div></div>
-    <div class="stat-box"><div class="value">${summary.totalPrograms || 0}</div><div class="label">Active Programs</div></div>
-    <div class="stat-box"><div class="value">${summary.pendingApplications || 0}</div><div class="label">Pending Enrollments</div></div>
-    <div class="stat-box"><div class="value">${summary.completedEvents || 0}</div><div class="label">Completed Distributions</div></div>
-    <div class="stat-box"><div class="value">${formatCur(summary.totalDistributedFunds)}</div><div class="label">Total Budget Distributed</div></div>
+    ${isMswdoAdmin ? `
+      <div class="stat-box"><div class="value">${totalBeneficiaries}</div><div class="label">Total Beneficiaries</div></div>
+      <div class="stat-box"><div class="value">${summary.seniorCitizensCount || 0}</div><div class="label">Senior Citizens</div></div>
+      <div class="stat-box"><div class="value">${summary.pwdCount || 0}</div><div class="label">PWD Beneficiaries</div></div>
+      <div class="stat-box"><div class="value">${barangays.length || 0}</div><div class="label">Covered Barangays</div></div>
+      <div class="stat-box"><div class="value">${summary.pendingApplications || 0}</div><div class="label">Pending Applications</div></div>
+    ` : `
+      <div class="stat-box"><div class="value">${totalBeneficiaries}</div><div class="label">Total Beneficiaries</div></div>
+      <div class="stat-box"><div class="value">${summary.totalPrograms || 0}</div><div class="label">Active Programs</div></div>
+      <div class="stat-box"><div class="value">${summary.pendingApplications || 0}</div><div class="label">Pending Enrollments</div></div>
+      <div class="stat-box"><div class="value">${summary.completedEvents || 0}</div><div class="label">Completed Distributions</div></div>
+      <div class="stat-box"><div class="value">${formatCur(summary.totalDistributedFunds)}</div><div class="label">Total Budget Distributed</div></div>
+    `}
   </div>
   <h2>${cfg.title}</h2>
   <table>
@@ -1174,9 +1281,9 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
   // ── Charts ──────────────────────────────────────────────────────
   const getProgramChartData = () => {
     const data = [
-      { name: '4Ps Program', count: summary.fourPsCount || 0 },
+      { name: isMswdoAdmin ? '4Ps Beneficiaries' : '4Ps Program', count: summary.fourPsCount || 0 },
       { name: 'Senior Citizens', count: summary.seniorCitizensCount || 0 },
-      { name: 'PWD Program', count: summary.pwdCount || 0 },
+      { name: isMswdoAdmin ? 'PWD Beneficiaries' : 'PWD Program', count: summary.pwdCount || 0 },
     ];
     const total = data.reduce((sum, p) => sum + p.count, 0);
     return data.map(p => ({ ...p, percentage: total > 0 ? ((p.count / total) * 100).toFixed(1) : 0 }));
@@ -1209,11 +1316,14 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
   // ── Available report definitions ──────────────────────────────
   const availableReports = [
     { icon: '👥', title: 'Beneficiary List', desc: 'Excel report with auto-sized columns', color: 'bg-blue-50 hover:bg-blue-100 border-blue-200', exportType: 'beneficiaries', fileName: 'beneficiary-list.xlsx' },
-    { icon: '📊', title: 'Distribution Report', desc: 'Excel report with auto-sized columns', color: 'bg-green-50 hover:bg-green-100 border-green-200', exportType: 'distributions', fileName: 'distribution-report.xlsx' },
-    { icon: '📝', title: 'Program Report', desc: 'Excel report with auto-sized columns', color: 'bg-purple-50 hover:bg-purple-100 border-purple-200', exportType: 'programs', fileName: 'program-report.xlsx' },
-    { icon: '📋', title: 'Enrollment Report', desc: 'Excel report with auto-sized columns', color: 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200', exportType: 'enrollments', fileName: 'enrollment-report.xlsx' },
-    { icon: '🆘', title: 'Assistance Requests', desc: 'Excel report with auto-sized columns', color: 'bg-orange-50 hover:bg-orange-100 border-orange-200', exportType: 'assistance-requests', fileName: 'assistance-requests-report.xlsx' },
-    { icon: '📅', title: 'Attendance Report', desc: 'Excel report with auto-sized columns', color: 'bg-teal-50 hover:bg-teal-100 border-teal-200', exportType: 'attendance', fileName: 'attendance-report.xlsx' },
+    { icon: '📅', title: 'Attendance Report', desc: 'Excel report with attendee records', color: 'bg-teal-50 hover:bg-teal-100 border-teal-200', exportType: 'attendance', fileName: 'attendance-report.xlsx' },
+    { icon: '📢', title: 'Announcement Report', desc: 'Excel report with announcements and meetings summary', color: 'bg-amber-50 hover:bg-amber-100 border-amber-200', exportType: 'announcements', fileName: 'announcement-report.xlsx' },
+    ...(!isMswdoAdmin ? [
+      { icon: '📊', title: 'Distribution Report', desc: 'Excel report with auto-sized columns', color: 'bg-green-50 hover:bg-green-100 border-green-200', exportType: 'distributions', fileName: 'distribution-report.xlsx' },
+      { icon: '📝', title: 'Program Report', desc: 'Excel report with auto-sized columns', color: 'bg-purple-50 hover:bg-purple-100 border-purple-200', exportType: 'programs', fileName: 'program-report.xlsx' },
+      { icon: '📋', title: 'Enrollment Report', desc: 'Excel report with auto-sized columns', color: 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200', exportType: 'enrollments', fileName: 'enrollment-report.xlsx' },
+      { icon: '🆘', title: 'Assistance Requests', desc: 'Excel report with auto-sized columns', color: 'bg-orange-50 hover:bg-orange-100 border-orange-200', exportType: 'assistance-requests', fileName: 'assistance-requests-report.xlsx' },
+    ] : []),
     ...(user?.role === 'admin' ? [{ icon: '🔐', title: 'Audit / System Logs', desc: 'Excel report with auto-sized columns', color: 'bg-slate-50 hover:bg-slate-100 border-slate-300', exportType: 'audit-logs', fileName: 'audit-logs.xlsx' }] : []),
   ];
 
@@ -1221,24 +1331,31 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <FileText className="w-8 h-8 text-yellow-300" />
-            <h1 className="text-3xl font-black tracking-tight">Reports & Analytics Module</h1>
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              {isMswdoAdmin ? 'MSWDO Analytics' : 'Reports & Exports'}
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
-          <p className="text-blue-100 text-sm max-w-2xl">
-            Generate and download accurate reports for monitoring, transparency, and decision-making.
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Reports & Analytics
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Generate and download municipal reports for monitoring, transparency, and decision-making.
           </p>
         </div>
-        <div>
+
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
           <button
+            type="button"
             onClick={handlePrint}
-            className="flex items-center gap-2.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95 text-sm"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
           >
-            <Printer className="w-5 h-5" />
-            Print Report
+            <Printer className="w-3.5 h-3.5" />
+            <span>Print Report</span>
           </button>
         </div>
       </div>
@@ -1280,30 +1397,58 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
               className="w-full px-4 py-2.5 border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white appearance-none cursor-pointer hover:border-blue-300 transition-colors shadow-sm"
               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%233B82F6' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.75rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.25em 1.25em', paddingRight: '2.5rem' }}
             >
-              <option value="">All Reports</option>
-              <option value="beneficiary">Beneficiary Reports</option>
-              <option value="distribution">Distribution Reports</option>
-              <option value="program">Program Reports</option>
-              <option value="enrollment">Enrollment Reports</option>
-              <option value="assistance">Assistance Requests</option>
-              <option value="attendance">Attendance Reports</option>
-              {user?.role === 'admin' && <option value="audit-logs">Audit / System Logs</option>}
+              {isMswdoAdmin ? (
+                <>
+                  <option value="beneficiary">Beneficiary Records (Municipal Registry)</option>
+                  <option value="attendance">Attendance Reports</option>
+                  <option value="announcement">Announcement Reports</option>
+                </>
+              ) : (
+                <>
+                  <option value="">All Reports</option>
+                  <option value="beneficiary">Beneficiary Reports</option>
+                  <option value="distribution">Distribution Reports</option>
+                  <option value="program">Program Reports</option>
+                  <option value="enrollment">Enrollment Reports</option>
+                  <option value="attendance">Attendance Reports</option>
+                  <option value="announcement">Announcement Reports</option>
+                  <option value="assistance">Assistance Requests</option>
+                  {user?.role === 'admin' && <option value="audit-logs">Audit / System Logs</option>}
+                </>
+              )}
             </select>
           </div>
 
-          {/* Program */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Program</label>
-            <select
-              value={programFilter}
-              onChange={(e) => setProgramFilter(e.target.value)}
-              className="w-full px-4 py-2.5 border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white appearance-none cursor-pointer hover:border-blue-300 transition-colors shadow-sm"
-              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%233B82F6' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.75rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.25em 1.25em', paddingRight: '2.5rem' }}
-            >
-              <option value="">All Programs</option>
-              {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
+          {/* Program or Category Filter */}
+          {isMswdoAdmin ? (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Category / Sector</label>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="w-full px-4 py-2.5 border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white appearance-none cursor-pointer hover:border-blue-300 transition-colors shadow-sm"
+                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%233B82F6' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.75rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.25em 1.25em', paddingRight: '2.5rem' }}
+              >
+                <option value="">All Categories</option>
+                <option value="Senior">Senior Citizens</option>
+                <option value="PWD">Persons with Disabilities (PWD)</option>
+                <option value="4Ps">4Ps Household Beneficiaries</option>
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Program</label>
+              <select
+                value={programFilter}
+                onChange={(e) => setProgramFilter(e.target.value)}
+                className="w-full px-4 py-2.5 border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white appearance-none cursor-pointer hover:border-blue-300 transition-colors shadow-sm"
+                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%233B82F6' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.75rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.25em 1.25em', paddingRight: '2.5rem' }}
+              >
+                <option value="">All Programs</option>
+                {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Barangay */}
           <div>
@@ -1360,13 +1505,19 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        {[
+        {(isMswdoAdmin ? [
+          { icon: '👥', label: 'Total Beneficiaries', value: totalBeneficiaries, sub: 'Municipal Registry', color: 'bg-blue-50', iconColor: 'bg-blue-100' },
+          { icon: '🧓', label: 'Senior Citizens', value: summary.seniorCitizensCount || 0, sub: 'Social Pension', color: 'bg-white', iconColor: 'bg-rose-100' },
+          { icon: '♿', label: 'PWD Beneficiaries', value: summary.pwdCount || 0, sub: 'Municipal Registry', color: 'bg-white', iconColor: 'bg-amber-100' },
+          { icon: '📍', label: 'Covered Barangays', value: barangays.length || 10, sub: 'Municipal Scope', color: 'bg-white', iconColor: 'bg-purple-100' },
+          { icon: '⏳', label: 'Pending Applications', value: summary.pendingApplications || 0, sub: 'Awaiting Review', color: 'bg-amber-50', iconColor: 'bg-amber-100' },
+        ] : [
           { icon: '👥', label: 'Total Beneficiaries', value: totalBeneficiaries, sub: 'All Programs', color: 'bg-blue-50', iconColor: 'bg-blue-100', Icon: null },
           { icon: '📋', label: 'Active Programs', value: summary.totalPrograms || 0, sub: 'All Programs', color: 'bg-white', iconColor: 'bg-red-100' },
           { icon: '⏳', label: 'Pending Enrollments', value: summary.pendingApplications || 0, sub: 'Awaiting Review', color: 'bg-white', iconColor: 'bg-amber-100' },
           { icon: '✅', label: 'Distributions Done', value: summary.completedEvents || 0, sub: 'All Events', color: 'bg-white', iconColor: 'bg-emerald-100' },
           { icon: '💰', label: 'Budget Distributed', value: formatCurrency(summary.totalDistributedFunds), sub: 'All Time', color: 'bg-amber-50', iconColor: 'bg-amber-100', small: true },
-        ].map((stat, i) => (
+        ]).map((stat, i) => (
           <div key={i} className={`${stat.color} rounded-xl border border-slate-200 p-5 shadow-sm`}>
             <div className="flex items-center gap-3 mb-3">
               <div className={`p-2.5 ${stat.iconColor} rounded-lg text-lg`}>{stat.icon}</div>
@@ -1382,7 +1533,7 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Program Distribution Donut */}
         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900 mb-6">Program Distribution</h3>
+          <h3 className="text-lg font-semibold text-slate-900 mb-6">{isMswdoAdmin ? 'Sector Demographics' : 'Program Distribution'}</h3>
           <div className="flex flex-col items-center">
             <div className="relative w-48 h-48 mb-4">
               <svg viewBox="0 0 200 200" className="transform -rotate-90">
@@ -1439,105 +1590,208 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
           </div>
         </div>
 
-        {/* Monthly Aid Bar Chart */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900 mb-6">Monthly Aid Distribution</h3>
-          <div className="h-64 relative">
-            <div className="absolute left-0 top-0 bottom-8 w-16 flex flex-col justify-between text-xs text-slate-500">
-              {(() => {
-                const maxValue = Math.max(...monthlyAid.map(m => parseFloat(m.total || 0)), 1);
-                return [maxValue, maxValue * 0.75, maxValue * 0.5, maxValue * 0.25, 0].map((val, idx) => (
-                  <div key={idx} className="text-right pr-2">₱{(val / 1000).toFixed(0)}K</div>
-                ));
-              })()}
+        {/* Chart 2: Beneficiaries by Barangay (MSWDO) or Monthly Aid Bar Chart */}
+        {isMswdoAdmin ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-1">Beneficiaries by Barangay</h3>
+              <p className="text-xs text-slate-500 mb-4">Official roster registered per barangay</p>
             </div>
-            <div className="absolute left-16 right-0 top-0 bottom-0">
-              <div className="absolute inset-0 flex flex-col justify-between">
-                {[0, 1, 2, 3, 4].map(idx => <div key={idx} className="border-t border-slate-100" />)}
-              </div>
-              <div className="absolute inset-0 flex items-end justify-between gap-2 pb-8">
-                {monthlyAid.length > 0 ? monthlyAid.map((item, idx) => {
-                  const maxValue = Math.max(...monthlyAid.map(m => parseFloat(m.total || 0)), 1);
-                  const height = ((parseFloat(item.total || 0) / maxValue) * 100);
-                  return (
-                    <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group">
-                      <div className="relative flex-1 w-full flex items-end justify-center">
-                        <div className="w-full bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg transition-all duration-300 hover:from-blue-700 hover:to-blue-500 relative group-hover:shadow-lg"
-                          style={{ height: `${height}%`, minHeight: height > 0 ? '8px' : '0' }}>
-                          <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                            {formatCurrency(item.total)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-xs text-slate-600 mt-2 font-medium">{item.month}</div>
-                    </div>
-                  );
-                }) : (
-                  <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">No data available</div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Distribution Status Donut */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900 mb-6">Distribution Status</h3>
-          <div className="flex flex-col items-center">
-            <div className="relative w-48 h-48 mb-4">
-              <svg viewBox="0 0 200 200" className="transform -rotate-90">
-                {(() => {
-                  const data = getStatusChartData();
-                  const total = data.reduce((sum, item) => sum + item.count, 0);
-                  let currentAngle = 0;
-                  const colorMap = { 'Completed': '#10B981', 'Ongoing': '#F59E0B', 'Scheduled': '#3B82F6', 'Cancelled': '#94A3B8' };
-                  return data.map((item, idx) => {
-                    const percentage = total > 0 ? (item.count / total) : 0;
-                    const angle = percentage * 360;
-                    const startAngle = currentAngle;
-                    const endAngle = currentAngle + angle;
-                    currentAngle = endAngle;
-                    const startRad = (startAngle - 90) * (Math.PI / 180);
-                    const endRad = (endAngle - 90) * (Math.PI / 180);
-                    const outerRadius = 90, innerRadius = 60;
-                    const x1 = 100 + outerRadius * Math.cos(startRad);
-                    const y1 = 100 + outerRadius * Math.sin(startRad);
-                    const x2 = 100 + outerRadius * Math.cos(endRad);
-                    const y2 = 100 + outerRadius * Math.sin(endRad);
-                    const x3 = 100 + innerRadius * Math.cos(endRad);
-                    const y3 = 100 + innerRadius * Math.sin(endRad);
-                    const x4 = 100 + innerRadius * Math.cos(startRad);
-                    const y4 = 100 + innerRadius * Math.sin(startRad);
-                    const largeArc = angle > 180 ? 1 : 0;
-                    const pathData = [`M ${x1} ${y1}`, `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${x2} ${y2}`, `L ${x3} ${y3}`, `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${x4} ${y4}`, 'Z'].join(' ');
-                    return percentage > 0 ? <path key={idx} d={pathData} fill={colorMap[item.status] || '#94A3B8'} className="hover:opacity-80 transition-opacity" /> : null;
-                  });
-                })()}
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <div className="text-3xl font-bold text-slate-900">{getStatusChartData().reduce((s, i) => s + i.count, 0)}</div>
-                <div className="text-sm text-slate-500">Events</div>
-              </div>
-            </div>
-            <div className="w-full space-y-2">
-              {getStatusChartData().map((item, idx) => {
-                const colorMap = { 'Completed': 'bg-green-500', 'Ongoing': 'bg-yellow-500', 'Scheduled': 'bg-blue-500', 'Cancelled': 'bg-slate-400' };
+            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+              {(barangays.length > 0 ? barangays : []).map((b, idx) => {
+                const match = (summary?.barangayCounts || []).find(bc => Number(bc.barangay_id) === Number(b.id));
+                const count = match ? Number(match.count) : 0;
+                const maxCount = Math.max(...(summary?.barangayCounts || []).map(bc => Number(bc.count)), 1);
+                const percent = Math.min(Math.round((count / maxCount) * 100), 100);
                 return (
-                  <div key={idx} className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${colorMap[item.status] || 'bg-slate-400'}`} />
-                      <span className="text-slate-700">{item.status}</span>
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between text-xs font-medium text-slate-700">
+                      <span className="truncate">{b.barangay_name}</span>
+                      <span className="font-bold text-slate-900 ml-2">{count}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-900 font-semibold">{item.count}</span>
-                      <span className="text-slate-500">({item.percentage}%)</span>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${percent}%` }}
+                      />
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900 mb-6">Monthly Aid Distribution</h3>
+            <div className="h-64 relative">
+              <div className="absolute left-0 top-0 bottom-8 w-16 flex flex-col justify-between text-xs text-slate-500">
+                {(() => {
+                  const maxValue = Math.max(...monthlyAid.map(m => parseFloat(m.total || 0)), 1);
+                  return [maxValue, maxValue * 0.75, maxValue * 0.5, maxValue * 0.25, 0].map((val, idx) => (
+                    <div key={idx} className="text-right pr-2">₱{(val / 1000).toFixed(0)}K</div>
+                  ));
+                })()}
+              </div>
+              <div className="absolute left-16 right-0 top-0 bottom-0">
+                <div className="absolute inset-0 flex flex-col justify-between">
+                  {[0, 1, 2, 3, 4].map(idx => <div key={idx} className="border-t border-slate-100" />)}
+                </div>
+                <div className="absolute inset-0 flex items-end justify-between gap-2 pb-8">
+                  {monthlyAid.length > 0 ? monthlyAid.map((item, idx) => {
+                    const maxValue = Math.max(...monthlyAid.map(m => parseFloat(m.total || 0)), 1);
+                    const height = ((parseFloat(item.total || 0) / maxValue) * 100);
+                    return (
+                      <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group">
+                        <div className="relative flex-1 w-full flex items-end justify-center">
+                          <div className="w-full bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg transition-all duration-300 hover:from-blue-700 hover:to-blue-500 relative group-hover:shadow-lg"
+                            style={{ height: `${height}%`, minHeight: height > 0 ? '8px' : '0' }}>
+                            <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                              {formatCurrency(item.total)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-xs text-slate-600 mt-2 font-medium">{item.month}</div>
+                      </div>
+                    );
+                  }) : (
+                    <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">No data available</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Chart 3: Application Review Status (MSWDO) or Distribution Status Donut */}
+        {isMswdoAdmin ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900 mb-6">Application Review Status</h3>
+            <div className="flex flex-col items-center">
+              <div className="relative w-48 h-48 mb-4">
+                <svg viewBox="0 0 200 200" className="transform -rotate-90">
+                  {(() => {
+                    const appData = [
+                      { status: 'Approved', count: summary.approvedCount || totalBeneficiaries, color: '#10B981', colorClass: 'bg-green-500' },
+                      { status: 'Pending Review', count: summary.pendingApplications || 0, color: '#F59E0B', colorClass: 'bg-yellow-500' },
+                      { status: 'Under Review', count: summary.underReviewCount || 0, color: '#3B82F6', colorClass: 'bg-blue-500' },
+                      { status: 'Rejected', count: summary.rejectedCount || 0, color: '#EF4444', colorClass: 'bg-red-500' },
+                    ];
+                    const total = appData.reduce((s, i) => s + i.count, 0);
+                    let currentAngle = 0;
+                    return appData.map((item, idx) => {
+                      const percentage = total > 0 ? (item.count / total) : 0;
+                      const angle = percentage * 360;
+                      const startAngle = currentAngle;
+                      const endAngle = currentAngle + angle;
+                      currentAngle = endAngle;
+                      const startRad = (startAngle - 90) * (Math.PI / 180);
+                      const endRad = (endAngle - 90) * (Math.PI / 180);
+                      const outerRadius = 90, innerRadius = 60;
+                      const x1 = 100 + outerRadius * Math.cos(startRad);
+                      const y1 = 100 + outerRadius * Math.sin(startRad);
+                      const x2 = 100 + outerRadius * Math.cos(endRad);
+                      const y2 = 100 + outerRadius * Math.sin(endRad);
+                      const x3 = 100 + innerRadius * Math.cos(endRad);
+                      const y3 = 100 + innerRadius * Math.sin(endRad);
+                      const x4 = 100 + innerRadius * Math.cos(startRad);
+                      const y4 = 100 + innerRadius * Math.sin(startRad);
+                      const largeArc = angle > 180 ? 1 : 0;
+                      const pathData = [`M ${x1} ${y1}`, `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${x2} ${y2}`, `L ${x3} ${y3}`, `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${x4} ${y4}`, 'Z'].join(' ');
+                      return percentage > 0 ? <path key={idx} d={pathData} fill={item.color} className="hover:opacity-80 transition-opacity" /> : null;
+                    });
+                  })()}
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="text-3xl font-bold text-slate-900">
+                    {(summary.approvedCount || totalBeneficiaries) + (summary.pendingApplications || 0) + (summary.underReviewCount || 0) + (summary.rejectedCount || 0)}
+                  </div>
+                  <div className="text-sm text-slate-500">Applications</div>
+                </div>
+              </div>
+              <div className="w-full space-y-2">
+                {[
+                  { status: 'Approved', count: summary.approvedCount || totalBeneficiaries, colorClass: 'bg-green-500' },
+                  { status: 'Pending Review', count: summary.pendingApplications || 0, colorClass: 'bg-yellow-500' },
+                  { status: 'Under Review', count: summary.underReviewCount || 0, colorClass: 'bg-blue-500' },
+                  { status: 'Rejected', count: summary.rejectedCount || 0, colorClass: 'bg-red-500' },
+                ].map((item, idx) => {
+                  const total = (summary.approvedCount || totalBeneficiaries) + (summary.pendingApplications || 0) + (summary.underReviewCount || 0) + (summary.rejectedCount || 0);
+                  const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : 0;
+                  return (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${item.colorClass}`} />
+                        <span className="text-slate-700">{item.status}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-900 font-semibold">{item.count}</span>
+                        <span className="text-slate-500">({pct}%)</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900 mb-6">Distribution Status</h3>
+            <div className="flex flex-col items-center">
+              <div className="relative w-48 h-48 mb-4">
+                <svg viewBox="0 0 200 200" className="transform -rotate-90">
+                  {(() => {
+                    const data = getStatusChartData();
+                    const total = data.reduce((sum, item) => sum + item.count, 0);
+                    let currentAngle = 0;
+                    const colorMap = { 'Completed': '#10B981', 'Ongoing': '#F59E0B', 'Scheduled': '#3B82F6', 'Cancelled': '#94A3B8' };
+                    return data.map((item, idx) => {
+                      const percentage = total > 0 ? (item.count / total) : 0;
+                      const angle = percentage * 360;
+                      const startAngle = currentAngle;
+                      const endAngle = currentAngle + angle;
+                      currentAngle = endAngle;
+                      const startRad = (startAngle - 90) * (Math.PI / 180);
+                      const endRad = (endAngle - 90) * (Math.PI / 180);
+                      const outerRadius = 90, innerRadius = 60;
+                      const x1 = 100 + outerRadius * Math.cos(startRad);
+                      const y1 = 100 + outerRadius * Math.sin(startRad);
+                      const x2 = 100 + outerRadius * Math.cos(endRad);
+                      const y2 = 100 + outerRadius * Math.sin(endRad);
+                      const x3 = 100 + innerRadius * Math.cos(endRad);
+                      const y3 = 100 + innerRadius * Math.sin(endRad);
+                      const x4 = 100 + innerRadius * Math.cos(startRad);
+                      const y4 = 100 + innerRadius * Math.sin(startRad);
+                      const largeArc = angle > 180 ? 1 : 0;
+                      const pathData = [`M ${x1} ${y1}`, `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${x2} ${y2}`, `L ${x3} ${y3}`, `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${x4} ${y4}`, 'Z'].join(' ');
+                      return percentage > 0 ? <path key={idx} d={pathData} fill={colorMap[item.status] || '#94A3B8'} className="hover:opacity-80 transition-opacity" /> : null;
+                    });
+                  })()}
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="text-3xl font-bold text-slate-900">{getStatusChartData().reduce((s, i) => s + i.count, 0)}</div>
+                  <div className="text-sm text-slate-500">Events</div>
+                </div>
+              </div>
+              <div className="w-full space-y-2">
+                {getStatusChartData().map((item, idx) => {
+                  const colorMap = { 'Completed': 'bg-green-500', 'Ongoing': 'bg-yellow-500', 'Scheduled': 'bg-blue-500', 'Cancelled': 'bg-slate-400' };
+                  return (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${colorMap[item.status] || 'bg-slate-400'}`} />
+                        <span className="text-slate-700">{item.status}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-900 font-semibold">{item.count}</span>
+                        <span className="text-slate-500">({item.percentage}%)</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Dynamic Data Table — switches by Report Type */}
@@ -1686,33 +1940,10 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
         {/* Quick Export */}
         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900 mb-1">Quick Export</h3>
-          <p className="text-sm text-slate-600 mb-5">Export current distribution data to your preferred format</p>
+          <p className="text-sm text-slate-600 mb-5">
+            {isMswdoAdmin ? 'Export municipal beneficiary and activity records to your preferred format' : 'Export current distribution data to your preferred format'}
+          </p>
           <div className="grid grid-cols-2 gap-3">
-            {/* PDF-style Print */}
-            <button
-              onClick={handlePrint}
-              className="bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2"
-            >
-              <FileText className="w-8 h-8 text-red-600" />
-              <div className="font-semibold text-slate-900 text-sm text-center">Export as PDF</div>
-              <div className="text-xs text-slate-600 text-center">Print to PDF / Save</div>
-            </button>
-
-            {/* Excel (CSV) */}
-            <button
-              onClick={() => handleExportCSV('distributions')}
-              disabled={exportLoading === 'distributions'}
-              className="bg-green-50 hover:bg-green-100 border border-green-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
-            >
-              {exportLoading === 'distributions' ? (
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" />
-              ) : (
-                <FileSpreadsheet className="w-8 h-8 text-green-600" />
-              )}
-              <div className="font-semibold text-slate-900 text-sm text-center">Export as Excel</div>
-               <div className="text-xs text-slate-600 text-center">Download formatted Excel file</div>
-            </button>
-
             {/* Beneficiary Excel */}
             <button
               onClick={() => handleExportCSV('beneficiaries')}
@@ -1722,10 +1953,51 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
               {exportLoading === 'beneficiaries' ? (
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
               ) : (
-                <Download className="w-8 h-8 text-blue-600" />
+                <FileSpreadsheet className="w-8 h-8 text-blue-600" />
               )}
               <div className="font-semibold text-slate-900 text-sm text-center">Beneficiary Excel</div>
-              <div className="text-xs text-slate-600 text-center">Download beneficiary list</div>
+              <div className="text-xs text-slate-600 text-center">Download municipal roster (.xlsx)</div>
+            </button>
+
+            {/* Attendance Excel (MSWDO) or Distribution Excel (Admin/Staff) */}
+            {isMswdoAdmin ? (
+              <button
+                onClick={() => handleExportCSV('attendance')}
+                disabled={exportLoading === 'attendance'}
+                className="bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {exportLoading === 'attendance' ? (
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
+                ) : (
+                  <FileSpreadsheet className="w-8 h-8 text-teal-600" />
+                )}
+                <div className="font-semibold text-slate-900 text-sm text-center">Attendance Excel</div>
+                <div className="text-xs text-slate-600 text-center">Download attendee logs (.xlsx)</div>
+              </button>
+            ) : (
+              <button
+                onClick={() => handleExportCSV('distributions')}
+                disabled={exportLoading === 'distributions'}
+                className="bg-green-50 hover:bg-green-100 border border-green-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {exportLoading === 'distributions' ? (
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" />
+                ) : (
+                  <Download className="w-8 h-8 text-green-600" />
+                )}
+                <div className="font-semibold text-slate-900 text-sm text-center">Export as Excel</div>
+                <div className="text-xs text-slate-600 text-center">Download formatted Excel file</div>
+              </button>
+            )}
+
+            {/* Export as PDF */}
+            <button
+              onClick={handlePrint}
+              className="bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2"
+            >
+              <FileText className="w-8 h-8 text-red-600" />
+              <div className="font-semibold text-slate-900 text-sm text-center">Export as PDF</div>
+              <div className="text-xs text-slate-600 text-center">Print to PDF / Save</div>
             </button>
 
             {/* Print */}

@@ -1,12 +1,13 @@
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, Bell, Moon, Sun, ChevronDown, CheckCheck, Users, MessageSquare, Megaphone, UserPlus, Package, Clock, X, ExternalLink, AlertCircle, UserCheck, Info, HandHeart, FileText, CreditCard, User, Lock, LogOut, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { Search, Bell, Moon, Sun, ChevronDown, CheckCheck, Users, MessageSquare, Megaphone, UserPlus, Package, Clock, X, Menu, ExternalLink, AlertCircle, UserCheck, Info, HandHeart, FileText, CreditCard, User, Lock, LogOut, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { notificationApi, beneficiaryApi, messageApi, assistanceRequestApi, authApi } from '../../services/api';
 import { useDarkMode } from '../../hooks/useDarkMode';
 import { API_ORIGIN } from '../../config/api';
+import GlobalSearch from './GlobalSearch';
 
-export default function Header() {
+export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { isDark, toggle: toggleDarkMode } = useDarkMode();
@@ -368,34 +369,35 @@ export default function Header() {
 
   return (
     <>
-    <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between sticky top-0 z-30 shadow-sm">
-      {/* Search Input Bar (DSWD dashboard inspired) */}
-      <div className="relative w-80 max-w-xs sm:max-w-md hidden sm:block">
-        <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none">
-          <Search className="h-4.5 w-4.5 text-slate-400" />
-        </span>
-        <input
-          type="text"
-          placeholder="Search anything..."
-          className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-medium text-slate-700 outline-none transition focus:bg-white focus:border-dswd-lightBlue focus:ring-2 focus:ring-blue-100"
-        />
-        <kbd className="absolute right-3.5 top-2.5 hidden md:inline-flex items-center gap-0.5 rounded border border-slate-200 bg-white px-1.5 text-[9px] font-medium text-slate-400">
-          ⌘K
-        </kbd>
-      </div>
-      <div className="sm:hidden flex items-center gap-2 text-lg font-bold text-dswd-blue tracking-tight">
-        <img src="/dswd-logo.jpg" alt="DSWD logo" className="h-8 w-8 rounded-lg object-contain bg-white" />
-        <span>BeniAid</span>
+    <header className="sticky top-0 z-30 flex min-w-0 items-center justify-between border-b border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-6 sm:py-4">
+      {/* Functional Global Search Input Bar */}
+      <GlobalSearch />
+      <div className="flex shrink-0 items-center gap-2 sm:ml-4">
+        <button
+          type="button"
+          onClick={onOpenMobileMenu}
+          aria-label="Open navigation menu"
+          aria-haspopup="dialog"
+          aria-expanded={mobileMenuOpen}
+          aria-controls="mobile-navigation-panel"
+          className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 lg:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="flex items-center gap-2 text-base font-bold tracking-tight text-dswd-blue sm:hidden">
+          <img src="/dswd-logo.jpg" alt="DSWD logo" className="h-8 w-8 rounded-lg bg-white object-contain" />
+          <span>BeniAid</span>
+        </div>
       </div>
 
       {/* Right Side Header Items */}
-      <div className="flex items-center gap-5 ml-auto">
+      <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-5">
         {/* Notifications Bell with Dropdown */}
         <div className="relative">
           <button 
             ref={bellRef}
             onClick={toggleDropdown}
-            className={`relative p-2 rounded-xl transition ${showDropdown ? 'bg-blue-100 text-blue-600' : 'bg-slate-50 hover:bg-slate-100 text-slate-600'}`}
+            className={`relative rounded-xl p-1.5 transition sm:p-2 ${showDropdown ? 'bg-blue-100 text-blue-600' : 'bg-slate-50 hover:bg-slate-100 text-slate-600'}`}
           >
             <Bell className="h-5 w-5" />
             {totalBadge > 0 && (
@@ -409,7 +411,7 @@ export default function Header() {
           {showDropdown && (
             <div
               ref={dropdownRef}
-              className="absolute right-0 top-full mt-2 w-[400px] max-h-[540px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50"
+              className="fixed inset-x-3 top-[4.5rem] z-50 max-h-[85dvh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl md:absolute md:inset-x-auto md:right-0 md:top-full md:mt-2 md:max-h-[540px] md:w-[400px]"
               style={{ boxShadow: '0 12px 48px rgba(0,0,0,0.18)' }}
             >
               {/* Header */}
@@ -705,31 +707,31 @@ export default function Header() {
         {/* Dark Mode Toggle */}
         <button
           onClick={toggleDarkMode}
-          className={`p-2 rounded-xl transition ${isDark ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-600' : 'bg-slate-50 hover:bg-slate-100 text-slate-600'}`}
+          className={`rounded-xl p-1.5 transition sm:p-2 ${isDark ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-600' : 'bg-slate-50 hover:bg-slate-100 text-slate-600'}`}
           title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         >
           {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </button>
 
-        <div className="h-6 w-px bg-slate-200" />
+        <div className="hidden h-6 w-px bg-slate-200 sm:block" />
 
         {/* User Details & Avatar with Dropdown */}
         <div className="relative">
           <button
             ref={userAvatarRef}
             onClick={() => setShowUserMenu(prev => !prev)}
-            className="flex items-center gap-3 hover:bg-slate-50 rounded-xl px-2 py-1.5 transition"
+            className="flex items-center gap-1.5 rounded-xl px-1 py-1.5 transition hover:bg-slate-50 sm:gap-3 sm:px-2"
           >
             {/* Avatar - shows profile pic for beneficiary, initials for others */}
             {user?.role === 'beneficiary' && beneficiaryProfilePic ? (
               <img
                 src={beneficiaryProfilePic}
                 alt="Profile"
-                className="h-10 w-10 rounded-full object-cover shadow-md ring-2 ring-slate-100"
+                className="h-9 w-9 rounded-full object-cover shadow-md ring-2 ring-slate-100 sm:h-10 sm:w-10"
                 onError={() => setBeneficiaryProfilePic(null)}
               />
             ) : (
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-dswd-blue to-dswd-lightBlue text-white flex items-center justify-center font-bold text-sm shadow-md ring-2 ring-slate-100 uppercase">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-dswd-blue to-dswd-lightBlue text-sm font-bold uppercase text-white shadow-md ring-2 ring-slate-100 sm:h-10 sm:w-10">
                 {getInitials()}
               </div>
             )}
@@ -741,7 +743,7 @@ export default function Header() {
                 {getUserRoleLabel()}
               </span>
             </div>
-            <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform sm:h-4 sm:w-4 ${showUserMenu ? 'rotate-180' : ''}`} />
           </button>
 
           {/* User Menu Dropdown */}

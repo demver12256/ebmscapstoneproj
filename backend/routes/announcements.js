@@ -542,8 +542,8 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
         (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
 
       if (matchesBarangay && matchesCategory) {
-        const timeToCheck = ann.end_time || ann.event_time || '23:59';
-        const expireTime = parseDateTime(ann.event_date, timeToCheck);
+        const timeToCheck = ann.end_time || '23:59';
+        const expireTime = parseDateTime(ann.event_date, timeToCheck, ann.event_time);
         const isEnded = ann.status === 'completed' || (expireTime && new Date() >= expireTime);
         const wasReissuedAfterApproval = announcementWasReissuedAfter(ann, beneficiaryAnnouncementCutoff);
 
@@ -767,8 +767,8 @@ router.get('/', async (req, res, next) => {
           (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
 
         if (matchesBarangay && matchesCategory) {
-          const timeToCheck = ann.end_time || ann.event_time || '23:59';
-          const expireTime = parseDateTime(ann.event_date, timeToCheck);
+          const timeToCheck = ann.end_time || '23:59';
+          const expireTime = parseDateTime(ann.event_date, timeToCheck, ann.event_time);
           const isEnded = ann.status === 'completed' || (expireTime && new Date() >= expireTime);
           const wasReissuedAfterApproval = announcementWasReissuedAfter(ann, beneficiaryAnnouncementCutoff);
 
@@ -1247,9 +1247,9 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
 // ── POST /:id/scan-rfid ── Barangay Staff RFID Attendance Scan
 router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const { RFID_number } = req.body;
+    const RFID_number = req.body.RFID_number || req.body.rfid_number || req.body.code || req.body.qr_code;
     if (!RFID_number) {
-      return res.status(400).json({ success: false, message: 'RFID number is required' });
+      return res.status(400).json({ success: false, message: 'RFID number or QR code is required' });
     }
 
     const announcement = await Announcement.findByPk(req.params.id);
@@ -1258,8 +1258,8 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
     }
 
     // Check if announcement has ended or is completed
-    const timeToCheck = announcement.end_time || announcement.event_time || '23:59';
-    const expireTime = parseDateTime(announcement.event_date, timeToCheck);
+    const timeToCheck = announcement.end_time || '23:59';
+    const expireTime = parseDateTime(announcement.event_date, timeToCheck, announcement.event_time);
     const isPastEvent = expireTime && new Date() >= expireTime;
     const isPastExpiration = announcement.expiration_date && new Date() > parseDateTime(announcement.expiration_date, '23:59');
     const isEnded = announcement.status === 'completed' || announcement.status === 'archived' || isPastEvent || isPastExpiration;
@@ -1275,12 +1275,16 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
       });
     }
 
-    // Find beneficiary by RFID or Beneficiary ID code
+    // Find beneficiary by RFID, QR pass token, or Beneficiary ID code
+    const rawInput = RFID_number.trim();
+    const parsedQrToken = Beneficiary.parseQrInput ? Beneficiary.parseQrInput(rawInput) : null;
     const beneficiary = await Beneficiary.findOne({
       where: {
         [Op.or]: [
-          { RFID_number: RFID_number.trim() },
-          { beneficiary_id_code: RFID_number.trim() },
+          { RFID_number: rawInput },
+          { beneficiary_id_code: rawInput },
+          ...(parsedQrToken ? [{ qr_token: parsedQrToken }] : []),
+          { qr_token: rawInput },
         ],
       },
       include: [
@@ -1292,7 +1296,7 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
     if (!beneficiary) {
       return res.status(404).json({
         success: false,
-        message: `RFID card / ID "${RFID_number}" is not registered in the system.`,
+        message: `RFID card / QR Pass / ID "${RFID_number}" is not registered in the system.`,
       });
     }
 

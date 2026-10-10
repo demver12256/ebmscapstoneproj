@@ -14,6 +14,7 @@ import AttendancePage from './pages/AttendancePage';
 import RfidScannerPage from './pages/RfidScannerPage';
 import RfidAttendancePage from './pages/RfidAttendancePage';
 import SmsPage from './pages/SmsPage';
+import LogsPage from './pages/LogsPage';
 import ReportsPage from './pages/ReportsPage';
 import UserListPage from './pages/UserListPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -93,7 +94,14 @@ const AppRoutes = () => (
       <Route path="rfid-scanner" element={<RfidScannerPage />} />
       <Route path="rfid-attendance" element={<RfidAttendancePage />} />
       <Route path="announcement-scanner" element={<RfidAnnouncementScannerPage />} />
-      <Route path="sms" element={<SmsPage />} />
+       <Route path="sms" element={<LogsPage defaultTab="sms" />} />
+      <Route path="sms-logs" element={<LogsPage defaultTab="sms" />} />
+      <Route path="system-logs" element={<LogsPage defaultTab="system" />} />
+      <Route path="audit-logs" element={<LogsPage defaultTab="audit" />} />
+      <Route path="logs" element={<LogsPage defaultTab="system" />} />
+      <Route path="logs/system" element={<LogsPage defaultTab="system" />} />
+      <Route path="logs/sms" element={<LogsPage defaultTab="sms" />} />
+      <Route path="logs/audit" element={<LogsPage defaultTab="audit" />} />
       <Route path="users" element={<UserListPage />} />
       <Route path="messages" element={<MessagesPage />} />
       <Route path="reports" element={<ReportsPage />} />

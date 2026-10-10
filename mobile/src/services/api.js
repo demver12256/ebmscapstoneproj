@@ -187,4 +187,8 @@ export const announcementApi = {
   markAsRead: (id) => apiClient.patch(`/announcements/${id}/read`),
 };
 
+export const botApi = {
+  chat: (message) => apiClient.post('/bot/chat', { message }),
+};
+
 export default api;

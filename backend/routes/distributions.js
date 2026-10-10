@@ -1265,7 +1265,7 @@ router.get('/events/:id/transactions', authorize('admin', 'staff', 'barangay', '
       include: [
         {
           model: Beneficiary,
-          attributes: ['id', 'first_name', 'last_name', 'middle_name', 'category', 'RFID_number', 'beneficiary_id_code', 'profile_photo', 'contact_number'],
+          attributes: ['id', 'first_name', 'last_name', 'middle_name', 'category', 'RFID_number', 'beneficiary_id_code', 'qr_code_token', 'profile_photo', 'contact_number'],
           include: [{ model: Barangay, attributes: ['id', 'barangay_name'] }],
         },
         { model: User, as: 'ReleasedByStaff', attributes: ['id', 'first_name', 'last_name'] },
@@ -1996,18 +1996,32 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
       case 'rfid':
         beneficiaryWhere.RFID_number = search_value.trim();
         break;
-      case 'qr':
+      case 'qr': {
+        const raw = search_value.trim();
+        const parsedToken = Beneficiary.parseQrInput ? Beneficiary.parseQrInput(raw) : null;
+        beneficiaryWhere[Op.or] = [
+          ...(parsedToken ? [{ qr_token: parsedToken }] : []),
+          { qr_token: raw },
+          { beneficiary_id_code: raw },
+        ];
+        break;
+      }
       case 'id':
         beneficiaryWhere.beneficiary_id_code = search_value.trim();
         break;
-      case 'manual':
+      case 'manual': {
+        const raw = search_value.trim();
+        const parsedToken = Beneficiary.parseQrInput ? Beneficiary.parseQrInput(raw) : null;
         beneficiaryWhere[Op.or] = [
-          { first_name: { [Op.like]: `%${search_value}%` } },
-          { last_name: { [Op.like]: `%${search_value}%` } },
-          { beneficiary_id_code: { [Op.like]: `%${search_value}%` } },
-          ...(search_value.match(/^\d+$/) ? [{ RFID_number: search_value }] : []),
+          { first_name: { [Op.like]: `%${raw}%` } },
+          { last_name: { [Op.like]: `%${raw}%` } },
+          { beneficiary_id_code: { [Op.like]: `%${raw}%` } },
+          ...(raw.match(/^\d+$/) ? [{ RFID_number: raw }] : []),
+          ...(parsedToken ? [{ qr_token: parsedToken }] : []),
+          { qr_token: raw },
         ];
         break;
+      }
       default:
         return res.status(400).json({
           success: false,
@@ -2068,6 +2082,8 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
           category: b.category,
           RFID_number: b.RFID_number,
           beneficiary_id_code: b.beneficiary_id_code,
+          qr_token: b.qr_token,
+          qr_code: b.qr_token ? `EBMS-QR:${b.qr_token}` : null,
           profile_photo: b.profile_photo,
           contact_number: b.contact_number,
           barangay: b.Barangay?.barangay_name,

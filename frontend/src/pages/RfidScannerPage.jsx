@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
-import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users, RefreshCw } from 'lucide-react';
-import { attendanceApi, distributionApi } from '../services/api';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Smartphone, CheckCircle, AlertCircle, Clock, Download, Users, RefreshCw, QrCode, Camera, CameraOff, CreditCard } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { distributionApi } from '../services/api';
 import * as XLSX from 'xlsx';
 
 export default function RfidScannerPage() {
@@ -14,7 +15,14 @@ export default function RfidScannerPage() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraError, setCameraError] = useState(null);
+  const [cameraCaptureMode, setCameraCaptureMode] = useState(false);
   const rfidInputRef = useRef(null);
+  const html5QrCodeRef = useRef(null);
+  const cameraCaptureInputRef = useRef(null);
+  const isProcessingScanRef = useRef(false);
 
   const fetchDistributionEvents = async () => {
     try {
@@ -186,72 +194,98 @@ export default function RfidScannerPage() {
     }
   };
 
-  const handleScan = async (e) => {
-    e.preventDefault();
-    
+  const playSuccessBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1320, audioCtx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.25);
+    } catch (e) {
+      // Audio not supported or blocked
+    }
+  };
+
+  const executeScan = async (rawInput) => {
     if (!selectedEvent) {
-      setError('Please select a distribution event first');
+      setError('Pumili muna ng Distribution Event bago mag-scan.');
       return;
     }
 
-    if (!rfidInput.trim()) {
-      setError('Please scan an RFID card');
+    const cleanInput = (rawInput || '').trim();
+    if (!cleanInput) {
+      setError('Pakilagay o i-scan ang RFID card o QR code.');
       return;
     }
 
+    if (loading || isProcessingScanRef.current) return;
+    isProcessingScanRef.current = true;
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const rfidNumber = rfidInput.trim();
       const now = new Date();
       const distributionDate = now.toISOString().split('T')[0];
       const releaseTime = now.toTimeString().split(' ')[0];
 
-      // Verify event status is 'ongoing' before attempting release
       const selectedEventData = distributionEvents.find(e => e.id === Number(selectedEvent));
       if (!selectedEventData) {
         setError('Selected event not found. Please refresh and try again.');
-        setLoading(false);
         return;
       }
 
       if (selectedEventData.status !== 'ongoing') {
-        setError(`❌ Distribution session is not active (Status: ${selectedEventData.status}). Please ask the admin to start the session first.`);
-        setLoading(false);
+        setError(`❌ Distribution session is not active (Status: ${selectedEventData.status}). Pakisabihan ang admin na simulan ang session.`);
         return;
       }
 
-      // Find beneficiary by RFID number from qualified list
-      const beneficiary = qualifiedBeneficiaries.find((b) => b.RFID_number === rfidNumber);
-      
+      const qrToken = cleanInput.replace(/^EBMS-QR:/i, '').trim();
+      const beneficiary = qualifiedBeneficiaries.find((b) => {
+        const matchesRfid = b.RFID_number && (
+          b.RFID_number.toLowerCase() === cleanInput.toLowerCase() ||
+          b.RFID_number.toLowerCase() === qrToken.toLowerCase()
+        );
+        const matchesQr = b.qr_code_token && (
+          b.qr_code_token.toLowerCase() === qrToken.toLowerCase() ||
+          b.qr_code_token.toLowerCase() === cleanInput.toLowerCase()
+        );
+        const matchesCode = b.beneficiary_id_code && (
+          b.beneficiary_id_code.toLowerCase() === qrToken.toLowerCase() ||
+          b.beneficiary_id_code.toLowerCase() === cleanInput.toLowerCase()
+        );
+        return matchesRfid || matchesQr || matchesCode;
+      });
+
       if (!beneficiary) {
-        setError(`No qualified beneficiary found with RFID: ${rfidNumber}`);
+        setError(`Walang kwalipikadong benepisyaryo na may hawak ng RFID / QR Code: "${cleanInput}"`);
         setRfidInput('');
         setTimeout(() => {
           if (rfidInputRef.current) rfidInputRef.current.focus();
         }, 100);
-        setLoading(false);
         return;
       }
 
-      // Check for duplicate scan in today's records
       const isDuplicate = scannedRecords.some(
-        (r) => r.rfid === rfidNumber && r.date === distributionDate
+        (r) => (r.beneficiaryId === beneficiary.id || (r.rfid && r.rfid === beneficiary.RFID_number)) && r.date === distributionDate
       );
 
       if (isDuplicate) {
-        setError(`${beneficiary.first_name} ${beneficiary.last_name} already claimed benefits for this event`);
+        setError(`${beneficiary.first_name} ${beneficiary.last_name} ay nakatanggap na ng benepisyo sa event na ito!`);
         setRfidInput('');
         setTimeout(() => {
           if (rfidInputRef.current) rfidInputRef.current.focus();
         }, 100);
-        setLoading(false);
         return;
       }
 
-      // Get the transaction for this beneficiary
       const txnRes = await distributionApi.getTransactions(selectedEvent);
       const transactions = txnRes.data.data || [];
       const transaction = transactions.find(txn => 
@@ -259,21 +293,25 @@ export default function RfidScannerPage() {
       );
 
       if (!transaction) {
-        setError(`No pending transaction found for ${beneficiary.first_name} ${beneficiary.last_name}`);
+        setError(`Walang nakabinbing ayuda (pending transaction) para kay ${beneficiary.first_name} ${beneficiary.last_name}`);
         setRfidInput('');
         setTimeout(() => {
           if (rfidInputRef.current) rfidInputRef.current.focus();
         }, 100);
-        setLoading(false);
         return;
       }
 
-      // Release the benefit via distribution API
+      const isRfidScan = beneficiary.RFID_number && (
+        beneficiary.RFID_number.toLowerCase() === cleanInput.toLowerCase()
+      );
+
       await distributionApi.releaseBenefit(selectedEvent, transaction.id, {
-        verification_method: 'rfid',
-        signature_data: 'RFID_VERIFIED', // Required by backend - mark as RFID verified
-        notes: `Released via RFID scan at ${releaseTime}`
+        verification_method: isRfidScan ? 'rfid' : 'qr_code',
+        signature_data: isRfidScan ? 'RFID_VERIFIED' : 'QR_VERIFIED',
+        notes: `Released via ${isRfidScan ? 'RFID Card' : 'QR Code Pass'} scan at ${releaseTime}`
       });
+
+      playSuccessBeep();
 
       const regularAmt = parseFloat(transaction.amount || 0);
       const retroAmt = parseFloat(transaction.retro_amount || 0);
@@ -281,72 +319,236 @@ export default function RfidScannerPage() {
       const retroPeriods = transaction.retro_periods || 0;
 
       const successMsg = retroPeriods > 0
-        ? `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Benefit released! Total: ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })} (Regular: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} + Retro: ₱${retroAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} for ${retroPeriods} period(s))`
-        : `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Benefit released! Amount: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
+        ? `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Na-release ang benepisyo! Kabuuan: ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })} (Regular: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} + Retro: ₱${retroAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} para sa ${retroPeriods} period(s))`
+        : `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Na-release ang benepisyo! Halaga: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
       setSuccess(successMsg);
-      setScannedRecords([
-        {
-          id: Date.now(),
-          rfid: rfidNumber,
-          name: `${beneficiary.first_name} ${beneficiary.last_name}`,
-          beneficiary_id_code: beneficiary.beneficiary_id_code,
-          category: beneficiary.category,
-          amount: totalPayout,
-          regular_amount: regularAmt,
-          retro_amount: retroAmt,
-          retro_periods: retroPeriods,
-          time: releaseTime,
-          date: distributionDate,
-          status: 'released'
-        },
-        ...scannedRecords
-      ]);
 
+      const newRecord = {
+        id: Date.now(),
+        beneficiaryId: beneficiary.id,
+        rfid: isRfidScan ? (beneficiary.RFID_number || 'RFID') : (beneficiary.beneficiary_id_code || 'QR PASS'),
+        name: `${beneficiary.first_name} ${beneficiary.last_name}`,
+        beneficiary_id_code: beneficiary.beneficiary_id_code,
+        category: beneficiary.category,
+        amount: totalPayout,
+        regular_amount: regularAmt,
+        retro_amount: retroAmt,
+        retro_periods: retroPeriods,
+        time: releaseTime,
+        date: distributionDate,
+        status: 'released',
+        verificationMethod: isRfidScan ? 'RFID Card' : 'QR Pass'
+      };
+
+      setScannedRecords((prev) => [newRecord, ...prev]);
+      setQualifiedBeneficiaries((prev) => prev.filter((b) => b.id !== beneficiary.id));
       setRfidInput('');
-      if (rfidInputRef.current) {
-        rfidInputRef.current.focus();
-      }
 
-      setTimeout(() => setSuccess(null), 3000);
+      setTimeout(() => {
+        if (rfidInputRef.current) rfidInputRef.current.focus();
+      }, 100);
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       console.error('Error:', err);
-      
-      // Handle different error types
       if (err.response) {
-        // Server responded with error status
         const status = err.response.status;
         const message = err.response.data?.message || err.message;
         const errorCode = err.response.data?.error_code;
         
         if (errorCode === 'SESSION_NOT_ACTIVE') {
-          // Session not active - needs to be started
-          setError(`❌ ${message} - Please ask the admin to start the distribution session first, then click the Refresh button.`);
+          setError(`❌ ${message} - Pakisabihan ang admin na simulan ang distribution session, pagkatapos ay i-click ang Refresh.`);
         } else if (status === 409 || errorCode === 'ALREADY_RELEASED') {
-          // Conflict - duplicate release
-          setError(`⚠️ Already claimed: ${message}`);
+          setError(`⚠️ Naka-claim na: ${message}`);
         } else if (status === 404) {
-          // Not found - invalid RFID
-          setError(`❌ RFID not found: ${message}`);
+          setError(`❌ Hindi nahanap: ${message}`);
         } else {
           setError(`Error: ${message}`);
         }
       } else if (err.request) {
-        // Request made but no response
-        setError('❌ Network error: Cannot connect to server');
+        setError('❌ Network error: Hindi makakonekta sa server');
       } else {
-        // Other errors
-        setError(err.message || 'Failed to record attendance');
+        setError(err.message || 'Nabigong mag-record ng benepisyo');
       }
-      
       setTimeout(() => setError(null), 5000);
     } finally {
       setLoading(false);
+      setTimeout(() => {
+        isProcessingScanRef.current = false;
+      }, 800);
     }
   };
 
+  const handleScan = (e) => {
+    e.preventDefault();
+    executeScan(rfidInput);
+  };
+
+  const openCameraCapture = () => {
+    setCameraCaptureMode(true);
+    setCameraError(null);
+    setCameraLoading(false);
+    setIsCameraActive(true);
+    cameraCaptureInputRef.current?.click();
+  };
+
+  const stopCameraScanner = useCallback(async () => {
+    if (html5QrCodeRef.current) {
+      try {
+        if (html5QrCodeRef.current.isScanning) {
+          await html5QrCodeRef.current.stop();
+        }
+        await html5QrCodeRef.current.clear();
+      } catch (err) {
+        console.warn('Error stopping camera QR scanner:', err);
+      }
+      html5QrCodeRef.current = null;
+    }
+    setIsCameraActive(false);
+    setCameraLoading(false);
+    setCameraError(null);
+    setCameraCaptureMode(false);
+  }, []);
+
+  const startCameraScanner = async () => {
+    if (!selectedEvent) {
+      setError('Pumili muna ng Distribution Event bago buksan ang camera scanner.');
+      return;
+    }
+
+    const currentEvent = distributionEvents.find(e => e.id === Number(selectedEvent));
+    if (currentEvent && currentEvent.status !== 'ongoing') {
+      setError(`Distribution session status is "${currentEvent.status}". Kailangan muna itong simulan bago makapag-scan.`);
+      return;
+    }
+
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      openCameraCapture();
+      return;
+    }
+
+    setCameraError(null);
+    setCameraLoading(true);
+    setIsCameraActive(true);
+    setCameraCaptureMode(false);
+
+    setTimeout(async () => {
+      try {
+        const qrContainer = document.getElementById('qr-dist-camera-reader');
+        if (!qrContainer) {
+          throw new Error('Camera reader container not found');
+        }
+
+        const html5QrCode = new Html5Qrcode('qr-dist-camera-reader');
+        html5QrCodeRef.current = html5QrCode;
+
+        const config = {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+        };
+
+        await html5QrCode.start(
+          { facingMode: 'environment' },
+          config,
+          (decodedText) => {
+            console.log('Camera scanned QR code:', decodedText);
+            if (!isProcessingScanRef.current) {
+              executeScan(decodedText);
+            }
+          },
+          () => {}
+        );
+        setCameraLoading(false);
+      } catch (err) {
+        console.error('Failed to start camera scanner:', err);
+        const failedScanner = html5QrCodeRef.current;
+        if (failedScanner) {
+          try {
+            if (failedScanner.isScanning) await failedScanner.stop();
+            await failedScanner.clear();
+          } catch (cleanupError) {
+            console.warn('Camera startup cleanup error:', cleanupError);
+          }
+          html5QrCodeRef.current = null;
+        }
+        setCameraError(err.name === 'NotAllowedError'
+          ? 'Hindi pinayagan ang camera. I-enable ang camera permission para sa site sa browser settings, pagkatapos ay subukang muli.'
+          : err.name === 'NotFoundError'
+            ? 'Walang camera na makita sa device na ito.'
+            : err.message || 'Hindi ma-access ang camera. Siguraduhing pinayagan ang camera permission.');
+        setCameraLoading(false);
+        setIsCameraActive(false);
+      }
+    }, 250);
+  };
+
+  const handleCameraImageSelected = async (event) => {
+    const imageFile = event.target.files?.[0];
+    event.target.value = '';
+    if (!imageFile) return;
+
+    setCameraLoading(true);
+    setCameraError(null);
+    let scanner;
+    try {
+      scanner = new Html5Qrcode('qr-dist-camera-reader');
+      html5QrCodeRef.current = scanner;
+      const decodedText = await scanner.scanFile(imageFile, false);
+      await scanner.clear();
+      html5QrCodeRef.current = null;
+      setIsCameraActive(false);
+      setCameraCaptureMode(false);
+      setCameraLoading(false);
+      await executeScan(decodedText);
+    } catch (err) {
+      console.error('QR image scan error:', err);
+      setCameraError('Hindi mabasa ang QR code sa larawan. Subukang kunan itong muli nang malinaw at malapit.');
+      setCameraLoading(false);
+    } finally {
+      if (scanner && html5QrCodeRef.current === scanner) {
+        try {
+          await scanner.clear();
+        } catch (clearError) {
+          console.warn('QR image cleanup error:', clearError);
+        }
+        html5QrCodeRef.current = null;
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (html5QrCodeRef.current) {
+        try {
+          if (html5QrCodeRef.current.isScanning) {
+            html5QrCodeRef.current.stop().catch(() => {});
+          }
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      if (isCameraActive) {
+        stopCameraScanner();
+      }
+    }
+  }, [selectedEvent, isCameraActive, stopCameraScanner]);
+
   return (
     <div className="space-y-6">
+      <input
+        ref={cameraCaptureInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleCameraImageSelected}
+        className="hidden"
+        aria-label="Kunan o pumili ng larawan ng QR code"
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -478,52 +680,187 @@ export default function RfidScannerPage() {
         )}
       </div>
 
-      {/* RFID Scanner Input */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200 p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      {/* Dual Scanner Card: RFID + Camera QR Scanner */}
+      <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 rounded-xl border-2 border-blue-200 p-6 space-y-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">RFID Scanner Ready</h2>
-            <p className="text-sm text-slate-600 mt-1">Tap cards here to record attendance</p>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                <CreditCard className="w-3.5 h-3.5" />
+                RFID Tap Card
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                <QrCode className="w-3.5 h-3.5" />
+                QR Code Scanner
+              </span>
+            </div>
+            <h2 className="text-lg font-bold text-slate-900 mt-2">Distribution Scanner Ready</h2>
+            <p className="text-sm text-slate-600">
+              I-tap ang RFID card o gamitin ang camera scanner para sa QR pass ng kwalipikadong benepisyaryo.
+            </p>
           </div>
-          <div className={`w-4 h-4 rounded-full animate-pulse ${selectedEvent ? 'bg-green-500' : 'bg-red-500'}`} />
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={isCameraActive ? stopCameraScanner : startCameraScanner}
+              disabled={!selectedEvent || (cameraCaptureMode && cameraLoading)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-sm ${
+                !selectedEvent
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  : isCameraActive
+                  ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              }`}
+            >
+              {cameraLoading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  {cameraCaptureMode ? 'Binabasa ang QR image...' : 'Binubuksan ang Camera...'}
+                </>
+              ) : isCameraActive ? (
+                <>
+                  <CameraOff className="w-4 h-4" />
+                  Itigil ang Camera
+                </>
+              ) : (
+                <>
+                  <Camera className="w-4 h-4" />
+                  📷 Buksan ang Camera QR Scanner
+                </>
+              )}
+            </button>
+            <div
+              className={`w-3.5 h-3.5 rounded-full ${
+                selectedEvent ? 'bg-emerald-500 animate-pulse' : 'bg-rose-400'
+              }`}
+              title={selectedEvent ? 'Scanner Active' : 'Pumili muna ng event'}
+            />
+          </div>
         </div>
 
+        {/* Live Camera Viewfinder Modal / Inline View */}
+        {isCameraActive && (
+          <div className="rounded-xl border-2 border-emerald-400 bg-black/95 p-4 text-center text-white space-y-3">
+            <div className="flex items-center justify-between text-xs text-emerald-300 font-medium px-2">
+              <span className="flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-emerald-400 animate-pulse" />
+                {cameraCaptureMode ? 'QR Photo Scanner' : 'Live Camera QR Scanner Active'}
+              </span>
+              <span>{cameraCaptureMode ? 'Kunan o pumili ng QR image' : 'Itutok ang QR Code ng benepisyaryo sa kahon'}</span>
+            </div>
+
+            {cameraCaptureMode && (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-blue-400/40 bg-blue-900/40 p-3 text-xs text-blue-100">
+                  Kailangan ng HTTPS para sa live camera preview, pero hindi secure ang URL na ito. Kunan ang QR code o pumili ng malinaw na larawan para mabasa ito.
+                </div>
+                {cameraLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-2 text-sm text-blue-100">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Binabasa ang QR image...
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => cameraCaptureInputRef.current?.click()}
+                    className="mx-auto flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-500"
+                  >
+                    <Camera className="h-4 w-4" />
+                    Kunan / pumili ulit ng QR image
+                  </button>
+                )}
+              </div>
+            )}
+            
+            <div
+              id="qr-dist-camera-reader"
+              className={`w-full max-w-sm mx-auto overflow-hidden rounded-lg bg-black ${cameraCaptureMode ? 'hidden' : ''}`}
+              style={{ minHeight: cameraCaptureMode ? 0 : '260px' }}
+            />
+
+            <p className="text-xs text-slate-300">
+              {cameraCaptureMode
+                ? 'Pagkatapos makunan ang QR, awtomatiko itong babasahin at ibe-verify ang benepisyaryo.'
+                : 'Awtomatikong mare-release ang ayuda oras na mabasa ang QR Pass token.'}
+            </p>
+          </div>
+        )}
+
+        {cameraError && (
+          <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-rose-700">{cameraError}</p>
+              {!cameraCaptureMode && (
+                <button
+                  type="button"
+                  onClick={openCameraCapture}
+                  className="mt-2 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-blue-500"
+                >
+                  <Camera className="h-4 w-4" />
+                  Kunan ng QR photo
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleScan} className="space-y-3">
-          <input
-            ref={rfidInputRef}
-            type="text"
-            value={rfidInput}
-            onChange={(e) => setRfidInput(e.target.value)}
-            placeholder="Tap RFID card here..."
-            disabled={!selectedEvent}
-            className={`w-full px-6 py-4 border-2 rounded-lg text-center text-lg font-mono focus:outline-none transition-all ${
-              selectedEvent
-                ? 'border-blue-400 bg-white focus:ring-2 focus:ring-blue-500'
-                : 'border-slate-300 bg-slate-100 cursor-not-allowed text-slate-500'
-            }`}
-            autoComplete="off"
-          />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+              <QrCode className="w-5 h-5 text-blue-500" />
+            </div>
+            <input
+              ref={rfidInputRef}
+              type="text"
+              value={rfidInput}
+              onChange={(e) => setRfidInput(e.target.value)}
+              placeholder={
+                selectedEvent
+                  ? "I-tap ang RFID card o i-scan gamit ang barcode/QR scanner..."
+                  : "Pumili muna ng distribution event sa itaas..."
+              }
+              disabled={!selectedEvent || loading}
+              className={`w-full pl-12 pr-6 py-4 border-2 rounded-xl text-center text-base sm:text-lg font-mono focus:outline-none transition-all shadow-inner ${
+                selectedEvent
+                  ? 'border-blue-400 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-600'
+                  : 'border-slate-300 bg-slate-100 cursor-not-allowed text-slate-400'
+              }`}
+              autoComplete="off"
+            />
+          </div>
 
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3 flex items-start gap-2">
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 flex items-start gap-2 animate-fade-in">
               <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700">{error}</p>
+              <p className="text-sm text-red-700 font-medium">{error}</p>
             </div>
           )}
 
           {success && (
-            <div className="rounded-lg bg-green-50 border border-green-200 p-3 flex items-start gap-2">
+            <div className="rounded-lg bg-green-50 border border-green-200 p-3 flex items-start gap-2 animate-fade-in">
               <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-green-700">{success}</p>
+              <p className="text-sm text-green-700 font-medium">{success}</p>
             </div>
           )}
 
           <button
             type="submit"
-            disabled={loading || !selectedEvent}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+            disabled={loading || !selectedEvent || !rfidInput.trim()}
+            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
           >
-            {loading ? 'Recording...' : 'Tap card or press Enter'}
+            {loading ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Pinoproseso ang scan...
+              </>
+            ) : (
+              <>
+                <Smartphone className="w-4 h-4" />
+                I-proseso ang RFID o QR Pass
+              </>
+            )}
           </button>
         </form>
       </div>
@@ -552,7 +889,19 @@ export default function RfidScannerPage() {
                   <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
                   <div className="min-w-0">
                     <p className="font-medium text-slate-900 truncate">{record.name}</p>
-                    <p className="text-xs text-slate-600 font-mono">{record.rfid} • {record.category}</p>
+                    <p className="text-xs text-slate-600 font-mono flex items-center gap-1.5 mt-0.5">
+                      <span>{record.rfid}</span>
+                      {record.category && <span>• {record.category}</span>}
+                      {record.verificationMethod && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                          record.verificationMethod.includes('QR')
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {record.verificationMethod}
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </div>
                 <div className="text-right">

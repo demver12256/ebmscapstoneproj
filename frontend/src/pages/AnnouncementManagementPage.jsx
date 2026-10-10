@@ -33,6 +33,7 @@ import { announcementApi, programApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
+import { getAnnouncementEndDateTime } from '../utils/announcementSchedule';
 
 export const TARGET_CATEGORIES = [
   '4Ps Household Beneficiaries',
@@ -619,30 +620,8 @@ export default function AnnouncementManagementPage() {
     if (ann.status !== 'published') return false;
     if (!ann.event_date) return true;
 
-    const timeToCheck = ann.end_time || ann.event_time;
-    if (!timeToCheck) return true;
-
-    const [year, month, day] = ann.event_date.split('-').map(Number);
-    if (!year || !month || !day) return true;
-
-    let hours = 23;
-    let minutes = 59;
-    const timeMatch = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
-    if (timeMatch) {
-      let h = parseInt(timeMatch[1], 10);
-      const m = parseInt(timeMatch[2], 10);
-      const seconds = timeMatch[3] ? parseInt(timeMatch[3], 10) : 59;
-      const ampm = timeMatch[4] ? timeMatch[4].toUpperCase() : null;
-      if (ampm === 'PM' && h < 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-      hours = h;
-      minutes = m;
-      const endTime = new Date(year, month - 1, day, hours, minutes, seconds);
-      return new Date() < endTime;
-    }
-
-    const endTime = new Date(year, month - 1, day, hours, minutes, 59);
-    return new Date() < endTime;
+    const endTime = getAnnouncementEndDateTime(ann);
+    return !endTime || new Date() < endTime;
   };
 
   // View Recipient Stats Modal
@@ -738,42 +717,51 @@ export default function AnnouncementManagementPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Megaphone className="w-8 h-8 text-yellow-300" />
-            <h1 className="text-3xl font-black tracking-tight">Announcement & Attendance Module</h1>
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              Community Broadcast
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
-          <p className="text-blue-100 text-sm max-w-2xl">
-            Create targeted municipal announcements, notify assigned Barangay Staff, facilitate RFID-based event attendance, and monitor attendance reports in real time.
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Announcements & Attendance
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Create targeted municipal announcements, notify barangay staff, and monitor RFID attendance in real time.
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {['admin','mswdo_admin'].includes(user?.role) && (
-            <button
-              onClick={handleOpenCreateModal}
-              className="flex items-center gap-2.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95"
-            >
-              <Plus className="w-5 h-5 stroke-[3]" />
-              New Announcement
-            </button>
-          )}
+
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
           <button
+            type="button"
             onClick={() => setShowArchivedModal(true)}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-3 rounded-xl shadow transition border border-white/20"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-2xs active:scale-95"
           >
-            <Archive className="w-5 h-5 text-purple-300" />
+            <Archive className="w-3.5 h-3.5 text-slate-500" />
             <span>Archived ({announcements.filter((a) => a.status === 'archived').length})</span>
           </button>
+
+          {['admin','mswdo_admin'].includes(user?.role) && (
+            <button
+              type="button"
+              onClick={handleOpenCreateModal}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Announcement</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Success Notification Alert */}
       {successMessage && (
-        <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-3 rounded-xl flex items-center gap-3 shadow-sm animate-fade-in">
+        <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-3 rounded-xl flex items-center gap-3 shadow-xs animate-fade-in">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span className="font-semibold text-sm">{successMessage}</span>
+          <span className="font-semibold text-xs">{successMessage}</span>
           <button onClick={() => setSuccessMessage('')} className="ml-auto text-emerald-600 hover:text-emerald-800">
             <X className="w-4 h-4" />
           </button>
@@ -781,48 +769,48 @@ export default function AnnouncementManagementPage() {
       )}
 
       {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Total Announcements</span>
-            <BellRing className="w-5 h-5 text-blue-600" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider">Total Events</span>
+            <BellRing className="w-4 h-4 text-blue-600" />
           </div>
-          <p className="text-3xl font-black text-slate-900">{announcements.length}</p>
-          <p className="text-xs text-slate-500 mt-1">Total created events</p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900">{announcements.length}</p>
+          <p className="text-xs text-slate-400 mt-1">Total created announcements</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Targeted Recipients</span>
-            <Users className="w-5 h-5 text-emerald-600" />
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Recipients</span>
+            <Users className="w-4 h-4 text-emerald-600" />
           </div>
-          <p className="text-3xl font-black text-slate-900">{totalRecipients}</p>
-          <p className="text-xs text-slate-500 mt-1">Notified beneficiaries</p>
+          <p className="text-xl sm:text-2xl font-bold text-emerald-600">{totalRecipients}</p>
+          <p className="text-xs text-slate-400 mt-1">Notified beneficiaries</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Total Present Attendees</span>
-            <CheckCircle2 className="w-5 h-5 text-amber-600" />
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-600">Attendees</span>
+            <CheckCircle2 className="w-4 h-4 text-amber-600" />
           </div>
-          <p className="text-3xl font-black text-slate-900">{totalPresent}</p>
-          <p className="text-xs text-slate-500 mt-1">Scanned via RFID reader</p>
+          <p className="text-xl sm:text-2xl font-bold text-amber-600">{totalPresent}</p>
+          <p className="text-xs text-slate-400 mt-1">Scanned via RFID reader</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Attendance Rate</span>
-            <BarChart2 className="w-5 h-5 text-indigo-600" />
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600">Rate</span>
+            <BarChart2 className="w-4 h-4 text-indigo-600" />
           </div>
-          <p className="text-3xl font-black text-slate-900">{avgAttendanceRate}%</p>
-          <div className="w-full bg-slate-100 h-2 rounded-full mt-2 overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-500 to-emerald-500 h-full rounded-full" style={{ width: `${avgAttendanceRate}%` }} />
+          <p className="text-xl sm:text-2xl font-bold text-indigo-600">{avgAttendanceRate}%</p>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
+            <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${avgAttendanceRate}%` }} />
           </div>
         </div>
       </div>
 
       {/* Filter & Search Toolbar */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs space-y-4">
         <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
           <Filter className="w-4 h-4 text-dswd-blue" />
           <span>Filter & Search Activities</span>

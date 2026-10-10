@@ -71,4 +71,4 @@ async function processQueuedSms() {
   }
 }
 
-module.exports = { processQueuedSms, isConfigured };
+module.exports = { processQueuedSms, sendNotification, isConfigured };

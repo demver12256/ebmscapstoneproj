@@ -978,47 +978,56 @@ export default function ProgramListPage() {
   ];
 
   return (
-    <div className="space-y-8">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-xl">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Briefcase className="w-8 h-8 text-yellow-300" />
-            <h1 className="text-3xl font-black tracking-tight">Benefit Programs Module</h1>
+    <div className="space-y-6">
+      {/* Minimalist Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              {isMswdoAdmin ? 'MSWDO Programs' : 'Program Management'}
+            </span>
+            <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
-          <p className="text-blue-100 text-sm max-w-2xl">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Social Benefit Programs
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
             {isMswdoAdmin
-              ? 'MSWDO: Primary focus on Senior Citizens & PWD programs. (4Ps programs are managed exclusively by DSWD).'
+              ? 'Primary focus on Senior Citizens & PWD programs. (4Ps programs are managed exclusively by DSWD).'
               : isAdmin
               ? 'Create and manage municipal benefit programs, set eligibility categories, and oversee assistance allocations.'
               : `Showing programs assigned to ${userBarangayName ? `Barangay ${userBarangayName}` : 'your assigned barangay'}.`}
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {isAdmin && (
-            <button
-              onClick={openCreateModal}
-              className="flex items-center gap-2.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition transform active:scale-95 text-sm"
-            >
-              <Plus className="w-5 h-5 stroke-[3]" />
-              Create Program
-            </button>
-          )}
+
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
           <button
+            type="button"
             onClick={openArchivedModal}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-3 rounded-xl shadow transition border border-white/20 text-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-2xs active:scale-95"
           >
-            <Archive className="w-5 h-5 text-purple-300" />
+            <Archive className="w-3.5 h-3.5 text-slate-500" />
             <span>Archived ({archivedPrograms.length})</span>
           </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Program</span>
+            </button>
+          )}
         </div>
       </div>
 
       {isMswdoAdmin && (
-        <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-4 flex items-start gap-3">
-          <span className="text-xl">🏥</span>
+        <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-3.5 flex items-start gap-3">
+          <span className="text-lg">🏥</span>
           <div>
-            <p className="text-sm font-bold text-purple-900">MSWDO Municipal Programs Management</p>
+            <p className="text-xs font-bold text-purple-900">MSWDO Municipal Programs Management</p>
             <p className="text-xs text-purple-700">MSWDO administers local municipal programs for 4Ps Household Beneficiaries, Senior Citizens, and Persons with Disabilities (PWD). Programs created under MSWDO are independent and managed exclusively by MSWDO.</p>
           </div>
         </div>
@@ -1042,9 +1051,9 @@ export default function ProgramListPage() {
 
       {/* Non-admin barangay indicator */}
       {!isAdmin && userBarangayName && (
-        <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800 flex items-center gap-3">
-          <MapPin className="w-5 h-5 text-green-600 flex-shrink-0" />
-          <span>
+        <div className="rounded-xl border border-green-200 bg-green-50/70 p-3.5 text-sm text-green-800 flex items-center gap-3">
+          <MapPin className="w-4 h-4 text-green-600 flex-shrink-0" />
+          <span className="text-xs">
             You are viewing programs exclusively assigned to <strong>Barangay {userBarangayName}</strong>.
             Programs from other barangays are not accessible.
           </span>
@@ -1053,9 +1062,9 @@ export default function ProgramListPage() {
 
       {/* Admin filters */}
       {isAdmin && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-          <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-700">
-            <Filter className="w-4 h-4" />
+        <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-4">
+          <div className="flex items-center gap-2 mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">
+            <Filter className="w-3.5 h-3.5 text-slate-500" />
             Filter Programs
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1064,7 +1073,7 @@ export default function ProgramListPage() {
               <select
                 value={filterBarangay}
                 onChange={(e) => setFilterBarangay(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none transition focus:border-slate-400"
               >
                 <option value="">All Barangays</option>
                 {barangays.map((brgy) => (
@@ -1077,7 +1086,7 @@ export default function ProgramListPage() {
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none transition focus:border-slate-400"
               >
                 <option value="">All Statuses</option>
                 <option value="active">Active</option>
@@ -1092,45 +1101,45 @@ export default function ProgramListPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-5 border border-purple-200 hover:shadow-md transition-shadow cursor-default">
-          <p className="text-xs font-medium text-slate-500 mb-1.5">Total Programs</p>
-          <p className="text-2xl font-bold text-purple-600">{loading ? '...' : allPrograms.length}</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Total</p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900">{loading ? '...' : allPrograms.length}</p>
         </div>
-        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-5 border border-emerald-200 hover:shadow-md transition-shadow cursor-default">
-          <p className="text-xs font-medium text-slate-500 mb-1.5">Active</p>
-          <p className="text-2xl font-bold text-emerald-600">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider mb-1">Active</p>
+          <p className="text-xl sm:text-2xl font-bold text-emerald-600">
             {loading ? '...' : allPrograms.filter(p => p.status === 'active').length}
           </p>
         </div>
-        <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-5 border border-amber-200 hover:shadow-md transition-shadow cursor-default">
-          <p className="text-xs font-medium text-slate-500 mb-1.5">Inactive</p>
-          <p className="text-2xl font-bold text-amber-600">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <p className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider mb-1">Inactive</p>
+          <p className="text-xl sm:text-2xl font-bold text-amber-600">
             {loading ? '...' : allPrograms.filter(p => p.status === 'inactive').length}
           </p>
         </div>
-        <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-5 border border-slate-200 hover:shadow-md transition-shadow cursor-default">
-          <p className="text-xs font-medium text-slate-500 mb-1.5">Draft</p>
-          <p className="text-2xl font-bold text-slate-600">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Draft</p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-700">
             {loading ? '...' : allPrograms.filter(p => p.status === 'draft').length}
           </p>
         </div>
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-5 border border-blue-200 hover:shadow-md transition-shadow cursor-default">
-          <p className="text-xs font-medium text-slate-500 mb-1.5">Completed</p>
-          <p className="text-2xl font-bold text-blue-600">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider mb-1">Completed</p>
+          <p className="text-xl sm:text-2xl font-bold text-blue-600">
             {loading ? '...' : allPrograms.filter(p => p.status === 'completed').length}
           </p>
         </div>
-        <div className="bg-gradient-to-br from-rose-50 to-rose-100 rounded-xl p-5 border border-rose-200 hover:shadow-md transition-shadow cursor-default">
-          <p className="text-xs font-medium text-slate-500 mb-1.5">Archived</p>
-          <p className="text-2xl font-bold text-rose-600">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <p className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider mb-1">Archived</p>
+          <p className="text-xl sm:text-2xl font-bold text-rose-600">
             {loading ? '...' : allPrograms.filter(p => p.status === 'archived').length}
           </p>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+      <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
