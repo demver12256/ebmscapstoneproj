@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Bot, MessageCircle, X, Send, Sparkles, HelpCircle, ChevronDown, RotateCcw } from 'lucide-react';
-import { API_BASE_URL } from '../config/api';
+import { API_URL } from '../config/api';
 
 const DEFAULT_SUGGESTIONS = [
   'Saan makikita ang QR code ko?',
@@ -52,7 +52,7 @@ export default function BeniAidBot() {
     setLoading(true);
 
     try {
-      const res = await axios.post(`${API_BASE_URL}/bot/chat`, { message: query });
+      const res = await axios.post(`${API_URL}/bot/chat`, { message: query });
       if (res.data && res.data.success) {
         const botMsg = {
           id: Date.now() + 1,
@@ -271,3 +271,4 @@ export default function BeniAidBot() {
     </div>
   );
 }
+

@@ -8,6 +8,8 @@ export const API_URL = (typeof window !== 'undefined' && browserPort === '3000')
   ? '/api'
   : (process.env.REACT_APP_API_URL || `${browserProtocol}//${browserHost}:5000/api`);
 
+export const API_BASE_URL = API_URL;
+
 export const API_ORIGIN = (typeof window !== 'undefined' && browserPort === '3000')
   ? `${browserProtocol}//${browserHost}:${browserPort}`
   : (API_URL.startsWith('http') ? API_URL.replace(/\/api\/?$/, '') : `${browserProtocol}//${browserHost}:5000`);
