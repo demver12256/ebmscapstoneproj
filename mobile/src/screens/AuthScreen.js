@@ -485,7 +485,7 @@ export default function AuthScreen({ onLoginSuccess }) {
               {/* Header Icon Wrap */}
               <View style={styles.iconWrap}>
                 <Image
-                  source={require('../assets/dswd-logo.jpg')}
+                  source={require('../assets/beniaid-logo.png')}
                   style={styles.authLogo}
                   resizeMode="contain"
                 />
@@ -1275,13 +1275,17 @@ const styles = StyleSheet.create({
   },
   iconWrap: {
     alignSelf: 'center',
-    width: 68,
-    height: 68,
-    borderRadius: 18,
-    backgroundColor: '#dfeaf8',
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+    shadowColor: '#00338D',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
   iconBadge: {
     fontSize: 34,
@@ -1289,10 +1293,9 @@ const styles = StyleSheet.create({
     color: '#1d4ed8',
   },
   authLogo: {
-    width: 58,
-    height: 58,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
   },
   title: {
     textAlign: 'center',

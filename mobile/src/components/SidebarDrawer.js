@@ -19,7 +19,7 @@ const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.82, 320);
 
 const DswdShieldIcon = () => (
   <Image
-    source={require('../assets/dswd-logo.jpg')}
+    source={require('../assets/beniaid-logo.png')}
     style={styles.brandLogo}
     resizeMode="contain"
   />
@@ -313,10 +313,10 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   brandLogo: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     marginRight: 10,
-    borderRadius: 10,
+    borderRadius: 22,
     backgroundColor: '#ffffff',
   },
   shieldTop: {
