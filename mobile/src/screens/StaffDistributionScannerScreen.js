@@ -14,6 +14,7 @@ import {
   Alert,
 } from 'react-native';
 import { distributionApi } from '../services/api';
+import QrCameraScanner from '../components/QrCameraScanner';
 
 const formatMoney = (value) => {
   const amount = Number(value || 0);
@@ -31,6 +32,7 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
   const [verifiedBeneficiary, setVerifiedBeneficiary] = useState(null);
   const [eventSelectModal, setEventSelectModal] = useState(false);
   const [alertMsg, setAlertMsg] = useState(null); // { type: 'success'|'error', text: '' }
+  const [cameraActive, setCameraActive] = useState(false);
   const inputRef = useRef(null);
 
   const loadEvents = useCallback(async () => {
@@ -273,28 +275,22 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
             </TouchableOpacity>
           </View>
 
-          {/* Quick Emulator Demo Chips */}
-          {pendingTxns.length > 0 && (
-            <View style={styles.demoSection}>
-              <Text style={styles.demoLabel}>Demo Fast-Tap (Pending in this event):</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.demoChips}>
-                {pendingTxns.slice(0, 6).map((t, idx) => {
-                  const b = t.Beneficiary;
-                  const code = b?.RFID_number || b?.beneficiary_id_code;
-                  return (
-                    <TouchableOpacity
-                      key={t.id || idx}
-                      style={styles.demoChip}
-                      onPress={() => handleScanSubmit(code)}
-                    >
-                      <Text style={styles.demoChipText}>
-                        👤 {b?.first_name} ({code || 'No ID'})
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
+          {/* Camera QR Scanner Button */}
+          {selectedEventId && (
+            <TouchableOpacity
+              style={styles.openCameraBtn}
+              onPress={() => setCameraActive(true)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.openCameraIcon}>📷</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.openCameraTitle}>Buksan ang Camera QR Scanner</Text>
+                <Text style={styles.openCameraSub}>
+                  Itapat ang QR code pass ng benepisyaryo sa camera
+                </Text>
+              </View>
+              <Text style={styles.openCameraArrow}>›</Text>
+            </TouchableOpacity>
           )}
         </View>
 
@@ -411,11 +407,37 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
           </View>
         </View>
       </Modal>
+
+      {/* Live Camera QR Scanner Modal */}
+      <QrCameraScanner
+        visible={cameraActive}
+        onClose={() => setCameraActive(false)}
+        onScan={(code) => {
+          handleScanSubmit(code);
+        }}
+        title="Distribution Aid QR Scanner"
+        subtitle={`Ayuda Event: ${currentEvent?.title || 'Selected Event'}`}
+      />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  openCameraBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10b981',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 12,
+    elevation: 2,
+  },
+  openCameraIcon: { fontSize: 20, marginRight: 10 },
+  openCameraTitle: { fontSize: 13, fontWeight: '800', color: '#ffffff' },
+  openCameraSub: { fontSize: 10.5, color: '#d1fae5', marginTop: 1 },
+  openCameraArrow: { fontSize: 20, color: '#ffffff', fontWeight: 'bold' },
   container: { flex: 1, backgroundColor: '#f8fafc' },
   darkContainer: { backgroundColor: '#0f172a' },
   header: {
@@ -621,3 +643,4 @@ const styles = StyleSheet.create({
 });
 
 export default StaffDistributionScannerScreen;
+

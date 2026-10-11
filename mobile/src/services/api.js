@@ -204,7 +204,15 @@ export const reportsApi = {
   monthlyDistribution: () => apiClient.get('/reports/monthly-distribution'),
   beneficiariesByProgram: () => apiClient.get('/reports/beneficiaries-by-program'),
   distributionStatus: () => apiClient.get('/reports/distribution-status'),
+  monthlyAid: () => apiClient.get('/reports/monthly-aid'),
   recentDistributions: (params) => apiClient.get('/reports/recent-distributions', { params }),
+  getTableBeneficiaries: (params) => apiClient.get('/reports/table/beneficiaries', { params }),
+  getTablePrograms: (params) => apiClient.get('/reports/table/programs', { params }),
+  getTableEnrollments: (params) => apiClient.get('/reports/table/enrollments', { params }),
+  getTableAssistanceRequests: (params) => apiClient.get('/reports/table/assistance-requests', { params }),
+  getTableAttendance: (params) => apiClient.get('/reports/table/attendance', { params }),
+  getTableAnnouncements: (params) => apiClient.get('/reports/table/announcements', { params }),
+  getDistributionDetail: (id) => apiClient.get(`/reports/distribution/${id}`),
 };
 
 export const messageApi = {

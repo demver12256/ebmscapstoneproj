@@ -47,11 +47,6 @@ const getCategoryShort = (category) => {
   return category.length > 12 ? category.substring(0, 12) + '…' : category;
 };
 
-const getIPColor = (ip) => {
-  if (ip === 'IP') return '#16a34a';
-  return '#94a3b8';
-};
-
 const BeneficiaryListScreen = ({ onBack, user }) => {
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [barangays, setBarangays] = useState([]);
@@ -107,7 +102,7 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const fullName = `${b.first_name || ''} ${b.middle_name || ''} ${b.last_name || ''}`.toLowerCase();
-      const brgy = b.Barangay?.name?.toLowerCase() || '';
+      const brgy = (b.Barangay?.barangay_name || b.Barangay?.name || '').toLowerCase();
       const idCode = (b.beneficiary_id_code || '').toLowerCase();
       const household = (b.household_id_number || '').toLowerCase();
       return fullName.includes(q) || brgy.includes(q) || idCode.includes(q) || household.includes(q);
@@ -115,19 +110,18 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     return true;
   });
 
-  const loadTabData = async (beneficiary, tab) => {
+  // Load all 3 tabs' live database data in parallel
+  const loadBeneficiaryDetails = async (ben) => {
     setTabLoading(true);
     try {
-      if (tab === 'attendance' && !attendanceData) {
-        const res = await beneficiaryApi.getAttendance(beneficiary.id);
-        setAttendanceData(res.data?.data || []);
-      } else if (tab === 'distributions' && !distributionsData) {
-        const res = await beneficiaryApi.getDistributions(beneficiary.id);
-        setDistributionsData(res.data?.data || []);
-      } else if (tab === 'programs' && !enrollmentsData) {
-        const res = await beneficiaryApi.getEnrollments(beneficiary.id);
-        setEnrollmentsData(res.data?.data || []);
-      }
+      const [attRes, distRes, enrRes] = await Promise.allSettled([
+        beneficiaryApi.getAttendance(ben.id),
+        beneficiaryApi.getDistributions(ben.id),
+        beneficiaryApi.getEnrollments(ben.id),
+      ]);
+      if (attRes.status === 'fulfilled') setAttendanceData(attRes.value.data?.data || null);
+      if (distRes.status === 'fulfilled') setDistributionsData(distRes.value.data?.data || null);
+      if (enrRes.status === 'fulfilled') setEnrollmentsData(enrRes.value.data?.data || null);
     } catch (err) {
       console.warn('Tab data load error:', err?.message);
     } finally {
@@ -141,18 +135,12 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     setAttendanceData(null);
     setDistributionsData(null);
     setEnrollmentsData(null);
-  };
-
-  const switchTab = (tab) => {
-    setDetailTab(tab);
-    if (selectedBeneficiary) {
-      loadTabData(selectedBeneficiary, tab);
-    }
+    loadBeneficiaryDetails(beneficiary);
   };
 
   const renderBeneficiaryCard = ({ item }) => {
     const fullName = `${item.last_name || ''}, ${item.first_name || ''} ${item.middle_name || ''}`.trim();
-    const barangayName = item.Barangay?.name || '—';
+    const barangayName = item.Barangay?.barangay_name || item.Barangay?.name || '—';
     const catColor = getCategoryColor(item.category);
     const catShort = getCategoryShort(item.category);
 
@@ -178,10 +166,8 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
             <Text style={s.footerValue}>{item.beneficiary_id_code || '—'}</Text>
           </View>
           <View style={s.footerItem}>
-            <Text style={s.footerLabel}>IP Class</Text>
-            <Text style={[s.footerValue, { color: getIPColor(item.ip_classification) }]}>
-              {item.ip_classification || 'Non-IP'}
-            </Text>
+            <Text style={s.footerLabel}>RFID Card</Text>
+            <Text style={s.footerValue}>{item.RFID_number || 'Walang RFID'}</Text>
           </View>
           <View style={s.footerItem}>
             <Text style={s.footerLabel}>Sex</Text>
@@ -209,7 +195,7 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
             ['Civil Status', b.civil_status],
             ['Contact', b.contact_number],
             ['Address', b.address],
-            ['Barangay', b.Barangay?.name || '—'],
+            ['Barangay', b.Barangay?.barangay_name || b.Barangay?.name || '—'],
             ['Sitio', b.sitio || '—'],
           ].map(([label, value]) => (
             <View key={label} style={s.profileRow}>
@@ -258,73 +244,328 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     );
   };
 
+  // ATTENDANCE TAB matching Image 3 with live database connection
   const renderAttendanceTab = () => {
-    if (tabLoading) return <ActivityIndicator size="large" color="#2563eb" style={s.loader} />;
-    const data = Array.isArray(attendanceData) ? attendanceData : [];
-    if (data.length === 0) return <Text style={s.emptyTab}>No attendance records found.</Text>;
+    if (tabLoading && !attendanceData) {
+      return (
+        <View style={s.centered}>
+          <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={s.loadingText}>Kinukuha ang talaan ng attendance...</Text>
+        </View>
+      );
+    }
+
+    const stats = attendanceData?.stats || {
+      compliance_rate: 0,
+      present_count: 0,
+      total_meetings: 0,
+      absent_count: 0,
+      pending_count: 0,
+    };
+    const records = attendanceData?.records || [];
+    const isCompliant = (stats.compliance_rate || 0) >= 80;
 
     return (
       <ScrollView style={s.tabContent}>
-        {data.map((record, i) => (
-          <View key={record.id || i} style={s.recordCard}>
-            <Text style={s.recordTitle}>{record.event_name || record.DistributionEvent?.event_name || 'Event'}</Text>
-            <Text style={s.recordMeta}>📅 {formatDate(record.scanned_at || record.created_at)}</Text>
-            {record.scan_type && <Text style={s.recordMeta}>🔖 {record.scan_type}</Text>}
+        {/* 4 Top KPI Cards matching Image 3 */}
+        <View style={s.attendanceKpiGrid}>
+          {/* 1: Compliance */}
+          <View style={s.attKpiCard}>
+            <View style={s.attKpiHeader}>
+              <Text style={s.attKpiLabel}>COMPLIANCE</Text>
+              <Text style={{ fontSize: 13 }}>🎖</Text>
+            </View>
+            <Text style={[s.attKpiValue, { color: isCompliant ? '#15803d' : '#be123c' }]}>
+              {stats.compliance_rate}%
+            </Text>
+            <Text style={s.attKpiSub}>
+              {isCompliant ? 'Mahusay / Compliant' : 'Kailangang Subaybayan'}
+            </Text>
           </View>
-        ))}
+
+          {/* 2: Naka-attend */}
+          <View style={[s.attKpiCard, { borderColor: '#86efac', backgroundColor: '#f0fdf4' }]}>
+            <View style={s.attKpiHeader}>
+              <Text style={[s.attKpiLabel, { color: '#16a34a' }]}>NAKA-ATTEND</Text>
+              <Text style={{ fontSize: 13, color: '#16a34a' }}>✓</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+              <Text style={[s.attKpiValue, { color: '#15803d' }]}>{stats.present_count}</Text>
+              <Text style={[s.attKpiTotal, { color: '#16a34a' }]}> / {stats.total_meetings}</Text>
+            </View>
+            <Text style={[s.attKpiSub, { color: '#16a34a' }]}>Present sa pagpupulong</Text>
+          </View>
+
+          {/* 3: Liban (Absent) */}
+          <View style={[s.attKpiCard, { borderColor: '#fca5a5', backgroundColor: '#fff1f2' }]}>
+            <View style={s.attKpiHeader}>
+              <Text style={[s.attKpiLabel, { color: '#e11d48' }]}>LIBAN (ABSENT)</Text>
+              <Text style={{ fontSize: 13, color: '#e11d48' }}>⊗</Text>
+            </View>
+            <Text style={[s.attKpiValue, { color: '#be123c' }]}>{stats.absent_count}</Text>
+            <Text style={[s.attKpiSub, { color: '#e11d48' }]}>Hindi nakapag-attend</Text>
+          </View>
+
+          {/* 4: Pending */}
+          <View style={[s.attKpiCard, { borderColor: '#fde047', backgroundColor: '#fefce8' }]}>
+            <View style={s.attKpiHeader}>
+              <Text style={[s.attKpiLabel, { color: '#ca8a04' }]}>PENDING</Text>
+              <Text style={{ fontSize: 13, color: '#ca8a04' }}>🕒</Text>
+            </View>
+            <Text style={[s.attKpiValue, { color: '#a16207' }]}>{stats.pending_count}</Text>
+            <Text style={[s.attKpiSub, { color: '#ca8a04' }]}>Paparating na pulong</Text>
+          </View>
+        </View>
+
+        {/* Meeting Attendance Records Section matching Image 3 */}
+        <View style={s.meetingCardContainer}>
+          <View style={s.meetingSectionHeader}>
+            <Text style={s.meetingSectionTitle}>
+              📅 Talaan ng Lahat ng Meetings ({records.length})
+            </Text>
+            <Text style={s.meetingSectionSub}>
+              Listahan ng mga opisyal na pagpupulong para sa kategoryang{' '}
+              <Text style={{ fontWeight: 'bold' }}>{selectedBeneficiary?.category || 'Beneficiary'}</Text>
+            </Text>
+          </View>
+
+          {records.length === 0 ? (
+            <View style={s.emptyMeetingBox}>
+              <Text style={{ fontSize: 24, marginBottom: 6 }}>📅</Text>
+              <Text style={s.emptyTab}>Walang nakatalang pulong para sa benepisyaryong ito.</Text>
+            </View>
+          ) : (
+            records.map((rec) => {
+              const isPresent = rec.attendance_status === 'Present';
+              const isAbsent = rec.attendance_status === 'Absent';
+              const isPending = rec.attendance_status === 'Pending';
+
+              return (
+                <View key={rec.id} style={s.meetingItemCard}>
+                  {/* Title & Creator */}
+                  <Text style={s.meetingTitle}>{rec.title}</Text>
+                  <View style={s.creatorTag}>
+                    <Text style={s.creatorTagText}>
+                      Nilikha ni: {rec.CreatedBy ? `${rec.CreatedBy.first_name} ${rec.CreatedBy.last_name}` : 'System Administrator'}
+                    </Text>
+                  </View>
+
+                  {/* Schedule & Venue */}
+                  <View style={s.meetingMetaRow}>
+                    <Text style={s.meetingMetaText}>
+                      📅 {formatDate(rec.event_date)} {rec.event_time ? `• ${rec.event_time}` : ''}
+                    </Text>
+                    <Text style={s.meetingMetaText}>
+                      📍 {rec.venue || 'Barangay Covered Court'}
+                    </Text>
+                  </View>
+
+                  {/* Status explanation & badge */}
+                  <View style={s.meetingStatusRow}>
+                    <Text
+                      style={[
+                        s.meetingNoteText,
+                        isPresent && { color: '#15803d' },
+                        isAbsent && { color: '#be123c' },
+                        isPending && { color: '#a16207' },
+                      ]}
+                    >
+                      {isPresent
+                        ? `✓ Na-scan ang RFID card noong ${rec.scanned_at ? formatDate(rec.scanned_at) : 'pulong'}`
+                        : isAbsent
+                        ? '⊗ Hindi nakadalo sa itinakdang oras ng pulong'
+                        : '🕒 Naka-iskedyul — I-tap ang RFID card sa araw ng pulong'}
+                    </Text>
+
+                    {/* Badge Pill matching Image 3 */}
+                    <View
+                      style={[
+                        s.attendanceBadgePill,
+                        isPresent && s.badgePresent,
+                        isAbsent && s.badgeAbsent,
+                        isPending && s.badgePending,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          s.attendanceBadgeText,
+                          isPresent && s.badgePresentTxt,
+                          isAbsent && s.badgeAbsentTxt,
+                          isPending && s.badgePendingTxt,
+                        ]}
+                      >
+                        {isPresent
+                          ? '✓ Naka-attend (Present)'
+                          : isAbsent
+                          ? '⊗ Hindi Naka-attend (Absent)'
+                          : '🕒 Naka-iskedyul (Pending)'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </View>
+
+        {/* Footer info bar matching Image 3 */}
+        <View style={s.meetingFooterBar}>
+          <Text style={s.meetingFooterInfo}>
+            Kabuuang Meetings: {stats.total_meetings} • Attendance Rating:{' '}
+            <Text style={{ fontWeight: 'bold' }}>{stats.compliance_rate}%</Text>
+          </Text>
+          <TouchableOpacity
+            style={s.closeWindowBtn}
+            onPress={() => setSelectedBeneficiary(null)}
+          >
+            <Text style={s.closeWindowBtnText}>Close Window</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     );
   };
 
+  // DISTRIBUTIONS TAB with real data binding
   const renderDistributionsTab = () => {
-    if (tabLoading) return <ActivityIndicator size="large" color="#2563eb" style={s.loader} />;
-    const data = Array.isArray(distributionsData) ? distributionsData : [];
-    if (data.length === 0) return <Text style={s.emptyTab}>No distribution records found.</Text>;
+    if (tabLoading && !distributionsData) {
+      return (
+        <View style={s.centered}>
+          <ActivityIndicator size="large" color="#16a34a" />
+          <Text style={s.loadingText}>Kinukuha ang talaan ng mga ayuda...</Text>
+        </View>
+      );
+    }
+
+    const stats = distributionsData?.stats || {
+      total_claims: 0,
+      released_count: 0,
+      pending_count: 0,
+      total_amount_claimed: 0,
+    };
+    const txns = distributionsData?.transactions || [];
 
     return (
       <ScrollView style={s.tabContent}>
-        {data.map((txn, i) => (
-          <View key={txn.id || i} style={s.recordCard}>
-            <View style={s.recordRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.recordTitle}>{txn.event_name || txn.DistributionEvent?.event_name || 'Distribution'}</Text>
-                <Text style={s.recordMeta}>📅 {formatDate(txn.released_at || txn.created_at)}</Text>
+        {/* KPI Banner */}
+        <View style={s.distKpiRow}>
+          <View style={s.distKpiCard}>
+            <Text style={s.distKpiLabel}>Kabuuang Na-claim</Text>
+            <Text style={s.distKpiAmount}>{formatMoney(stats.total_amount_claimed)}</Text>
+          </View>
+          <View style={s.distKpiCard}>
+            <Text style={s.distKpiLabel}>Na-claim (Released)</Text>
+            <Text style={s.distKpiCount}>{stats.released_count} ayuda</Text>
+          </View>
+        </View>
+
+        {txns.length === 0 ? (
+          <Text style={s.emptyTab}>Walang nakatalang release ng ayuda para sa benepisyaryong ito.</Text>
+        ) : (
+          txns.map((txn, i) => (
+            <View key={txn.id || i} style={s.recordCard}>
+              <View style={s.recordRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.recordTitle}>{txn.Event?.title || 'Distribution Event'}</Text>
+                  <Text style={s.recordMeta}>
+                    📅 {txn.released_at ? formatDate(txn.released_at) : formatDate(txn.created_at)}
+                  </Text>
+                </View>
+                <Text style={s.amountBadge}>{formatMoney(Number(txn.amount || 0) + Number(txn.retro_amount || 0))}</Text>
               </View>
-              <Text style={s.amountBadge}>{formatMoney(Number(txn.amount || 0) + Number(txn.retro_amount || 0))}</Text>
+              <View style={s.statusRow}>
+                <View
+                  style={[
+                    s.statusDot,
+                    {
+                      backgroundColor:
+                        txn.status === 'released'
+                          ? '#16a34a'
+                          : txn.status === 'pending'
+                          ? '#eab308'
+                          : '#94a3b8',
+                    },
+                  ]}
+                />
+                <Text style={s.recordMeta}>{(txn.status || 'pending').toUpperCase()}</Text>
+                {txn.verification_method && <Text style={s.recordMeta}> • {txn.verification_method}</Text>}
+              </View>
             </View>
-            <View style={s.statusRow}>
-              <View style={[s.statusDot, { backgroundColor: txn.status === 'released' ? '#16a34a' : txn.status === 'pending' ? '#eab308' : '#94a3b8' }]} />
-              <Text style={s.recordMeta}>{(txn.status || 'pending').toUpperCase()}</Text>
-              {txn.disbursement_type && <Text style={s.recordMeta}> • {txn.disbursement_type}</Text>}
-            </View>
-          </View>
-        ))}
+          ))
+        )}
       </ScrollView>
     );
   };
 
+  // PROGRAMS TAB with real data binding
   const renderProgramsTab = () => {
-    if (tabLoading) return <ActivityIndicator size="large" color="#2563eb" style={s.loader} />;
-    const data = Array.isArray(enrollmentsData) ? enrollmentsData : [];
-    if (data.length === 0) return <Text style={s.emptyTab}>No program enrollments found.</Text>;
+    if (tabLoading && !enrollmentsData) {
+      return (
+        <View style={s.centered}>
+          <ActivityIndicator size="large" color="#7c3aed" />
+          <Text style={s.loadingText}>Kinukuha ang mga programa...</Text>
+        </View>
+      );
+    }
+
+    const enrs = enrollmentsData?.enrollments || [];
+    const stats = enrollmentsData?.stats || { active_count: 0, total_enrolled: 0 };
 
     return (
       <ScrollView style={s.tabContent}>
-        {data.map((enrollment, i) => (
-          <View key={enrollment.id || i} style={s.recordCard}>
-            <Text style={s.recordTitle}>{enrollment.BenefitProgram?.name || enrollment.program_name || 'Program'}</Text>
-            <Text style={s.recordMeta}>📅 Enrolled: {formatDate(enrollment.enrolled_at || enrollment.created_at)}</Text>
-            <View style={s.statusRow}>
-              <View style={[s.statusDot, { backgroundColor: enrollment.status === 'active' ? '#16a34a' : '#eab308' }]} />
-              <Text style={s.recordMeta}>{(enrollment.status || 'active').toUpperCase()}</Text>
-            </View>
+        <View style={s.distKpiRow}>
+          <View style={s.distKpiCard}>
+            <Text style={s.distKpiLabel}>Aktibong Programa</Text>
+            <Text style={[s.distKpiCount, { color: '#7c3aed' }]}>{stats.active_count} programa</Text>
           </View>
-        ))}
+          <View style={s.distKpiCard}>
+            <Text style={s.distKpiLabel}>Kabuuang Enrollment</Text>
+            <Text style={s.distKpiCount}>{stats.total_enrolled} record</Text>
+          </View>
+        </View>
+
+        {enrs.length === 0 ? (
+          <Text style={s.emptyTab}>Walang naka-enroll na programa para sa benepisyaryong ito.</Text>
+        ) : (
+          enrs.map((enrollment, i) => (
+            <View key={enrollment.id || i} style={s.recordCard}>
+              <Text style={s.recordTitle}>
+                {enrollment.BenefitProgram?.name || enrollment.program_name || 'Benefit Program'}
+              </Text>
+              <Text style={s.recordMeta}>
+                📅 Petsa ng Enrollment: {formatDate(enrollment.enrollment_date || enrollment.created_at)}
+              </Text>
+              <View style={s.statusRow}>
+                <View
+                  style={[
+                    s.statusDot,
+                    {
+                      backgroundColor:
+                        enrollment.status === 'active' ? '#16a34a' : '#eab308',
+                    },
+                  ]}
+                />
+                <Text style={s.recordMeta}>{(enrollment.status || 'active').toUpperCase()}</Text>
+                {enrollment.BenefitProgram?.benefit_type && (
+                  <Text style={s.recordMeta}> • {enrollment.BenefitProgram.benefit_type}</Text>
+                )}
+              </View>
+            </View>
+          ))
+        )}
       </ScrollView>
     );
   };
 
-  // ─── Main Render ───
+  // Badges for Tabs
+  const attStats = attendanceData?.stats;
+  const attBadge = attStats ? `${attStats.compliance_rate}% (${attStats.present_count}/${attStats.total_meetings})` : null;
+
+  const distStats = distributionsData?.stats;
+  const distBadge = distStats ? `₱${Math.round(distStats.total_amount_claimed || 0)} (${distStats.released_count})` : null;
+
+  const enrStats = enrollmentsData?.stats;
+  const enrBadge = enrStats ? `${enrStats.active_count} Aktibo` : null;
+
   return (
     <SafeAreaView style={s.page}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
@@ -371,17 +612,20 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
             >
               <Text style={[s.filterChipText, !selectedBarangayId && s.filterChipTextActive]}>All</Text>
             </TouchableOpacity>
-            {barangays.map((brgy) => (
-              <TouchableOpacity
-                key={brgy.id}
-                style={[s.filterChip, selectedBarangayId === String(brgy.id) && s.filterChipActive]}
-                onPress={() => setSelectedBarangayId(selectedBarangayId === String(brgy.id) ? '' : String(brgy.id))}
-              >
-                <Text style={[s.filterChipText, selectedBarangayId === String(brgy.id) && s.filterChipTextActive]}>
-                  {brgy.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {barangays.map((brgy) => {
+              const name = brgy.barangay_name || brgy.name;
+              return (
+                <TouchableOpacity
+                  key={brgy.id}
+                  style={[s.filterChip, selectedBarangayId === String(brgy.id) && s.filterChipActive]}
+                  onPress={() => setSelectedBarangayId(selectedBarangayId === String(brgy.id) ? '' : String(brgy.id))}
+                >
+                  <Text style={[s.filterChipText, selectedBarangayId === String(brgy.id) && s.filterChipTextActive]}>
+                    {name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           <Text style={[s.filterTitle, { marginTop: 10 }]}>Filter by Category</Text>
@@ -395,10 +639,10 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
             {CATEGORIES.map((cat) => (
               <TouchableOpacity
                 key={cat}
-                style={[s.filterChip, selectedCategory === cat && s.filterChipActive, { borderColor: getCategoryColor(cat) + '60' }]}
+                style={[s.filterChip, selectedCategory === cat && s.filterChipActive]}
                 onPress={() => setSelectedCategory(selectedCategory === cat ? '' : cat)}
               >
-                <Text style={[s.filterChipText, selectedCategory === cat && s.filterChipTextActive, selectedCategory === cat && { color: '#fff' }, selectedCategory === cat && { backgroundColor: getCategoryColor(cat) }]}>
+                <Text style={[s.filterChipText, selectedCategory === cat && s.filterChipTextActive]}>
                   {getCategoryShort(cat)}
                 </Text>
               </TouchableOpacity>
@@ -409,11 +653,16 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
 
       {/* Content */}
       {loading ? (
-        <View style={s.centered}><ActivityIndicator size="large" color="#2563eb" /><Text style={s.loadingText}>Loading beneficiaries...</Text></View>
+        <View style={s.centered}>
+          <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={s.loadingText}>Loading beneficiaries...</Text>
+        </View>
       ) : error ? (
         <View style={s.centered}>
           <Text style={s.errorText}>{error}</Text>
-          <TouchableOpacity onPress={loadData} style={s.retryBtn}><Text style={s.retryText}>Retry</Text></TouchableOpacity>
+          <TouchableOpacity onPress={loadData} style={s.retryBtn}>
+            <Text style={s.retryText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -422,16 +671,20 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
           renderItem={renderBeneficiaryCard}
           contentContainerStyle={s.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          ListEmptyComponent={<View style={s.centered}><Text style={s.emptyText}>No beneficiaries found matching your filters.</Text></View>}
+          ListEmptyComponent={
+            <View style={s.centered}>
+              <Text style={s.emptyText}>No beneficiaries found matching your filters.</Text>
+            </View>
+          }
         />
       )}
 
-      {/* Detail Modal */}
+      {/* Detail Modal with Tabs matching Image 3 */}
       <Modal visible={!!selectedBeneficiary} animationType="slide" onRequestClose={() => setSelectedBeneficiary(null)}>
         <SafeAreaView style={s.modalPage}>
           <View style={s.modalHeader}>
             <TouchableOpacity onPress={() => setSelectedBeneficiary(null)} style={s.modalBackBtn}>
-              <Text style={s.modalBackText}>← Close</Text>
+              <Text style={s.modalBackText}>← Back</Text>
             </TouchableOpacity>
             <Text style={s.modalTitle} numberOfLines={1}>
               {selectedBeneficiary ? `${selectedBeneficiary.first_name} ${selectedBeneficiary.last_name}` : ''}
@@ -447,32 +700,77 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
               </View>
               <View style={s.modalSummaryInfo}>
                 <Text style={s.modalName}>{selectedBeneficiary.first_name} {selectedBeneficiary.last_name}</Text>
-                <Text style={s.modalMeta}>📍 {selectedBeneficiary.Barangay?.name || '—'} • {selectedBeneficiary.category || 'N/A'}</Text>
-                <View style={[s.approvedBadge]}>
+                <Text style={s.modalMeta}>
+                  📍 {selectedBeneficiary.Barangay?.barangay_name || selectedBeneficiary.Barangay?.name || '—'} • {selectedBeneficiary.category || 'N/A'}
+                </Text>
+                <View style={s.approvedBadge}>
                   <Text style={s.approvedText}>✓ APPROVED</Text>
                 </View>
               </View>
             </View>
           )}
 
-          {/* Tabs */}
-          <View style={s.tabBar}>
-            {[
-              ['profile', '👤 Profile'],
-              ['attendance', '📋 Attendance'],
-              ['distributions', '💰 Distributions'],
-              ['programs', '📦 Programs'],
-            ].map(([key, label]) => (
+          {/* Tabs matching Image 3 with Live Badges */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBarContainer}>
+            <View style={s.tabBar}>
+              {/* Tab 1: Profile */}
               <TouchableOpacity
-                key={key}
-                style={[s.tab, detailTab === key && s.tabActive]}
-                onPress={() => switchTab(key)}
+                style={[s.tab, detailTab === 'profile' && s.tabActive]}
+                onPress={() => setDetailTab('profile')}
               >
-                <Text style={[s.tabText, detailTab === key && s.tabTextActive]}>{label}</Text>
+                <Text style={[s.tabText, detailTab === 'profile' && s.tabTextActive]}>
+                  👤 Personal & RFID Details
+                </Text>
               </TouchableOpacity>
-            ))}
-          </View>
 
+              {/* Tab 2: Attendance */}
+              <TouchableOpacity
+                style={[s.tab, detailTab === 'attendance' && s.tabActive]}
+                onPress={() => setDetailTab('attendance')}
+              >
+                <Text style={[s.tabText, detailTab === 'attendance' && s.tabTextActive]}>
+                  📅 DSWD Attendance
+                </Text>
+                {attBadge && (
+                  <View style={s.tabBadgeRed}>
+                    <Text style={s.tabBadgeRedText}>{attBadge}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* Tab 3: Distributions */}
+              <TouchableOpacity
+                style={[s.tab, detailTab === 'distributions' && s.tabActive]}
+                onPress={() => setDetailTab('distributions')}
+              >
+                <Text style={[s.tabText, detailTab === 'distributions' && s.tabTextActive]}>
+                  💰 DSWD Distributions
+                </Text>
+                {distBadge && (
+                  <View style={s.tabBadgeGreen}>
+                    <Text style={s.tabBadgeGreenText}>{distBadge}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* Tab 4: Programs */}
+              <TouchableOpacity
+                style={[s.tab, detailTab === 'programs' && s.tabActive]}
+                onPress={() => setDetailTab('programs')}
+              >
+                <Text style={[s.tabText, detailTab === 'programs' && s.tabTextActive]}>
+                  📦 DSWD Programs
+                </Text>
+                {enrBadge && (
+                  <View style={s.tabBadgePurple}>
+                    <Text style={s.tabBadgePurpleText}>{enrBadge}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+
+          {/* Content of selected tab */}
           {detailTab === 'profile' && renderProfileTab()}
           {detailTab === 'attendance' && renderAttendanceTab()}
           {detailTab === 'distributions' && renderDistributionsTab()}
@@ -487,7 +785,13 @@ const s = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#f1f5f9' },
 
   // Header
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', paddingHorizontal: 16, paddingVertical: 14 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
   backBtn: { paddingRight: 12 },
   backText: { color: '#93c5fd', fontSize: 15, fontWeight: '600' },
   headerCenter: { flex: 1 },
@@ -497,41 +801,93 @@ const s = StyleSheet.create({
   filterIcon: { color: '#f8fafc', fontSize: 20 },
 
   // Search
-  searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', marginHorizontal: 12, marginTop: 12, borderRadius: 12, paddingHorizontal: 14, height: 48, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4 },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 12,
+    marginTop: 12,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+    elevation: 2,
+  },
   searchIcon: { fontSize: 16, marginRight: 8 },
   searchInput: { flex: 1, fontSize: 15, color: '#1e293b' },
   clearSearch: { color: '#94a3b8', fontSize: 18, paddingLeft: 8 },
 
   // Filters
-  filterPanel: { backgroundColor: '#fff', marginHorizontal: 12, marginTop: 8, borderRadius: 12, padding: 14, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3 },
-  filterTitle: { fontSize: 12, fontWeight: '700', color: '#64748b', letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' },
+  filterPanel: {
+    backgroundColor: '#fff',
+    marginHorizontal: 12,
+    marginTop: 8,
+    borderRadius: 12,
+    padding: 14,
+    elevation: 2,
+  },
+  filterTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
   filterScroll: { flexDirection: 'row', marginBottom: 4 },
-  filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', marginRight: 8 },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginRight: 8,
+  },
   filterChipActive: { backgroundColor: '#1e40af', borderColor: '#1e40af' },
   filterChipText: { fontSize: 13, color: '#475569', fontWeight: '500' },
   filterChipTextActive: { color: '#fff', fontWeight: '700' },
 
-  // List
   listContent: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 20 },
 
   // Card
-  card: { backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, borderLeftWidth: 4, borderLeftColor: '#2563eb' },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2563eb',
+  },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  avatar: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
   avatarText: { fontSize: 16, fontWeight: '700' },
   cardInfo: { flex: 1 },
   cardName: { fontSize: 15, fontWeight: '700', color: '#1e293b' },
   cardMeta: { fontSize: 12, color: '#64748b', marginTop: 2 },
   categoryBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1 },
   categoryText: { fontSize: 11, fontWeight: '700' },
-  cardFooter: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 10 },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 10,
+  },
   footerItem: { flex: 1 },
-  footerLabel: { fontSize: 10, color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
-  footerValue: { fontSize: 13, color: '#334155', fontWeight: '600', marginTop: 2 },
+  footerLabel: { fontSize: 10, color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase' },
+  footerValue: { fontSize: 12.5, color: '#334155', fontWeight: '600', marginTop: 2 },
   viewArrow: { fontSize: 24, color: '#cbd5e1', fontWeight: '300' },
 
   // Centered states
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, paddingVertical: 40 },
   loadingText: { color: '#64748b', marginTop: 12, fontSize: 14 },
   errorText: { color: '#dc2626', fontSize: 14, textAlign: 'center', marginBottom: 12 },
   emptyText: { color: '#64748b', fontSize: 14, textAlign: 'center' },
@@ -540,46 +896,223 @@ const s = StyleSheet.create({
 
   // Modal
   modalPage: { flex: 1, backgroundColor: '#f8fafc' },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', paddingHorizontal: 16, paddingVertical: 14 },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
   modalBackBtn: { paddingRight: 12 },
   modalBackText: { color: '#93c5fd', fontSize: 15, fontWeight: '600' },
   modalTitle: { flex: 1, color: '#f8fafc', fontSize: 17, fontWeight: '700' },
 
-  // Modal Summary
-  modalSummary: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-  modalAvatar: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+  modalSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  modalAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
   modalAvatarText: { fontSize: 20, fontWeight: '700' },
   modalSummaryInfo: { flex: 1 },
   modalName: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
   modalMeta: { fontSize: 13, color: '#64748b', marginTop: 3 },
-  approvedBadge: { backgroundColor: '#dcfce7', alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginTop: 6 },
+  approvedBadge: {
+    backgroundColor: '#dcfce7',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 6,
+  },
   approvedText: { color: '#16a34a', fontSize: 11, fontWeight: '800' },
 
-  // Tab Bar
-  tabBar: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-  tab: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: '#2563eb' },
-  tabText: { fontSize: 12, color: '#64748b', fontWeight: '600' },
-  tabTextActive: { color: '#2563eb' },
+  // Tabs Bar
+  tabBarContainer: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0', maxHeight: 50 },
+  tabBar: { flexDirection: 'row', alignItems: 'center' },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabActive: { borderBottomColor: '#2563eb' },
+  tabText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
+  tabTextActive: { color: '#2563eb', fontWeight: '800' },
+  tabBadgeRed: { backgroundColor: '#fee2e2', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
+  tabBadgeRedText: { color: '#b91c1c', fontSize: 10, fontWeight: '800' },
+  tabBadgeGreen: { backgroundColor: '#dcfce7', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
+  tabBadgeGreenText: { color: '#15803d', fontSize: 10, fontWeight: '800' },
+  tabBadgePurple: { backgroundColor: '#f3e8ff', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
+  tabBadgePurpleText: { color: '#7e22ce', fontSize: 10, fontWeight: '800' },
 
-  // Tab Content
   tabContent: { flex: 1, padding: 16 },
-  loader: { marginTop: 40 },
-  emptyTab: { color: '#94a3b8', fontSize: 14, textAlign: 'center', marginTop: 40 },
 
-  // Profile
-  profileSection: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 2 },
-  profileSectionTitle: { fontSize: 14, fontWeight: '800', color: '#1e293b', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  // Profile sections
+  profileSection: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 1,
+  },
+  profileSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1e293b',
+    marginBottom: 12,
+    textTransform: 'uppercase',
+  },
   profileRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f8fafc' },
-  profileLabel: { width: 120, fontSize: 13, color: '#64748b', fontWeight: '600' },
-  profileValue: { flex: 1, fontSize: 13, color: '#1e293b', fontWeight: '500' },
+  profileLabel: { width: 120, fontSize: 12.5, color: '#64748b', fontWeight: '600' },
+  profileValue: { flex: 1, fontSize: 12.5, color: '#1e293b', fontWeight: '500' },
 
-  // Records
-  recordCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 2 },
+  // 4 Top KPI Cards for Attendance matching Image 3
+  attendanceKpiGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  attKpiCard: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 10,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    elevation: 1,
+  },
+  attKpiHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  attKpiLabel: { fontSize: 8.5, fontWeight: '800', color: '#64748b', letterSpacing: 0.5 },
+  attKpiValue: { fontSize: 18, fontWeight: '900', color: '#1e293b' },
+  attKpiTotal: { fontSize: 11, fontWeight: '700' },
+  attKpiSub: { fontSize: 9, color: '#64748b', marginTop: 2, lineHeight: 12 },
+
+  // Meeting Container
+  meetingCardContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 14,
+    elevation: 1,
+  },
+  meetingSectionHeader: { marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 10 },
+  meetingSectionTitle: { fontSize: 14, fontWeight: '800', color: '#1e293b' },
+  meetingSectionSub: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  emptyMeetingBox: { padding: 24, alignItems: 'center' },
+  emptyTab: { color: '#94a3b8', fontSize: 13, textAlign: 'center' },
+
+  // Meeting Item Card matching Image 3
+  meetingItemCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    marginBottom: 10,
+  },
+  meetingTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  creatorTag: {
+    backgroundColor: '#f1f5f9',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  creatorTagText: { fontSize: 10, color: '#475569', fontWeight: '600' },
+  meetingMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 8 },
+  meetingMetaText: { fontSize: 11.5, color: '#475569', fontWeight: '500' },
+  meetingStatusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#f8fafc',
+    paddingTop: 8,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  meetingNoteText: { fontSize: 11, fontWeight: '600', flex: 1, minWidth: 160 },
+  attendanceBadgePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  attendanceBadgeText: { fontSize: 10.5, fontWeight: '800' },
+  badgePresent: { backgroundColor: '#dcfce7', borderColor: '#86efac' },
+  badgePresentTxt: { color: '#15803d' },
+  badgeAbsent: { backgroundColor: '#fee2e2', borderColor: '#fca5a5' },
+  badgeAbsentTxt: { color: '#b91c1c' },
+  badgePending: { backgroundColor: '#fef3c7', borderColor: '#fde047' },
+  badgePendingTxt: { color: '#b45309' },
+
+  // Meeting Footer matching Image 3
+  meetingFooterBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 20,
+  },
+  meetingFooterInfo: { fontSize: 11.5, color: '#475569', flex: 1 },
+  closeWindowBtn: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  closeWindowBtnText: { fontSize: 11.5, fontWeight: '700', color: '#1e293b' },
+
+  // Distribution KPIs
+  distKpiRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  distKpiCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  distKpiLabel: { fontSize: 10.5, color: '#64748b', fontWeight: '700' },
+  distKpiAmount: { fontSize: 16, fontWeight: '900', color: '#15803d', marginTop: 2 },
+  distKpiCount: { fontSize: 15, fontWeight: '800', color: '#1e293b', marginTop: 2 },
+
+  // Record cards
+  recordCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    elevation: 1,
+  },
   recordRow: { flexDirection: 'row', alignItems: 'center' },
-  recordTitle: { fontSize: 14, fontWeight: '700', color: '#1e293b', marginBottom: 4 },
-  recordMeta: { fontSize: 12, color: '#64748b' },
-  amountBadge: { fontSize: 15, fontWeight: '800', color: '#16a34a' },
+  recordTitle: { fontSize: 13.5, fontWeight: '700', color: '#1e293b', marginBottom: 4 },
+  recordMeta: { fontSize: 11.5, color: '#64748b' },
+  amountBadge: { fontSize: 14, fontWeight: '800', color: '#16a34a' },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
 });
