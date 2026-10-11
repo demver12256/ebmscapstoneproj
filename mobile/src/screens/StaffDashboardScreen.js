@@ -304,7 +304,11 @@ export default function StaffDashboardScreen({
           </TouchableOpacity>
 
           {/* 2. Active Programs */}
-          <View style={[styles.kpiCard, darkMode && styles.darkCard]}>
+          <TouchableOpacity
+            style={[styles.kpiCard, darkMode && styles.darkCard]}
+            activeOpacity={0.8}
+            onPress={() => onNavigate && onNavigate('programs')}
+          >
             <View style={styles.kpiTopRow}>
               <View style={[styles.kpiIconWrap, { backgroundColor: '#faf5ff', borderColor: '#f3e8ff' }]}>
                 <Text style={styles.kpiEmoji}>🎯</Text>
@@ -321,10 +325,14 @@ export default function StaffDashboardScreen({
             <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
               Active Programs
             </Text>
-          </View>
+          </TouchableOpacity>
 
           {/* 3. Total Distributed */}
-          <View style={[styles.kpiCard, darkMode && styles.darkCard]}>
+          <TouchableOpacity
+            style={[styles.kpiCard, darkMode && styles.darkCard]}
+            activeOpacity={0.8}
+            onPress={() => onNavigate && onNavigate('distributions')}
+          >
             <View style={styles.kpiTopRow}>
               <View style={[styles.kpiIconWrap, { backgroundColor: '#ecfdf5', borderColor: '#d1fae5' }]}>
                 <Text style={styles.kpiEmoji}>₱</Text>
@@ -341,7 +349,7 @@ export default function StaffDashboardScreen({
             <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
               Total Distributed
             </Text>
-          </View>
+          </TouchableOpacity>
 
           {/* 4. Approved Beneficiaries */}
           <TouchableOpacity
@@ -371,7 +379,7 @@ export default function StaffDashboardScreen({
           <TouchableOpacity
             style={[styles.kpiCardFull, darkMode && styles.darkCard]}
             activeOpacity={0.8}
-            onPress={() => onNavigate && onNavigate('assistance')}
+            onPress={() => onNavigate && onNavigate('assistanceRequests')}
           >
             <View style={styles.kpiTopRow}>
               <View style={[styles.kpiIconWrap, { backgroundColor: '#fffbeb', borderColor: '#fef3c7' }]}>
@@ -548,7 +556,7 @@ export default function StaffDashboardScreen({
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
-              onPress={() => onNavigate && onNavigate('assistance')}
+              onPress={() => onNavigate && onNavigate('assistanceRequests')}
             >
               <Text style={styles.opIcon}>🤲</Text>
               <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Assistance</Text>

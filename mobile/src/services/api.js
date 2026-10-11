@@ -142,8 +142,21 @@ export const barangayApi = {
 };
 
 
+export const programApi = {
+  list: (params) => apiClient.get('/programs', { params }),
+  get: (id) => apiClient.get(`/programs/${id}`),
+  getEnrolledBeneficiaries: (id) => apiClient.get(`/programs/${id}/beneficiaries`),
+  autoEnrollBeneficiaries: (id) => apiClient.post(`/programs/${id}/auto-enroll`),
+};
+
 export const distributionApi = {
+  listEvents: (params) => apiClient.get('/distributions/events', { params }),
+  getEvent: (id) => apiClient.get(`/distributions/events/${id}`),
+  getTransactions: (eventId) => apiClient.get(`/distributions/events/${eventId}/transactions`),
+  verifyBeneficiary: (data) => apiClient.post('/distributions/verify-beneficiary', data),
+  releaseBenefit: (eventId, txnId, data) => apiClient.post(`/distributions/events/${eventId}/transactions/${txnId}/release`, data),
   acknowledgePayout: (transactionId) => apiClient.post(`/distributions/transactions/${transactionId}/acknowledge`),
+  list: () => apiClient.get('/distributions'),
 };
 
 export const medicalAssistanceApi = {
@@ -151,7 +164,7 @@ export const medicalAssistanceApi = {
 };
 
 export const assistanceRequestApi = {
-  list: () => apiClient.get('/assistance-requests'),
+  list: (params) => apiClient.get('/assistance-requests', { params }),
   create: (data) => {
     if (typeof FormData !== 'undefined' && data instanceof FormData) {
       return apiClient.post('/assistance-requests', data, {
@@ -160,10 +173,18 @@ export const assistanceRequestApi = {
     }
     return apiClient.post('/assistance-requests', data);
   },
+  updateStatus: (id, data) => apiClient.patch(`/assistance-requests/${id}/status`, data),
+  claimWithRfid: (data) => apiClient.post('/assistance-requests/claim-rfid', data),
+  stats: (params) => apiClient.get('/assistance-requests/stats', { params }),
 };
 
 export const interventionApi = {
   listMine: () => apiClient.get('/interventions/me'),
+  getAll: (params) => apiClient.get('/interventions/all', { params }),
+  getPending: () => apiClient.get('/interventions/pending'),
+  verify: (id, data) => apiClient.post(`/interventions/${id}/verify`, data),
+  reject: (id, data) => apiClient.post(`/interventions/${id}/reject`, data),
+  getStats: () => apiClient.get('/interventions/stats'),
   submit: (data) => apiClient.post('/interventions/submit', data, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
@@ -171,6 +192,19 @@ export const interventionApi = {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
   remove: (id) => apiClient.delete(`/interventions/me/${id}`),
+};
+
+export const userApi = {
+  list: (params) => apiClient.get('/users', { params }),
+  getById: (id) => apiClient.get(`/users/${id}`),
+};
+
+export const reportsApi = {
+  summary: () => apiClient.get('/reports/summary'),
+  monthlyDistribution: () => apiClient.get('/reports/monthly-distribution'),
+  beneficiariesByProgram: () => apiClient.get('/reports/beneficiaries-by-program'),
+  distributionStatus: () => apiClient.get('/reports/distribution-status'),
+  recentDistributions: (params) => apiClient.get('/reports/recent-distributions', { params }),
 };
 
 export const messageApi = {
@@ -190,6 +224,8 @@ export const notificationApi = {
 
 export const announcementApi = {
   list: (params) => apiClient.get('/announcements', { params }),
+  get: (id) => apiClient.get(`/announcements/${id}`),
+  scanRfid: (id, data) => apiClient.post(`/announcements/${id}/scan-rfid`, data),
   myAttendance: () => apiClient.get('/announcements/my-attendance'),
   markAsRead: (id) => apiClient.patch(`/announcements/${id}/read`),
 };

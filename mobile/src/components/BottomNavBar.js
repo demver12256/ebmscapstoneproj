@@ -17,12 +17,12 @@ const BENEFICIARY_TABS = [
 ];
 
 const STAFF_TABS = [
-  { key: 'dashboard',       icon: '🏠',  label: 'Home'       },
-  { key: 'beneficiaryList', icon: '👥',  label: 'Roster'     },
-  { key: 'assistance',      icon: '🤲',  label: 'Assistance' },
-  { key: 'botAssistant',    icon: '🤖',  label: 'AI Bot'     },
-  { key: 'messages',        icon: '💬',  label: 'Messages'   },
-  { key: 'notifications',   icon: '🔔',  label: 'Alerts'     },
+  { key: 'dashboard',          icon: '🏠',  label: 'Home'       },
+  { key: 'beneficiaryList',    icon: '👥',  label: 'Roster'     },
+  { key: 'assistanceRequests', icon: '🤲',  label: 'Assistance' },
+  { key: 'botAssistant',       icon: '🤖',  label: 'AI Bot'     },
+  { key: 'messages',           icon: '💬',  label: 'Messages'   },
+  { key: 'notifications',      icon: '🔔',  label: 'Alerts'     },
 ];
 
 const BottomNavBar = ({
@@ -39,10 +39,11 @@ const BottomNavBar = ({
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {tabs.map((tab) => {
-        // Map requestAssistance to assistance tab as active
+        // Map requestAssistance / assistance to assistance tab as active
         const isActive =
           currentNav === tab.key ||
-          (tab.key === 'assistance' && currentNav === 'requestAssistance');
+          (tab.key === 'assistanceRequests' && (currentNav === 'assistance' || currentNav === 'assistanceRequests')) ||
+          (tab.key === 'assistance' && (currentNav === 'requestAssistance' || currentNav === 'assistanceRequests'));
 
         const badge =
           tab.key === 'messages'

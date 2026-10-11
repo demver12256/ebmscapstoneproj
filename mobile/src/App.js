@@ -38,6 +38,15 @@ import ApplicationSubmissionScreen from './screens/ApplicationSubmissionScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import BotAssistantScreen from './screens/BotAssistantScreen';
 import StaffDashboardScreen from './screens/StaffDashboardScreen';
+import StaffProgramsScreen from './screens/StaffProgramsScreen';
+import StaffDistributionsScreen from './screens/StaffDistributionsScreen';
+import StaffDistributionScannerScreen from './screens/StaffDistributionScannerScreen';
+import StaffAttendanceScannerScreen from './screens/StaffAttendanceScannerScreen';
+import StaffAssistanceRequestsScreen from './screens/StaffAssistanceRequestsScreen';
+import StaffInterventionsScreen from './screens/StaffInterventionsScreen';
+import StaffAnnouncementsScreen from './screens/StaffAnnouncementsScreen';
+import StaffReportsScreen from './screens/StaffReportsScreen';
+import StaffUsersScreen from './screens/StaffUsersScreen';
 import AuthScreen from './screens/AuthScreen';
 import SidebarDrawer from './components/SidebarDrawer';
 import BottomNavBar from './components/BottomNavBar';
@@ -375,7 +384,10 @@ const App = () => {
   }, [user?.id, user?.role]);
 
   const loadPopups = async () => {
-    if (!user) return;
+    if (!user || user.role !== 'beneficiary') {
+      setShowPopupModal(false);
+      return;
+    }
     try {
       const [annRes, notifRes] = await Promise.allSettled([
         announcementApi.list().catch(() => ({ data: { data: [] } })),
@@ -933,8 +945,8 @@ const App = () => {
             />
           )}
 
-          {/* Assistance Screen (Image 3) */}
-          {currentScreen === 'assistance' && (
+          {/* Assistance Screen (Beneficiary) */}
+          {currentScreen === 'assistance' && !['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
             <AssistanceScreen
               onBack={() => handleNavSelect('dashboard')}
               onOpenDrawer={() => setSidebarOpen(true)}
@@ -981,10 +993,102 @@ const App = () => {
             />
           )}
 
-          {/* Intervention / Other Assistance Screen */}
-          {currentScreen === 'interventions' && (
+          {/* Intervention Screen (Beneficiary) */}
+          {currentScreen === 'interventions' && !['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
             <InterventionsScreen
               onBack={() => handleNavSelect('dashboard')}
+            />
+          )}
+
+          {/* Staff Interventions Screen (Staff & Admin) */}
+          {currentScreen === 'interventions' && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
+            <StaffInterventionsScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
+          {/* Staff Programs Screen */}
+          {currentScreen === 'programs' && (
+            <StaffProgramsScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
+          {/* Staff Distributions Screen */}
+          {currentScreen === 'distributions' && (
+            <StaffDistributionsScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              onNavigate={handleNavSelect}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
+          {/* Staff Distribution Scanner Screen */}
+          {currentScreen === 'distributionScanner' && (
+            <StaffDistributionScannerScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
+          {/* Staff Attendance Scanner Screen */}
+          {currentScreen === 'attendanceScanner' && (
+            <StaffAttendanceScannerScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
+          {/* Staff Assistance Requests Screen */}
+          {(currentScreen === 'assistanceRequests' || (currentScreen === 'assistance' && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role))) && (
+            <StaffAssistanceRequestsScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
+          {/* Staff Announcements Screen */}
+          {currentScreen === 'announcements' && (
+            <StaffAnnouncementsScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              onNavigate={handleNavSelect}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
+          {/* Staff Reports Screen */}
+          {currentScreen === 'reports' && (
+            <StaffReportsScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
+          {/* Staff Users Screen */}
+          {currentScreen === 'users' && (
+            <StaffUsersScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              user={user}
+              darkMode={darkMode}
             />
           )}
 

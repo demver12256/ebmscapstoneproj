@@ -102,26 +102,34 @@ const SidebarDrawer = ({
 
   const isStaff = user && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user.role);
 
-  const mainNavItems = isStaff
-    ? [
-        { key: 'dashboard', label: 'Staff Dashboard', icon: '🏠' },
-        { key: 'beneficiaryList', label: 'Beneficiary Roster', icon: '👥' },
-        { key: 'assistance', label: 'Assistance Requests', icon: '🤲' },
-        { key: 'botAssistant', label: 'BeniAid AI Bot', icon: '🤖' },
-        { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount },
-        { key: 'notifications', label: 'Notifications', icon: '🔔', badge: unreadNotifCount },
-      ]
-    : [
-        ...(user?.role === 'beneficiary' ? [{ key: 'profile', label: 'My Profile', icon: '👤' }] : []),
-        { key: 'dashboard', label: 'Dashboard', icon: '🏠' },
-        { key: 'botAssistant', label: 'BeniAid AI Bot', icon: '🤖' },
-        { key: 'attendance', label: 'My Attendance', icon: '📅' },
-        { key: 'assistance', label: 'My Assistance', icon: '🤲' },
-        { key: 'interventions', label: 'My Interventions', icon: '♥' },
-        { key: 'requestAssistance', label: 'Request Assistance', icon: '📄' },
-        { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount },
-        { key: 'notifications', label: 'Notifications', icon: '🔔', badge: unreadNotifCount },
-      ];
+  const staffNavItems = [
+    { key: 'dashboard', label: 'Dashboard', icon: '🏠' },
+    { key: 'beneficiaryList', label: 'Beneficiaries', icon: '👥' },
+    { key: 'programs', label: 'Programs', icon: '📋' },
+    { key: 'distributions', label: 'Distributions', icon: '📦' },
+    { key: 'distributionScanner', label: 'Distribution Scanner', icon: '📱' },
+    { key: 'attendanceScanner', label: 'Attendance Scanner', icon: '📱' },
+    { key: 'assistanceRequests', label: 'Assistance Requests', icon: '🤲' },
+    { key: 'interventions', label: 'Interventions', icon: '📄' },
+    { key: 'announcements', label: 'Announcements', icon: '📢' },
+    { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount },
+    { key: 'reports', label: 'Reports', icon: '📊' },
+    { key: 'users', label: 'Users', icon: '👤⚙' },
+  ];
+
+  const beneficiaryNavItems = [
+    ...(user?.role === 'beneficiary' ? [{ key: 'profile', label: 'My Profile', icon: '👤' }] : []),
+    { key: 'dashboard', label: 'Dashboard', icon: '🏠' },
+    { key: 'botAssistant', label: 'BeniAid AI Bot', icon: '🤖' },
+    { key: 'attendance', label: 'My Attendance', icon: '📅' },
+    { key: 'assistance', label: 'My Assistance', icon: '🤲' },
+    { key: 'interventions', label: 'My Interventions', icon: '♥' },
+    { key: 'requestAssistance', label: 'Request Assistance', icon: '📄' },
+    { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount },
+    { key: 'notifications', label: 'Notifications', icon: '🔔', badge: unreadNotifCount },
+  ];
+
+  const currentNavList = isStaff ? staffNavItems : beneficiaryNavItems;
 
   return (
     <View style={styles.overlay} pointerEvents="auto">
@@ -158,10 +166,9 @@ const SidebarDrawer = ({
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
               >
-                {/* MAIN Section */}
-                <Text style={styles.sectionHeader}>MAIN</Text>
+                {/* Navigation Items (Matching Exact Web Sidebar & Screenshot) */}
                 <View style={styles.navGroup}>
-                  {mainNavItems.map((item) => {
+                  {currentNavList.map((item) => {
                     const isActive = currentRoute === item.key;
                     return (
                       <TouchableOpacity
@@ -186,25 +193,18 @@ const SidebarDrawer = ({
                   })}
                 </View>
 
-                {/* Management Section (Admin / Staff) */}
+                {/* Quick AI Bot Launcher for Staff */}
                 {isStaff && (
-                  <>
-                    <Text style={[styles.sectionHeader, { marginTop: 18 }]}>MANAGEMENT</Text>
-                    <View style={styles.navGroup}>
-                      <TouchableOpacity
-                        style={[styles.navItem, currentRoute === 'beneficiaryList' && styles.navItemActive]}
-                        onPress={() => handleSelect('beneficiaryList')}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={[styles.navIcon, currentRoute === 'beneficiaryList' && styles.navIconActive]}>
-                          👥
-                        </Text>
-                        <Text style={[styles.navLabel, darkMode && styles.darkNavLabel, currentRoute === 'beneficiaryList' && styles.navLabelActive]}>
-                          Beneficiary List
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </>
+                  <TouchableOpacity
+                    style={[styles.botShortcutBtn, currentRoute === 'botAssistant' && styles.navItemActive]}
+                    onPress={() => handleSelect('botAssistant')}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.navIcon, currentRoute === 'botAssistant' && styles.navIconActive]}>🤖</Text>
+                    <Text style={[styles.navLabel, darkMode && styles.darkNavLabel, currentRoute === 'botAssistant' && styles.navLabelActive]}>
+                      BeniAid AI Bot
+                    </Text>
+                  </TouchableOpacity>
                 )}
 
                 {/* Bottom Slogan Card */}
@@ -431,6 +431,18 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     marginBottom: 4,
+  },
+  botShortcutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 8,
+    marginBottom: 4,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   navItemActive: {
     backgroundColor: '#1d4ed8',
