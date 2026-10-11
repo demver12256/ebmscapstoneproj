@@ -139,8 +139,8 @@ export default function BeniAidBot() {
           {/* Header */}
           <div className="bg-gradient-to-r from-[#00338D] via-[#0047AB] to-[#002870] text-white p-3.5 flex items-center justify-between shadow-md">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/20 shadow-inner">
-                <Bot className="w-6 h-6 text-emerald-300" />
+              <div className="w-10 h-10 rounded-full bg-white p-0.5 flex items-center justify-center border border-white/20 shadow-sm shrink-0">
+                <img src="/beniaid-logo.png" alt="BeniAid Bot" className="w-full h-full rounded-full object-contain" />
               </div>
               <div>
                 <div className="flex items-center gap-1.5">

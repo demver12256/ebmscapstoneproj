@@ -385,7 +385,7 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
           <Menu className="h-5 w-5" />
         </button>
         <div className="flex items-center gap-2 text-base font-bold tracking-tight text-dswd-blue sm:hidden">
-          <img src="/dswd-logo.jpg" alt="DSWD logo" className="h-8 w-8 rounded-lg bg-white object-contain" />
+          <img src="/beniaid-logo.png" alt="BeniAid logo" className="h-8 w-8 rounded-full bg-white object-contain shadow-xs" />
           <span>BeniAid</span>
         </div>
       </div>

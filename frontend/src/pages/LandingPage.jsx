@@ -764,9 +764,9 @@ export default function LandingPage() {
           {/* Brand Logo */}
           <div className="flex items-center gap-3.5 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
             <img
-              src="/dswd-logo.jpg"
-              alt="DSWD logo"
-              className="h-11 w-11 rounded-2xl bg-white object-contain shadow-sm"
+              src="/beniaid-logo.png"
+              alt="BeniAid logo"
+              className="h-11 w-11 rounded-full bg-white object-contain shadow-sm"
             />
             <div>
               <div className="flex items-center gap-2">
@@ -1365,7 +1365,7 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
             <div className="space-y-2.5 md:col-span-2">
               <div className="flex items-center gap-2.5 text-[#00338D] font-bold text-lg">
-                <img src="/dswd-logo.jpg" alt="DSWD logo" className="w-7 h-7 rounded-lg bg-white object-contain" />
+                <img src="/beniaid-logo.png" alt="BeniAid logo" className="w-7 h-7 rounded-full bg-white object-contain" />
                 BeniAid
               </div>
               <p className="text-xs sm:text-sm text-slate-500 max-w-md leading-relaxed">
@@ -1434,7 +1434,7 @@ export default function LandingPage() {
 
             {/* Modal Header */}
             <div className="text-center mb-6">
-              <img src="/dswd-logo.jpg" alt="DSWD logo" className="mx-auto mb-3 h-16 w-16 rounded-2xl bg-white object-contain border border-blue-100 shadow-2xs" />
+              <img src="/beniaid-logo.png" alt="BeniAid logo" className="mx-auto mb-3 h-16 w-16 rounded-full bg-white object-contain border border-blue-100 shadow-sm" />
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
                 {showLoginModal ? 'Sign in to BeniAid' : 'Create Beneficiary Account'}
               </h2>

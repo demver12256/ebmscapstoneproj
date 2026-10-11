@@ -1233,7 +1233,7 @@ export default function InterventionsManagementPage() {
                   className="max-h-[68vh] max-w-full object-contain rounded-lg shadow-sm"
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = '/dswd-logo.jpg';
+                    e.target.src = '/beniaid-logo.png';
                   }}
                 />
               )}

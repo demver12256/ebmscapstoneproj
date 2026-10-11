@@ -1,9 +1,14 @@
-const CACHE_NAME = 'beniaid-pwa-v3';
+const CACHE_NAME = 'beniaid-pwa-v4';
 const ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/favicon.ico',
+  '/beniaid-logo.png',
+  '/beniaid-logo-round.png',
   '/dswd-logo.jpg',
+  '/icons/beniaid-logo-192.png',
+  '/icons/beniaid-logo-512.png',
   '/icons/dswd-logo-192.png',
   '/icons/dswd-logo-512.png',
 ];

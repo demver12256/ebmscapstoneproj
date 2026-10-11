@@ -190,7 +190,7 @@ export default function Sidebar({ mobileOpen = false, onClose = () => {} }) {
       <div className="space-y-8 pr-1">
         {/* DSWD Brand Header */}
         <div className="flex items-center gap-3">
-          <img src="/dswd-logo.jpg" alt="DSWD logo" className="w-10 h-10 shrink-0 rounded-xl object-contain bg-white" />
+          <img src="/beniaid-logo.png" alt="BeniAid logo" className="w-10 h-10 shrink-0 rounded-full object-contain bg-white shadow-xs" />
           <div>
             <span className="text-2xl font-black tracking-tighter text-dswd-blue block leading-none">BeniAid</span>
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mt-0.5">Beneficiary System</span>
