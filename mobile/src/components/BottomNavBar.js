@@ -7,7 +7,7 @@ import {
   Platform,
 } from 'react-native';
 
-const TABS = [
+const BENEFICIARY_TABS = [
   { key: 'dashboard',     icon: '🏠',  label: 'Home'       },
   { key: 'attendance',    icon: '📅',  label: 'Attendance' },
   { key: 'assistance',    icon: '🤲',  label: 'Assistance' },
@@ -16,16 +16,29 @@ const TABS = [
   { key: 'notifications', icon: '🔔',  label: 'Alerts'     },
 ];
 
+const STAFF_TABS = [
+  { key: 'dashboard',       icon: '🏠',  label: 'Home'       },
+  { key: 'beneficiaryList', icon: '👥',  label: 'Roster'     },
+  { key: 'assistance',      icon: '🤲',  label: 'Assistance' },
+  { key: 'botAssistant',    icon: '🤖',  label: 'AI Bot'     },
+  { key: 'messages',        icon: '💬',  label: 'Messages'   },
+  { key: 'notifications',   icon: '🔔',  label: 'Alerts'     },
+];
+
 const BottomNavBar = ({
   currentNav = 'dashboard',
   onSelectNav,
+  user,
   unreadMessageCount = 0,
   unreadNotifCount = 0,
   darkMode = false,
 }) => {
+  const isStaff = user && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user.role);
+  const tabs = isStaff ? STAFF_TABS : BENEFICIARY_TABS;
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         // Map requestAssistance to assistance tab as active
         const isActive =
           currentNav === tab.key ||

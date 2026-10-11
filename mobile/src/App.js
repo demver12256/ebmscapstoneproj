@@ -37,6 +37,7 @@ import PendingApprovalScreen from './screens/PendingApprovalScreen';
 import ApplicationSubmissionScreen from './screens/ApplicationSubmissionScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import BotAssistantScreen from './screens/BotAssistantScreen';
+import StaffDashboardScreen from './screens/StaffDashboardScreen';
 import AuthScreen from './screens/AuthScreen';
 import SidebarDrawer from './components/SidebarDrawer';
 import BottomNavBar from './components/BottomNavBar';
@@ -987,8 +988,20 @@ const App = () => {
             />
           )}
 
-          {/* Dashboard Home (Image 4) */}
-          {currentScreen === 'dashboard' && (
+          {/* Staff Dashboard (Admin, MSWDO, Barangay, Staff) */}
+          {currentScreen === 'dashboard' && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
+            <StaffDashboardScreen
+              user={user}
+              onNavigate={handleNavSelect}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              darkMode={darkMode}
+              setDarkMode={setDarkMode}
+              onLogout={handleLogout}
+            />
+          )}
+
+          {/* Beneficiary Dashboard Home (Image 4) */}
+          {currentScreen === 'dashboard' && !['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
             <SafeAreaView style={styles.dashboardPage}>
               <StatusBar barStyle="light-content" backgroundColor={darkMode ? '#020617' : '#0f172a'} />
 
@@ -1359,6 +1372,7 @@ const App = () => {
         <BottomNavBar
           currentNav={currentNav}
           onSelectNav={handleNavSelect}
+          user={user}
           unreadMessageCount={unreadMessageCount}
           unreadNotifCount={unreadNotifCount}
           darkMode={darkMode}

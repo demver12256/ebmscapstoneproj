@@ -121,12 +121,19 @@ export const beneficiaryApi = {
   }),
   deleteMyDocument: (id) => apiClient.delete(`/beneficiaries/me/documents/${id}`),
   submitMyApplication: (data) => apiClient.post('/beneficiaries/me/submit', data),
+  listApplications: () => apiClient.get('/beneficiaries/applications'),
   getAttendance: (id) => apiClient.get(`/beneficiaries/${id}/attendance`),
   getDistributions: (id) => apiClient.get(`/beneficiaries/${id}/distributions`),
   getEnrollments: (id) => apiClient.get(`/beneficiaries/${id}/enrollments`),
   updateMyPayoutAccount: (data) => apiClient.put('/beneficiaries/me/payout-account', data),
   addExtraPayoutAccount: (data) => apiClient.post('/beneficiaries/me/extra-payout-accounts', data),
   removeExtraPayoutAccount: (index) => apiClient.delete(`/beneficiaries/me/extra-payout-accounts/${index}`),
+};
+
+export const dashboardApi = {
+  summary: () => apiClient.get('/reports/summary'),
+  monthlyDistribution: () => apiClient.get('/reports/monthly-distribution'),
+  beneficiariesByProgram: () => apiClient.get('/reports/beneficiaries-by-program'),
 };
 
 export const barangayApi = {

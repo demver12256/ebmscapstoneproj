@@ -102,17 +102,26 @@ const SidebarDrawer = ({
 
   const isStaff = user && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user.role);
 
-  const mainNavItems = [
-    ...(user?.role === 'beneficiary' ? [{ key: 'profile', label: 'My Profile', icon: '👤' }] : []),
-    { key: 'dashboard', label: 'Dashboard', icon: '🏠' },
-    { key: 'botAssistant', label: 'BeniAid AI Bot', icon: '🤖' },
-    { key: 'attendance', label: 'My Attendance', icon: '📅' },
-    { key: 'assistance', label: 'My Assistance', icon: '🤲' },
-    { key: 'interventions', label: 'My Interventions', icon: '♥' },
-    { key: 'requestAssistance', label: 'Request Assistance', icon: '📄' },
-    { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount },
-    { key: 'notifications', label: 'Notifications', icon: '🔔', badge: unreadNotifCount },
-  ];
+  const mainNavItems = isStaff
+    ? [
+        { key: 'dashboard', label: 'Staff Dashboard', icon: '🏠' },
+        { key: 'beneficiaryList', label: 'Beneficiary Roster', icon: '👥' },
+        { key: 'assistance', label: 'Assistance Requests', icon: '🤲' },
+        { key: 'botAssistant', label: 'BeniAid AI Bot', icon: '🤖' },
+        { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount },
+        { key: 'notifications', label: 'Notifications', icon: '🔔', badge: unreadNotifCount },
+      ]
+    : [
+        ...(user?.role === 'beneficiary' ? [{ key: 'profile', label: 'My Profile', icon: '👤' }] : []),
+        { key: 'dashboard', label: 'Dashboard', icon: '🏠' },
+        { key: 'botAssistant', label: 'BeniAid AI Bot', icon: '🤖' },
+        { key: 'attendance', label: 'My Attendance', icon: '📅' },
+        { key: 'assistance', label: 'My Assistance', icon: '🤲' },
+        { key: 'interventions', label: 'My Interventions', icon: '♥' },
+        { key: 'requestAssistance', label: 'Request Assistance', icon: '📄' },
+        { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount },
+        { key: 'notifications', label: 'Notifications', icon: '🔔', badge: unreadNotifCount },
+      ];
 
   return (
     <View style={styles.overlay} pointerEvents="auto">
