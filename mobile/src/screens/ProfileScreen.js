@@ -8,6 +8,7 @@ import {
   Platform,
   SafeAreaView,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
@@ -44,18 +45,54 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
   const [savingPassword, setSavingPassword] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrPassData, setQrPassData] = useState(null);
 
   const fullName = `${profile?.first_name || user?.first_name || ''} ${profile?.middle_name || ''} ${profile?.last_name || user?.last_name || ''}`
     .replace(/\s+/g, ' ').trim() || 'Beneficiary';
   const initials = fullName.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('');
   const profileImageUri = useMemo(() => {
-    const path = profile?.profile_picture;
+    const path = profile?.profile_picture || profile?.User?.profile_picture || user?.profile_picture;
     if (!path) return null;
     return path.startsWith('http') ? path : `${FILES_BASE_URL}/${path.replace(/^\/+/, '')}`;
-  }, [profile?.profile_picture]);
+  }, [profile?.profile_picture, profile?.User?.profile_picture, user?.profile_picture]);
   const barangayName = profile?.Barangay?.barangay_name || profile?.barangay_name || '';
   const address = profile?.address || [profile?.sitio, barangayName].filter(Boolean).join(', ');
   const accountUser = profile?.User || user || {};
+
+  const handleOpenQrModal = async () => {
+    setQrModalVisible(true);
+    if (!profile?.qr_image_url && !qrPassData?.qr_image_url) {
+      setQrLoading(true);
+      try {
+        const res = await beneficiaryApi.getMyQrPass().catch(() => beneficiaryApi.getMe());
+        if (res.data?.data) {
+          setQrPassData(res.data.data);
+          if (res.data.data.profile_picture && !profile?.profile_picture) {
+            onProfileUpdated?.((prev) => ({ ...prev, profile_picture: res.data.data.profile_picture }));
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch QR Pass data:', err);
+      } finally {
+        setQrLoading(false);
+      }
+    }
+  };
+
+  const handleShareQrCode = async () => {
+    const qrImage = profile?.qr_image_url || qrPassData?.qr_image_url;
+    const qrCode = profile?.qr_code || qrPassData?.qr_code || (profile?.qr_token ? `EBMS-QR:${profile.qr_token}` : '');
+    try {
+      await Share.share({
+        title: `Digital QR Pass - ${fullName}`,
+        message: `Digital QR Pass ni ${fullName}\nID/Code: ${qrCode}\nEBMS - DSWD / MSWDO Bongabong`,
+        url: qrImage || undefined,
+      });
+    } catch (err) {
+      console.warn('Share error:', err);
+    }
+  };
 
   const closePasswordModal = () => {
     setPasswordModalVisible(false);
@@ -218,7 +255,7 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
             </View>
             <TouchableOpacity
               style={styles.viewQrPassButton}
-              onPress={() => setQrModalVisible(true)}
+              onPress={handleOpenQrModal}
               activeOpacity={0.8}
             >
               <Text style={styles.viewQrPassButtonText}>Tingnan ang QR ID Pass</Text>
@@ -314,31 +351,36 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
                 <View style={styles.qrModalBenTextWrap}>
                   <Text style={styles.qrModalFullName}>{fullName}</Text>
                   <Text style={styles.qrModalBenId}>
-                    {profile?.household_id_number || profile?.beneficiary_id_code || 'Approved Beneficiary'}
+                    {profile?.household_id_number || profile?.beneficiary_id_code || qrPassData?.household_id_number || qrPassData?.beneficiary_id_code || 'Approved Beneficiary'}
                   </Text>
                   <View style={styles.qrCategoryPill}>
-                    <Text style={styles.qrCategoryPillText}>{profile?.category || 'Beneficiary'}</Text>
+                    <Text style={styles.qrCategoryPillText}>{profile?.category || qrPassData?.category || 'Beneficiary'}</Text>
                   </View>
-                  <Text style={styles.qrBrgyText}>Brgy. {barangayName}</Text>
+                  <Text style={styles.qrBrgyText}>Brgy. {barangayName || qrPassData?.barangay}</Text>
                 </View>
               </View>
 
               {/* QR Image Box */}
               <View style={styles.qrImageBox}>
-                {profile?.qr_image_url ? (
+                {(profile?.qr_image_url || qrPassData?.qr_image_url) ? (
                   <Image
-                    source={{ uri: profile.qr_image_url }}
+                    source={{ uri: profile?.qr_image_url || qrPassData?.qr_image_url }}
                     style={styles.qrCodeImage}
                     resizeMode="contain"
                   />
-                ) : (
+                ) : qrLoading ? (
                   <View style={styles.qrLoadingBox}>
                     <ActivityIndicator size="large" color="#0b3b9b" />
                     <Text style={styles.qrLoadingText}>Kinukuha ang QR Code...</Text>
                   </View>
+                ) : (
+                  <View style={styles.qrLoadingBox}>
+                    <ActivityIndicator size="small" color="#0b3b9b" />
+                    <Text style={styles.qrLoadingText}>Walang QR Code</Text>
+                  </View>
                 )}
                 <Text style={styles.qrTokenText}>
-                  {profile?.qr_code || `EBMS-QR:${profile?.qr_token || 'TOKEN'}`}
+                  {profile?.qr_code || qrPassData?.qr_code || (profile?.qr_token ? `EBMS-QR:${profile.qr_token}` : 'DIGITAL QR PASS')}
                 </Text>
               </View>
 
@@ -360,6 +402,13 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
             </ScrollView>
 
             <View style={styles.qrModalFooter}>
+              <TouchableOpacity
+                style={styles.qrShareButton}
+                onPress={handleShareQrCode}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.qrShareButtonText}>⬇ I-save / I-share ang QR Code</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.qrCloseButton} onPress={() => setQrModalVisible(false)}>
                 <Text style={styles.qrCloseButtonText}>Isara</Text>
               </TouchableOpacity>
@@ -476,7 +525,9 @@ const styles = StyleSheet.create({
   qrMetaRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
   qrMetaLabel: { color: '#64748b', fontSize: 12, fontWeight: '600' },
   qrMetaValue: { color: '#0f172a', fontSize: 12, fontWeight: '800' },
-  qrModalFooter: { padding: 14, borderTopWidth: 1, borderTopColor: '#f1f5f9', backgroundColor: '#fafafa' },
-  qrCloseButton: { minHeight: 46, backgroundColor: '#0b3b9b', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  qrCloseButtonText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  qrModalFooter: { padding: 14, borderTopWidth: 1, borderTopColor: '#f1f5f9', backgroundColor: '#fafafa', gap: 10 },
+  qrShareButton: { minHeight: 46, backgroundColor: '#16a34a', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  qrShareButtonText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  qrCloseButton: { minHeight: 44, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  qrCloseButtonText: { color: '#334155', fontSize: 13, fontWeight: '800' },
 });

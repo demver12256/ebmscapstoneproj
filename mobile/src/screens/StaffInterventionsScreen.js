@@ -14,8 +14,13 @@ import {
   RefreshControl,
   Alert,
   Linking,
+  Image,
 } from 'react-native';
-import { interventionApi } from '../services/api';
+import DocumentPicker from 'react-native-document-picker';
+import { API_URL } from '../config/api';
+import { interventionApi, beneficiaryApi } from '../services/api';
+
+const FILES_BASE_URL = API_URL.replace(/\/api\/?$/, '');
 
 const formatMoney = (value) => {
   const amount = Number(value || 0);
@@ -25,6 +30,17 @@ const formatMoney = (value) => {
 const formatDate = (value) => {
   if (!value) return 'N/A';
   return new Date(value).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const resolveFileUrl = (path) => {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  return `${FILES_BASE_URL}/${path.replace(/^\/+/, '')}`;
+};
+
+const isImageFile = (path) => {
+  if (!path) return false;
+  return /\.(jpg|jpeg|png|webp|gif)$/i.test(path);
 };
 
 const StaffInterventionsScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
@@ -37,6 +53,102 @@ const StaffInterventionsScreen = ({ onBack, onOpenDrawer, user, darkMode = false
   const [selectedItem, setSelectedItem] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [processing, setProcessing] = useState(false);
+
+  // Record Intervention State
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [beneficiariesList, setBeneficiariesList] = useState([]);
+  const [loadingBeneficiaries, setLoadingBeneficiaries] = useState(false);
+  const [benSearch, setBenSearch] = useState('');
+  const [selectedBeneficiaryForRecord, setSelectedBeneficiaryForRecord] = useState(null);
+  const [recordForm, setRecordForm] = useState({
+    agency_name: '',
+    assistance_type: '',
+    amount: '',
+    date_received: new Date().toISOString().slice(0, 10),
+    description: '',
+    proof_document: null,
+  });
+  const [submittingRecord, setSubmittingRecord] = useState(false);
+  const [previewDocUrl, setPreviewDocUrl] = useState(null);
+
+  const openRecordModal = async () => {
+    setShowRecordModal(true);
+    if (beneficiariesList.length === 0) {
+      setLoadingBeneficiaries(true);
+      try {
+        const res = await beneficiaryApi.list();
+        setBeneficiariesList(res.data?.data || []);
+      } catch (e) {
+        console.warn('Failed to load beneficiaries:', e);
+      } finally {
+        setLoadingBeneficiaries(false);
+      }
+    }
+  };
+
+  const pickRecordFile = async () => {
+    try {
+      const file = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.images, DocumentPicker.types.pdf],
+        copyTo: 'cachesDirectory',
+      });
+      setRecordForm((prev) => ({ ...prev, proof_document: file }));
+    } catch (err) {
+      if (!DocumentPicker.isCancel(err)) {
+        Alert.alert('Hindi Ma-attach', 'Pumili ng PDF o larawan (JPG, PNG).');
+      }
+    }
+  };
+
+  const handleCreateIntervention = async () => {
+    if (!selectedBeneficiaryForRecord?.id) {
+      Alert.alert('Pumili ng Benepisyaryo', 'Pumili ng benepisyaryo na tumanggap ng tulong.');
+      return;
+    }
+    if (!recordForm.agency_name.trim()) {
+      Alert.alert('Pangalan ng Ahensya', 'Ilagay ang ahensya (e.g. PCSO, DOH, LGU Bongabong).');
+      return;
+    }
+    if (!recordForm.assistance_type.trim()) {
+      Alert.alert('Uri ng Ayuda', 'Ilagay ang uri ng tulong (e.g. Medical, Burial, Food).');
+      return;
+    }
+    setSubmittingRecord(true);
+    try {
+      const formData = new FormData();
+      formData.append('beneficiary_id', selectedBeneficiaryForRecord.id);
+      formData.append('agency_name', recordForm.agency_name.trim());
+      formData.append('assistance_type', recordForm.assistance_type.trim());
+      if (recordForm.amount) formData.append('amount', recordForm.amount);
+      if (recordForm.date_received) formData.append('date_received', recordForm.date_received);
+      if (recordForm.description) formData.append('description', recordForm.description);
+      if (recordForm.proof_document) {
+        formData.append('document', {
+          uri: recordForm.proof_document.fileCopyUri || recordForm.proof_document.uri,
+          type: recordForm.proof_document.type || 'application/octet-stream',
+          name: recordForm.proof_document.name || 'proof-document',
+        });
+      }
+
+      await interventionApi.create(formData);
+      Alert.alert('Tagumpay', 'Matagumpay na naitala ang interbensyon.');
+      setShowRecordModal(false);
+      setSelectedBeneficiaryForRecord(null);
+      setRecordForm({
+        agency_name: '',
+        assistance_type: '',
+        amount: '',
+        date_received: new Date().toISOString().slice(0, 10),
+        description: '',
+        proof_document: null,
+      });
+      loadInterventions();
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi maitala ang intervention.');
+    } finally {
+      setSubmittingRecord(false);
+    }
+  };
 
   const loadInterventions = useCallback(async () => {
     try {
@@ -128,10 +240,14 @@ const StaffInterventionsScreen = ({ onBack, onOpenDrawer, user, darkMode = false
             <Text style={[styles.headerTitle, darkMode && styles.darkText]}>Interventions</Text>
             <Text style={styles.headerSub}>Cross-agency citizen assistance reports</Text>
           </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity onPress={openRecordModal} style={styles.addRecordHeaderBtn} activeOpacity={0.8}>
+            <Text style={styles.addRecordHeaderBtnText}>+ Mag-record</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={loadInterventions} style={styles.refreshBtn}>
+            <Text style={styles.refreshBtnText}>↻</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={loadInterventions} style={styles.refreshBtn}>
-          <Text style={styles.refreshBtnText}>↻</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Search & Filter Bar */}
@@ -315,12 +431,7 @@ const StaffInterventionsScreen = ({ onBack, onOpenDrawer, user, darkMode = false
                   <Text style={[styles.docTitle, darkMode && styles.darkSub]}>Nakalakip na Katibayan / Proof</Text>
                   <TouchableOpacity
                     style={styles.docBtn}
-                    onPress={() => {
-                      const url = selectedItem.proof_document_url.startsWith('http')
-                        ? selectedItem.proof_document_url
-                        : `http://localhost:5000${selectedItem.proof_document_url.startsWith('/') ? '' : '/'}${selectedItem.proof_document_url}`;
-                      Linking.openURL(url).catch(() => Alert.alert('Hindi Mabuksan', 'Hindi mabuksan ang document link.'));
-                    }}
+                    onPress={() => setPreviewDocUrl(selectedItem.proof_document_url)}
                   >
                     <Text style={styles.docBtnText}>📎 Buksan / Tingnan ang Proof Document</Text>
                   </TouchableOpacity>
@@ -359,6 +470,226 @@ const StaffInterventionsScreen = ({ onBack, onOpenDrawer, user, darkMode = false
             </ScrollView>
           </View>
         </View>
+      </Modal>
+
+      {/* Record New Intervention Modal for Staff */}
+      <Modal visible={showRecordModal} transparent animationType="slide" onRequestClose={() => setShowRecordModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalTitle, darkMode && styles.darkText]}>Mag-record ng Intervention</Text>
+                <Text style={styles.applicantName}>Cross-Agency Financial/In-Kind Assistance</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowRecordModal(false)} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.recordFormScroll} keyboardShouldPersistTaps="handled">
+              {/* Beneficiary Selector */}
+              <Text style={styles.formSectionLabel}>1. Piliin ang Benepisyaryo *</Text>
+              {selectedBeneficiaryForRecord ? (
+                <View style={styles.selectedBenBox}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.selectedBenName}>
+                      {selectedBeneficiaryForRecord.first_name} {selectedBeneficiaryForRecord.last_name}
+                    </Text>
+                    <Text style={styles.selectedBenSub}>
+                      ID: {selectedBeneficiaryForRecord.beneficiary_id_code || selectedBeneficiaryForRecord.household_id_number || 'N/A'} • Brgy. {selectedBeneficiaryForRecord.Barangay?.barangay_name || selectedBeneficiaryForRecord.barangay || '—'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setSelectedBeneficiaryForRecord(null)} style={styles.changeBenBtn}>
+                    <Text style={styles.changeBenBtnText}>Palitan</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.benSelectWrap}>
+                  <TextInput
+                    style={[styles.searchInputSmall, darkMode && styles.darkInput]}
+                    placeholder="Maghanap ng pangalan o ID ng benepisyaryo..."
+                    placeholderTextColor="#94a3b8"
+                    value={benSearch}
+                    onChangeText={setBenSearch}
+                  />
+                  {loadingBeneficiaries ? (
+                    <ActivityIndicator size="small" color="#2563eb" style={{ marginVertical: 8 }} />
+                  ) : (
+                    <ScrollView style={styles.benListSmall} nestedScrollEnabled>
+                      {beneficiariesList
+                        .filter((b) => {
+                          const q = benSearch.toLowerCase().trim();
+                          if (!q) return true;
+                          const name = `${b.first_name || ''} ${b.last_name || ''}`.toLowerCase();
+                          const id = `${b.beneficiary_id_code || ''} ${b.household_id_number || ''}`.toLowerCase();
+                          return name.includes(q) || id.includes(q);
+                        })
+                        .slice(0, 8)
+                        .map((b) => (
+                          <TouchableOpacity
+                            key={b.id}
+                            style={styles.benListItem}
+                            onPress={() => {
+                              setSelectedBeneficiaryForRecord(b);
+                              setBenSearch('');
+                            }}
+                          >
+                            <Text style={styles.benListName}>{b.first_name} {b.last_name}</Text>
+                            <Text style={styles.benListSub}>{b.category} • Brgy. {b.Barangay?.barangay_name || b.barangay || '—'}</Text>
+                          </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                  )}
+                </View>
+              )}
+
+              {/* Assistance Details */}
+              <Text style={styles.formSectionLabel}>2. Detalye ng Tulong</Text>
+              
+              <Text style={styles.formInputLabel}>Pangalan ng Ahensya / Nagbigay *</Text>
+              <TextInput
+                style={[styles.formInput, darkMode && styles.darkInput]}
+                placeholder="Hal. PCSO, DOH, LGU Bongabong, Office of the Mayor"
+                placeholderTextColor="#94a3b8"
+                value={recordForm.agency_name}
+                onChangeText={(val) => setRecordForm((prev) => ({ ...prev, agency_name: val }))}
+              />
+
+              <Text style={styles.formInputLabel}>Uri ng Tulong (Assistance Type) *</Text>
+              <TextInput
+                style={[styles.formInput, darkMode && styles.darkInput]}
+                placeholder="Hal. Medical, Burial, Educational, Food Subsidy"
+                placeholderTextColor="#94a3b8"
+                value={recordForm.assistance_type}
+                onChangeText={(val) => setRecordForm((prev) => ({ ...prev, assistance_type: val }))}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.formInputLabel}>Halaga (Amount in ₱)</Text>
+                  <TextInput
+                    style={[styles.formInput, darkMode && styles.darkInput]}
+                    placeholder="0.00"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                    value={recordForm.amount}
+                    onChangeText={(val) => setRecordForm((prev) => ({ ...prev, amount: val }))}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.formInputLabel}>Petsa Natanggap</Text>
+                  <TextInput
+                    style={[styles.formInput, darkMode && styles.darkInput]}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#94a3b8"
+                    value={recordForm.date_received}
+                    onChangeText={(val) => setRecordForm((prev) => ({ ...prev, date_received: val }))}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.formInputLabel}>Pahayag / Tala (Description)</Text>
+              <TextInput
+                style={[styles.formInput, styles.formInputMultiline, darkMode && styles.darkInput]}
+                placeholder="Karagdagang tala ukol sa interbensyon..."
+                placeholderTextColor="#94a3b8"
+                multiline
+                numberOfLines={3}
+                value={recordForm.description}
+                onChangeText={(val) => setRecordForm((prev) => ({ ...prev, description: val }))}
+              />
+
+              {/* Document Attachment */}
+              <Text style={styles.formSectionLabel}>3. Katibayan / Proof Document</Text>
+              <TouchableOpacity style={styles.attachFileBtn} onPress={pickRecordFile}>
+                <Text style={styles.attachFileBtnText}>
+                  {recordForm.proof_document ? '✓ Palitan ang Nakalakip na File' : '📎 Mag-attach ng Katibayan (PDF / Larawan)'}
+                </Text>
+              </TouchableOpacity>
+              {recordForm.proof_document ? (
+                <View style={styles.attachedFileBadge}>
+                  <Text style={styles.attachedFileName} numberOfLines={1}>
+                    📄 {recordForm.proof_document.name || 'document'}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.attachHint}>Opsyonal ngunit inirerekomenda para sa opisyal na talaan</Text>
+              )}
+
+              {/* Submit Buttons */}
+              <View style={styles.recordFormActions}>
+                <TouchableOpacity
+                  style={[styles.submitRecordBtn, submittingRecord && styles.btnDisabled]}
+                  onPress={handleCreateIntervention}
+                  disabled={submittingRecord}
+                >
+                  {submittingRecord ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.submitRecordBtnText}>✓ I-save at Itala ang Intervention</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.cancelRecordBtn}
+                  onPress={() => setShowRecordModal(false)}
+                  disabled={submittingRecord}
+                >
+                  <Text style={styles.cancelRecordBtnText}>Kanselahin</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Proof Document Preview Modal */}
+      <Modal visible={!!previewDocUrl} transparent animationType="slide" onRequestClose={() => setPreviewDocUrl(null)}>
+        <SafeAreaView style={styles.docPreviewOverlay}>
+          <View style={styles.docPreviewCard}>
+            <View style={styles.docPreviewHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.docPreviewTitle}>Nakalakip na Katibayan / Proof</Text>
+                <Text style={styles.docPreviewSub}>Dokumento ng Tulong / Intervention</Text>
+              </View>
+              <TouchableOpacity onPress={() => setPreviewDocUrl(null)} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.docPreviewBody} maximumZoomScale={3} minimumZoomScale={1}>
+              {previewDocUrl && isImageFile(previewDocUrl) ? (
+                <Image
+                  source={{ uri: resolveFileUrl(previewDocUrl) }}
+                  style={styles.fullPreviewImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.pdfCenterBox}>
+                  <Text style={{ fontSize: 50 }}>📄</Text>
+                  <Text style={styles.pdfHeading}>Dokumento (PDF / File)</Text>
+                  <Text style={styles.pdfText}>Pindutin ang pindutan sa ibaba upang buksan sa browser o PDF viewer.</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.docPreviewFooter}>
+              {previewDocUrl ? (
+                <TouchableOpacity
+                  style={styles.openExternalDocBtn}
+                  onPress={() => {
+                    const url = resolveFileUrl(previewDocUrl);
+                    if (url) Linking.openURL(url).catch(() => Alert.alert('Error', 'Hindi mabuksan ang file link.'));
+                  }}
+                >
+                  <Text style={styles.openExternalDocBtnText}>⬇ Buksan / I-download ang Buong File</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity style={styles.closePreviewBtn} onPress={() => setPreviewDocUrl(null)}>
+                <Text style={styles.closePreviewBtnText}>Isara</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -528,6 +859,51 @@ const styles = StyleSheet.create({
   },
   rejectBigBtnText: { color: '#ffffff', fontWeight: '800', fontSize: 13 },
   btnDisabled: { opacity: 0.6 },
+  addRecordHeaderBtn: { backgroundColor: '#16a34a', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
+  addRecordHeaderBtnText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  recordFormScroll: { paddingBottom: 30, gap: 8 },
+  formSectionLabel: { fontSize: 13, fontWeight: '800', color: '#1e40af', marginTop: 12, marginBottom: 4 },
+  formInputLabel: { fontSize: 11, fontWeight: '700', color: '#475569', marginTop: 6, marginBottom: 2 },
+  formInput: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: '#0f172a' },
+  formInputMultiline: { minHeight: 64, textAlignVertical: 'top' },
+  selectedBenBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 10, padding: 12, gap: 10 },
+  selectedBenName: { fontSize: 14, fontWeight: '800', color: '#1e40af' },
+  selectedBenSub: { fontSize: 11, color: '#475569', marginTop: 2 },
+  changeBenBtn: { backgroundColor: '#dbeafe', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  changeBenBtnText: { fontSize: 11, fontWeight: '700', color: '#1d4ed8' },
+  benSelectWrap: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, padding: 8 },
+  searchInputSmall: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, fontSize: 12, color: '#0f172a' },
+  benListSmall: { maxHeight: 150, marginTop: 6 },
+  benListItem: { paddingVertical: 8, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  benListName: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
+  benListSub: { fontSize: 10.5, color: '#64748b' },
+  attachFileBtn: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#93c5fd', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  attachFileBtnText: { color: '#1d4ed8', fontSize: 12, fontWeight: '700' },
+  attachedFileBadge: { backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#a7f3d0', borderRadius: 6, padding: 8, marginTop: 4 },
+  attachedFileName: { fontSize: 12, color: '#065f46', fontWeight: '600' },
+  attachHint: { fontSize: 10.5, color: '#94a3b8', marginTop: 3 },
+  recordFormActions: { marginTop: 18, gap: 8 },
+  submitRecordBtn: { backgroundColor: '#16a34a', borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
+  submitRecordBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  cancelRecordBtn: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  cancelRecordBtnText: { color: '#475569', fontSize: 12, fontWeight: '700' },
+
+  // Document preview modal styles
+  docPreviewOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.85)', justifyContent: 'center', padding: 14 },
+  docPreviewCard: { backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', maxHeight: '92%', elevation: 14 },
+  docPreviewHeader: { minHeight: 60, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#0f172a', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  docPreviewTitle: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  docPreviewSub: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
+  docPreviewBody: { padding: 16, alignItems: 'center', minHeight: 280, justifyContent: 'center' },
+  fullPreviewImage: { width: '100%', height: 360, borderRadius: 12, backgroundColor: '#f8fafc' },
+  pdfCenterBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 10 },
+  pdfHeading: { color: '#0f172a', fontSize: 16, fontWeight: '800' },
+  pdfText: { color: '#64748b', fontSize: 12, textAlign: 'center', maxWidth: 280 },
+  docPreviewFooter: { padding: 14, borderTopWidth: 1, borderTopColor: '#f1f5f9', backgroundColor: '#fafafa', gap: 8 },
+  openExternalDocBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  openExternalDocBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  closePreviewBtn: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  closePreviewBtnText: { color: '#475569', fontSize: 12, fontWeight: '700' },
 });
 
 export default StaffInterventionsScreen;

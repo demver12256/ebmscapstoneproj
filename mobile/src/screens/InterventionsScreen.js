@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Linking,
+  Modal,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -13,7 +16,10 @@ import {
   View,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
+import { API_URL } from '../config/api';
 import { interventionApi } from '../services/api';
+
+const FILES_BASE_URL = API_URL.replace(/\/api\/?$/, '');
 
 const peso = (value) => `\u20B1${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 2,
@@ -27,6 +33,17 @@ const formatDate = (value) => {
     day: 'numeric',
     year: 'numeric',
   });
+};
+
+const resolveFileUrl = (path) => {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  return `${FILES_BASE_URL}/${path.replace(/^\/+/, '')}`;
+};
+
+const isImageFile = (path) => {
+  if (!path) return false;
+  return /\.(jpg|jpeg|png|webp|gif)$/i.test(path);
 };
 
 const blankForm = () => ({
@@ -45,6 +62,7 @@ export default function InterventionsScreen({ onBack }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(blankForm);
   const [submitting, setSubmitting] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   const pickProofDocument = async () => {
     try {
@@ -198,12 +216,73 @@ export default function InterventionsScreen({ onBack }) {
             <Text style={styles.itemType}>{item.assistance_type}</Text>
             <Text style={styles.itemDate}>Received {formatDate(item.date_received)}</Text>
             {item.amount ? <Text style={styles.amount}>{peso(item.amount)}</Text> : null}
-            {item.description ? <Text style={styles.description}>{item.description}</Text> : null}
-            {item.proof_document_url ? <Text style={styles.fileAttached}>📎 Proof document attached</Text> : null}
+            {item.proof_document_url ? (
+              <TouchableOpacity
+                style={styles.viewDocButton}
+                onPress={() => setPreviewDoc(item)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.viewDocButtonText}>📎 Tingnan ang Katibayan (Proof Document)</Text>
+              </TouchableOpacity>
+            ) : null}
             {item.status !== 'Verified' && <TouchableOpacity onPress={() => remove(item)}><Text style={styles.deleteText}>Delete report</Text></TouchableOpacity>}
           </View>
         ))}
       </ScrollView>
+
+      {/* Proof Document Preview Modal */}
+      <Modal visible={!!previewDoc} transparent animationType="slide" onRequestClose={() => setPreviewDoc(null)}>
+        <SafeAreaView style={styles.previewOverlay}>
+          <View style={styles.previewCard}>
+            <View style={styles.previewHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.previewTitle} numberOfLines={1}>
+                  {previewDoc?.agency_name} - Katibayan ng Ayuda
+                </Text>
+                <Text style={styles.previewSub}>
+                  {previewDoc?.assistance_type} • {formatDate(previewDoc?.date_received)}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setPreviewDoc(null)} style={styles.previewCloseBtn}>
+                <Text style={styles.previewCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.previewBody} maximumZoomScale={3} minimumZoomScale={1}>
+              {previewDoc?.proof_document_url && isImageFile(previewDoc.proof_document_url) ? (
+                <Image
+                  source={{ uri: resolveFileUrl(previewDoc.proof_document_url) }}
+                  style={styles.previewImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.pdfFallbackBox}>
+                  <Text style={styles.pdfIcon}>📄</Text>
+                  <Text style={styles.pdfTitle}>Nakalakip na Dokumento (PDF / File)</Text>
+                  <Text style={styles.pdfSub}>Pindutin ang pindutan sa ibaba para buksan o i-download.</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.previewFooter}>
+              {previewDoc?.proof_document_url ? (
+                <TouchableOpacity
+                  style={styles.openExternalBtn}
+                  onPress={() => {
+                    const url = resolveFileUrl(previewDoc.proof_document_url);
+                    if (url) Linking.openURL(url).catch(() => Alert.alert('Error', 'Hindi mabuksan ang file link.'));
+                  }}
+                >
+                  <Text style={styles.openExternalText}>⬇ Buksan / I-download ang Buong File</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity style={styles.previewDismissBtn} onPress={() => setPreviewDoc(null)}>
+                <Text style={styles.previewDismissText}>Isara</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -251,6 +330,25 @@ const styles = StyleSheet.create({
   itemDate: { color: '#64748b', fontSize: 11, marginTop: 4 },
   amount: { color: '#15803d', fontSize: 14, fontWeight: '800', marginTop: 8 },
   description: { color: '#475569', fontSize: 12, lineHeight: 18, marginTop: 8 },
-  fileAttached: { color: '#1d4ed8', fontSize: 12, fontWeight: '700', marginTop: 8 },
   deleteText: { color: '#dc2626', fontSize: 12, fontWeight: '700', marginTop: 12 },
+  viewDocButton: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, marginTop: 10, alignSelf: 'flex-start' },
+  viewDocButtonText: { color: '#1d4ed8', fontSize: 12, fontWeight: '800' },
+  previewOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.8)', justifyContent: 'center', padding: 14 },
+  previewCard: { backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', maxHeight: '92%', elevation: 12 },
+  previewHeader: { minHeight: 60, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#0f172a', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  previewTitle: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  previewSub: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
+  previewCloseBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+  previewCloseText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  previewBody: { padding: 16, alignItems: 'center', minHeight: 280, justifyContent: 'center' },
+  previewImage: { width: '100%', height: 360, borderRadius: 12, backgroundColor: '#f8fafc' },
+  pdfFallbackBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 10 },
+  pdfIcon: { fontSize: 50 },
+  pdfTitle: { color: '#0f172a', fontSize: 16, fontWeight: '800' },
+  pdfSub: { color: '#64748b', fontSize: 12, textAlign: 'center' },
+  previewFooter: { padding: 14, borderTopWidth: 1, borderTopColor: '#f1f5f9', backgroundColor: '#fafafa', gap: 8 },
+  openExternalBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  openExternalText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  previewDismissBtn: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  previewDismissText: { color: '#475569', fontSize: 13, fontWeight: '700' },
 });

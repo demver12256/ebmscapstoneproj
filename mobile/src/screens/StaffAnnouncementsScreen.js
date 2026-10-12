@@ -12,8 +12,13 @@ import {
   Modal,
   ScrollView,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { announcementApi } from '../services/api';
+import {
+  isAnnouncementActiveForAttendance,
+  getAnnouncementTiming,
+} from '../utils/announcementSchedule';
 
 const formatDate = (value) => {
   if (!value) return 'N/A';
@@ -70,6 +75,19 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
     if (p === 'urgent' || p === 'high') return { bg: '#fee2e2', text: '#b91c1c', border: '#fca5a5' };
     if (p === 'low') return { bg: '#f1f5f9', text: '#64748b', border: '#e2e8f0' };
     return { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' }; // Normal
+  };
+
+  const handleSelectAnnouncement = (item) => {
+    const timing = getAnnouncementTiming(item);
+    const isActive = isAnnouncementActiveForAttendance(item);
+    if (!isActive || timing === 'ended') {
+      Alert.alert(
+        'Anunsyo ay Lumipas Na (Expired)',
+        'Ang anunsyo o aktibidad na ito ay tapos na. Ang mga paparating (incoming) at kasalukuyang (current) anunsyo lamang ang maaaring buksan para sa attendance at detalye.'
+      );
+      return;
+    }
+    setSelectedAnn(item);
   };
 
   return (
@@ -161,11 +179,14 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
           }
           renderItem={({ item }) => {
             const priorityStyle = getPriorityStyle(item.priority);
+            const timing = getAnnouncementTiming(item);
+            const isEnded = timing === 'ended';
+            const isCurrent = timing === 'current';
             return (
               <TouchableOpacity
-                style={[styles.annCard, darkMode && styles.darkCard]}
-                onPress={() => setSelectedAnn(item)}
-                activeOpacity={0.8}
+                style={[styles.annCard, darkMode && styles.darkCard, isEnded && { opacity: 0.65 }]}
+                onPress={() => handleSelectAnnouncement(item)}
+                activeOpacity={isEnded ? 0.9 : 0.8}
               >
                 <View style={styles.cardHeader}>
                   <View style={{ flex: 1, marginRight: 8 }}>
@@ -176,10 +197,17 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
                       📅 {formatDate(item.event_date || item.publish_date || item.created_at)}
                     </Text>
                   </View>
-                  <View style={[styles.priorityBadge, { backgroundColor: priorityStyle.bg, borderColor: priorityStyle.border }]}>
-                    <Text style={[styles.priorityBadgeText, { color: priorityStyle.text }]}>
-                      {(item.priority || 'Normal').toUpperCase()}
-                    </Text>
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <View style={[styles.priorityBadge, { backgroundColor: priorityStyle.bg, borderColor: priorityStyle.border }]}>
+                      <Text style={[styles.priorityBadgeText, { color: priorityStyle.text }]}>
+                        {(item.priority || 'Normal').toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={[styles.timingBadge, isEnded ? styles.timingEnded : isCurrent ? styles.timingCurrent : styles.timingUpcoming]}>
+                      <Text style={[styles.timingBadgeText, isEnded ? styles.timingEndedTxt : isCurrent ? styles.timingCurrentTxt : styles.timingUpcomingTxt]}>
+                        {isEnded ? 'TAPOS NA' : isCurrent ? 'KASALUKUYAN' : 'PAPARATING'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -195,13 +223,15 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
 
                 <View style={styles.cardFooter}>
                   {item.has_attendance ? (
-                    <View style={styles.attendancePill}>
-                      <Text style={styles.attendancePillText}>📲 Attendance Required</Text>
+                    <View style={[styles.attendancePill, isEnded && { backgroundColor: '#f1f5f9' }]}>
+                      <Text style={[styles.attendancePillText, isEnded && { color: '#64748b' }]}>
+                        {isEnded ? 'Attendance Closed' : '📲 Attendance Required'}
+                      </Text>
                     </View>
                   ) : (
                     <Text style={styles.generalNoticeText}>📢 General Notice</Text>
                   )}
-                  {item.has_attendance && (
+                  {item.has_attendance && !isEnded && (
                     <TouchableOpacity
                       style={styles.openScannerBtn}
                       onPress={() => onNavigate && onNavigate('attendanceScanner')}
@@ -344,6 +374,13 @@ const styles = StyleSheet.create({
   dateSub: { fontSize: 11, color: '#64748b', marginTop: 2 },
   priorityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
   priorityBadgeText: { fontSize: 9.5, fontWeight: '800' },
+  timingBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
+  timingEnded: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
+  timingEndedTxt: { color: '#64748b', fontSize: 9, fontWeight: '800' },
+  timingCurrent: { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
+  timingCurrentTxt: { color: '#dc2626', fontSize: 9, fontWeight: '800' },
+  timingUpcoming: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
+  timingUpcomingTxt: { color: '#2563eb', fontSize: 9, fontWeight: '800' },
   venueText: { fontSize: 12, color: '#475569', marginTop: 6, fontWeight: '500' },
   contentSnippet: { fontSize: 12.5, color: '#64748b', marginTop: 8, lineHeight: 18 },
   cardFooter: {

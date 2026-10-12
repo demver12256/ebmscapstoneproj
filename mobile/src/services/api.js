@@ -128,6 +128,9 @@ export const beneficiaryApi = {
   updateMyPayoutAccount: (data) => apiClient.put('/beneficiaries/me/payout-account', data),
   addExtraPayoutAccount: (data) => apiClient.post('/beneficiaries/me/extra-payout-accounts', data),
   removeExtraPayoutAccount: (index) => apiClient.delete(`/beneficiaries/me/extra-payout-accounts/${index}`),
+  getQrPass: (id) => apiClient.get(`/beneficiaries/${id}/qr-pass`),
+  getMyQrPass: () => apiClient.get('/beneficiaries/me/qr-pass'),
+  regenerateQrPass: (id) => apiClient.post(`/beneficiaries/${id}/regenerate-qr`),
 };
 
 export const dashboardApi = {
@@ -185,6 +188,15 @@ export const interventionApi = {
   verify: (id, data) => apiClient.post(`/interventions/${id}/verify`, data),
   reject: (id, data) => apiClient.post(`/interventions/${id}/reject`, data),
   getStats: () => apiClient.get('/interventions/stats'),
+  create: (data) => apiClient.post('/interventions', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  uploadDocument: (id, data) => apiClient.post(`/interventions/${id}/document`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updateStaffIntervention: (id, data) => apiClient.put(`/interventions/${id}`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
   submit: (data) => apiClient.post('/interventions/submit', data, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),

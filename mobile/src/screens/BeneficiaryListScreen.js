@@ -12,8 +12,15 @@ import {
   Modal,
   ScrollView,
   RefreshControl,
+  Image,
+  Share,
+  Alert,
+  Platform,
 } from 'react-native';
+import { API_URL } from '../config/api';
 import { beneficiaryApi, barangayApi } from '../services/api';
+
+const FILES_BASE_URL = API_URL.replace(/\/api\/?$/, '');
 
 const formatDate = (value) => {
   if (!value) return 'N/A';
@@ -63,6 +70,45 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
   const [distributionsData, setDistributionsData] = useState(null);
   const [enrollmentsData, setEnrollmentsData] = useState(null);
   const [tabLoading, setTabLoading] = useState(false);
+
+  // QR Pass State
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrPassData, setQrPassData] = useState(null);
+
+  const handleOpenBeneficiaryQr = async (beneficiary) => {
+    if (!beneficiary) return;
+    setQrModalVisible(true);
+    setQrLoading(true);
+    setQrPassData(null);
+    try {
+      const res = await beneficiaryApi.getQrPass(beneficiary.id);
+      if (res.data?.data) {
+        setQrPassData(res.data.data);
+      }
+    } catch (err) {
+      console.warn('Failed to load beneficiary QR Pass:', err);
+      Alert.alert('Notice', err?.response?.data?.message || 'Hindi ma-load ang QR Pass ng benepisyaryo.');
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const handleShareBeneficiaryQr = async () => {
+    if (!qrPassData?.qr_image_url) {
+      Alert.alert('Walang QR Code', 'Walang magagamit na QR code image.');
+      return;
+    }
+    try {
+      await Share.share({
+        title: `QR Pass - ${qrPassData.full_name}`,
+        message: `Digital QR Pass para kay ${qrPassData.full_name}\nID/Code: ${qrPassData.qr_code || qrPassData.beneficiary_id_code}\nEBMS - DSWD / MSWDO Bongabong`,
+        url: qrPassData.qr_image_url,
+      });
+    } catch (err) {
+      console.warn('Share error:', err);
+    }
+  };
 
   const CATEGORIES = [
     '4Ps Household Beneficiary',
@@ -703,8 +749,17 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
                 <Text style={s.modalMeta}>
                   📍 {selectedBeneficiary.Barangay?.barangay_name || selectedBeneficiary.Barangay?.name || '—'} • {selectedBeneficiary.category || 'N/A'}
                 </Text>
-                <View style={s.approvedBadge}>
-                  <Text style={s.approvedText}>✓ APPROVED</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <View style={s.approvedBadge}>
+                    <Text style={s.approvedText}>✓ APPROVED</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={s.qrBadgeBtn}
+                    onPress={() => handleOpenBeneficiaryQr(selectedBeneficiary)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.qrBadgeBtnText}>☵ QR Pass</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -775,6 +830,98 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
           {detailTab === 'attendance' && renderAttendanceTab()}
           {detailTab === 'distributions' && renderDistributionsTab()}
           {detailTab === 'programs' && renderProgramsTab()}
+        </SafeAreaView>
+      </Modal>
+
+      {/* Digital QR Pass Modal */}
+      <Modal visible={qrModalVisible} transparent animationType="slide" onRequestClose={() => setQrModalVisible(false)}>
+        <SafeAreaView style={s.qrModalOverlay}>
+          <View style={s.qrModalCard}>
+            <View style={s.qrModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.qrModalRepublic}>Republic of the Philippines</Text>
+                <Text style={s.qrModalAgency}>DSWD / MSWDO Bongabong</Text>
+              </View>
+              <TouchableOpacity onPress={() => setQrModalVisible(false)} style={s.qrModalCloseBtn}>
+                <Text style={s.qrModalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={s.qrModalBody}>
+              <View style={s.qrIdBadgePill}>
+                <Text style={s.qrIdBadgePillText}>TEMPORARY DIGITAL ID • CLAIM PASS</Text>
+              </View>
+
+              <View style={s.qrBenInfoRow}>
+                {qrPassData?.profile_photo || qrPassData?.profile_picture ? (
+                  <Image
+                    source={{
+                      uri: (qrPassData.profile_photo || qrPassData.profile_picture).startsWith('http')
+                        ? (qrPassData.profile_photo || qrPassData.profile_picture)
+                        : `${FILES_BASE_URL}/${(qrPassData.profile_photo || qrPassData.profile_picture).replace(/^\/+/, '')}`
+                    }}
+                    style={s.qrAvatarImg}
+                  />
+                ) : (
+                  <View style={s.qrAvatarFallback}>
+                    <Text style={s.qrAvatarInitials}>
+                      {(qrPassData?.first_name?.[0] || selectedBeneficiary?.first_name?.[0] || 'B').toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={s.qrFullName}>{qrPassData?.full_name || `${selectedBeneficiary?.first_name} ${selectedBeneficiary?.last_name}`}</Text>
+                  <Text style={s.qrIdText}>
+                    {qrPassData?.household_id_number || qrPassData?.beneficiary_id_code || selectedBeneficiary?.beneficiary_id_code || 'Approved'}
+                  </Text>
+                  <View style={s.qrCategoryPill}>
+                    <Text style={s.qrCategoryPillText}>{qrPassData?.category || selectedBeneficiary?.category}</Text>
+                  </View>
+                  <Text style={s.qrBrgyText}>Brgy. {qrPassData?.barangay || selectedBeneficiary?.Barangay?.barangay_name || '—'}</Text>
+                </View>
+              </View>
+
+              <View style={s.qrImageBox}>
+                {qrLoading ? (
+                  <View style={s.qrLoadingBox}>
+                    <ActivityIndicator size="large" color="#0b3b9b" />
+                    <Text style={s.qrLoadingText}>Kinukuha ang QR code...</Text>
+                  </View>
+                ) : qrPassData?.qr_image_url ? (
+                  <Image
+                    source={{ uri: qrPassData.qr_image_url }}
+                    style={s.qrCodeImg}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={s.qrLoadingBox}>
+                    <Text style={s.qrLoadingText}>Walang QR code</Text>
+                  </View>
+                )}
+                <Text style={s.qrTokenText}>
+                  {qrPassData?.qr_code || `EBMS-QR:${qrPassData?.qr_token || 'TOKEN'}`}
+                </Text>
+              </View>
+
+              <View style={s.qrNoticeBox}>
+                <Text style={s.qrNoticeTitle}>Staff Verification Reference:</Text>
+                <Text style={s.qrNoticeDesc}>Maaaring i-share o i-save ang QR code na ito para sa benepisyaryo upang magamit sa payout verification at attendance scanner.</Text>
+              </View>
+            </ScrollView>
+
+            <View style={s.qrModalFooter}>
+              <TouchableOpacity
+                style={s.qrShareBtn}
+                onPress={handleShareBeneficiaryQr}
+                activeOpacity={0.8}
+              >
+                <Text style={s.qrShareBtnText}>⬇ I-save / I-share ang QR Code</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.qrCloseBtn} onPress={() => setQrModalVisible(false)}>
+                <Text style={s.qrCloseBtnText}>Isara</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -1115,6 +1262,43 @@ const s = StyleSheet.create({
   amountBadge: { fontSize: 14, fontWeight: '800', color: '#16a34a' },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+
+  // QR Pass badge & modal styles
+  qrBadgeBtn: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', paddingHorizontal: 9, paddingVertical: 3, borderRadius: 8 },
+  qrBadgeBtnText: { color: '#1d4ed8', fontSize: 11, fontWeight: '800' },
+
+  qrModalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.7)', justifyContent: 'center', padding: 16 },
+  qrModalCard: { backgroundColor: '#fff', borderRadius: 24, overflow: 'hidden', maxHeight: '94%', elevation: 16 },
+  qrModalHeader: { minHeight: 64, paddingHorizontal: 18, backgroundColor: '#0b3b9b', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  qrModalRepublic: { color: '#93c5fd', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
+  qrModalAgency: { color: '#fff', fontSize: 16, fontWeight: '900', textTransform: 'uppercase' },
+  qrModalCloseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  qrModalCloseText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  qrModalBody: { padding: 18, gap: 14, alignItems: 'center' },
+  qrIdBadgePill: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 4 },
+  qrIdBadgePillText: { color: '#1e40af', fontSize: 10, fontWeight: '900', letterSpacing: 0.6 },
+  qrBenInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 14, width: '100%', backgroundColor: '#f8fafc', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  qrAvatarImg: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#e2e8f0' },
+  qrAvatarFallback: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#0b3b9b', alignItems: 'center', justifyContent: 'center' },
+  qrAvatarInitials: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  qrFullName: { color: '#0f172a', fontSize: 16, fontWeight: '900' },
+  qrIdText: { color: '#1d4ed8', fontSize: 12, fontWeight: '800', marginTop: 1, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  qrCategoryPill: { alignSelf: 'flex-start', backgroundColor: '#f3e8ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginTop: 4 },
+  qrCategoryPillText: { color: '#7e22ce', fontSize: 10, fontWeight: '800' },
+  qrBrgyText: { color: '#64748b', fontSize: 11, marginTop: 3 },
+  qrImageBox: { width: '100%', backgroundColor: '#fff', borderRadius: 18, borderWidth: 1.5, borderColor: '#e2e8f0', padding: 16, alignItems: 'center', gap: 10, elevation: 2 },
+  qrCodeImg: { width: 220, height: 220 },
+  qrLoadingBox: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  qrLoadingText: { color: '#64748b', fontSize: 12, fontWeight: '600' },
+  qrTokenText: { color: '#64748b', fontSize: 10, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  qrNoticeBox: { width: '100%', backgroundColor: '#eff6ff', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#bfdbfe', gap: 3 },
+  qrNoticeTitle: { color: '#1e40af', fontSize: 12, fontWeight: '800' },
+  qrNoticeDesc: { color: '#334155', fontSize: 11, lineHeight: 16 },
+  qrModalFooter: { padding: 14, borderTopWidth: 1, borderTopColor: '#f1f5f9', backgroundColor: '#fafafa', gap: 10 },
+  qrShareBtn: { minHeight: 46, backgroundColor: '#16a34a', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  qrShareBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  qrCloseBtn: { minHeight: 44, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  qrCloseBtnText: { color: '#334155', fontSize: 13, fontWeight: '800' },
 });
 
 export default BeneficiaryListScreen;
