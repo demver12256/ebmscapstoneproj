@@ -240,6 +240,7 @@ const StaffInterventionsScreen = ({ onBack, onOpenDrawer, user, darkMode = false
             <Text style={[styles.headerTitle, darkMode && styles.darkText]}>Interventions</Text>
             <Text style={styles.headerSub}>Cross-agency citizen assistance reports</Text>
           </View>
+        </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <TouchableOpacity onPress={openRecordModal} style={styles.addRecordHeaderBtn} activeOpacity={0.8}>
             <Text style={styles.addRecordHeaderBtnText}>+ Mag-record</Text>
