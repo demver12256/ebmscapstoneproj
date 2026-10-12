@@ -8,6 +8,9 @@ const DEFAULT_SUGGESTIONS = [
   'Requirements sa Medical Assistance',
   'Kailan ang schedule ng ayuda?',
   'Paano mag-apply ng assistance?',
+  'Pwede ba representative ang kumuha?',
+  'Magkano ang matatanggap na ayuda?',
+  'Paano magparehistro sa system?',
   'Mga hotline at helpdesk'
 ];
 
