@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
+import ConfirmModal from '../components/ui/ConfirmModal';
 import ApprovedBeneficiaryDashboard from '../components/ApprovedBeneficiaryDashboard';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
@@ -31,6 +32,8 @@ export default function DashboardPage() {
   const [missingDocs, setMissingDocs] = useState([]);
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [approvingLoading, setApprovingLoading] = useState(false);
 
   // Beneficiary Portal State
   const [beneficiary, setBeneficiary] = useState(null);
@@ -268,12 +271,18 @@ export default function DashboardPage() {
     }
   };
 
-  const handleApproveApplication = async (appId) => {
-    if (!window.confirm('Are you sure you want to approve this application? This will issue a unique Beneficiary ID code.')) return;
+  const handleApproveApplication = (appId) => {
+    setShowApproveConfirm(true);
+  };
+
+  const confirmApproveApplication = async () => {
+    if (!selectedApp) return;
     setError(null);
+    setApprovingLoading(true);
     try {
-      const res = await beneficiaryApi.approveApplication(appId);
+      const res = await beneficiaryApi.approveApplication(selectedApp.id);
       if (res.data?.success) {
+        setShowApproveConfirm(false);
         alert('Application approved successfully!');
         setSelectedApp(null);
         setPreviewUrl(null);
@@ -281,6 +290,8 @@ export default function DashboardPage() {
       }
     } catch (err) {
       setError(err.message || 'Approval failed.');
+    } finally {
+      setApprovingLoading(false);
     }
   };
 
@@ -1374,6 +1385,22 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Modern Confirmation Modal matching Image 2 */}
+      <ConfirmModal
+        isOpen={showApproveConfirm}
+        title="Approve Application"
+        message="Are you sure you want to approve this application for"
+        targetName={selectedApp ? `${selectedApp.first_name} ${selectedApp.last_name}` : ''}
+        note="This will issue a unique Beneficiary ID code. This action cannot be undone."
+        noteType="danger"
+        confirmText="Approve"
+        cancelText="Cancel"
+        confirmVariant="primary"
+        loading={approvingLoading}
+        onConfirm={confirmApproveApplication}
+        onCancel={() => setShowApproveConfirm(false)}
+      />
     </div>
   );
 }

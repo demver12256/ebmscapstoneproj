@@ -12,6 +12,7 @@ import Pagination from '../components/ui/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
+import ConfirmModal from '../components/ui/ConfirmModal';
 import { beneficiaryApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -64,6 +65,8 @@ export default function BeneficiaryListPage() {
   const [missingDocs, setMissingDocs] = useState([]);
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [approvingLoading, setApprovingLoading] = useState(false);
 
   // Digital QR Pass Modal State
   const [qrModalBeneficiary, setQrModalBeneficiary] = useState(null);
@@ -373,15 +376,21 @@ export default function BeneficiaryListPage() {
     }
   };
 
-  const handleApproveApplication = async (appId) => {
+  const handleApproveApplication = (appId) => {
     if (isMswdoAdmin && selectedApp && is4PsCategory(selectedApp.category)) {
       alert('Access Denied: MSWDO can only approve Senior Citizens and PWD applications. 4Ps applications must be approved by DSWD.');
       return;
     }
-    if (!window.confirm('Are you sure you want to approve this application? This will issue a unique Beneficiary ID code.')) return;
+    setShowApproveConfirm(true);
+  };
+
+  const confirmApproveApplication = async () => {
+    if (!selectedApp) return;
+    setApprovingLoading(true);
     try {
-      const res = await beneficiaryApi.approveApplication(appId);
+      const res = await beneficiaryApi.approveApplication(selectedApp.id);
       if (res.data?.success) {
+        setShowApproveConfirm(false);
         alert('Application approved successfully!');
         setSelectedApp(null);
         setPreviewUrl(null);
@@ -389,6 +398,8 @@ export default function BeneficiaryListPage() {
       }
     } catch (err) {
       alert(err.message || 'Approval failed.');
+    } finally {
+      setApprovingLoading(false);
     }
   };
 
@@ -3030,6 +3041,22 @@ export default function BeneficiaryListPage() {
           </div>
         </div>
       )}
+
+      {/* Modern Confirmation Modal matching Image 2 */}
+      <ConfirmModal
+        isOpen={showApproveConfirm}
+        title="Approve Application"
+        message="Are you sure you want to approve this application for"
+        targetName={selectedApp ? `${selectedApp.first_name} ${selectedApp.last_name}` : ''}
+        note="This will issue a unique Beneficiary ID code. This action cannot be undone."
+        noteType="danger"
+        confirmText="Approve"
+        cancelText="Cancel"
+        confirmVariant="primary"
+        loading={approvingLoading}
+        onConfirm={confirmApproveApplication}
+        onCancel={() => setShowApproveConfirm(false)}
+      />
     </div>
   );
 }
