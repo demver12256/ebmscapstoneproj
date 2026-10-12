@@ -349,8 +349,8 @@ export default function LandingPage() {
   const [eligResult, setEligResult] = useState(null);
 
   // Login Form
-  const [email, setEmail] = useState('admin@ebms.local');
-  const [password, setPassword] = useState('Admin@123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [googleError, setGoogleError] = useState(null);
 
@@ -496,8 +496,17 @@ export default function LandingPage() {
         setTimeout(() => {
           setShowForgotModal(false);
           setShowLoginModal(true);
-          setEmail(res.data.login_identifier || (forgotMethod === 'email' ? forgotIdentifier : ''));
+          setEmail('');
           setPassword('');
+          setForgotStep(1);
+          setForgotIdentifier('');
+          setForgotRecoveryToken('');
+          setForgotOtp('');
+          setForgotNewPassword('');
+          setForgotConfirmPassword('');
+          setForgotMaskedDestination('');
+          setForgotError(null);
+          setForgotSuccess(null);
           setError(null);
         }, 2200);
       }
@@ -803,6 +812,8 @@ export default function LandingPage() {
               onClick={() => {
                 setShowRegisterModal(false);
                 setShowLoginModal(true);
+                setEmail('');
+                setPassword('');
                 setError(null);
               }}
               className="bg-[#0038A8] hover:bg-[#002D87] text-white px-8 py-2.5 text-sm font-semibold rounded-xl shadow-xs transition"
@@ -1425,6 +1436,9 @@ export default function LandingPage() {
               onClick={() => {
                 setShowLoginModal(false);
                 setShowRegisterModal(false);
+                setEmail('');
+                setPassword('');
+                setError(null);
                 setGoogleError(null);
               }}
               className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition"
@@ -1474,13 +1488,15 @@ export default function LandingPage() {
                         setShowForgotModal(true);
                         setForgotStep(1);
                         setForgotMethod('email');
-                        setForgotIdentifier(email?.includes('@') ? email : '');
+                        setForgotIdentifier('');
                         setForgotRecoveryToken('');
                         setForgotOtp('');
                         setForgotNewPassword('');
                         setForgotConfirmPassword('');
                         setForgotError(null);
                         setForgotSuccess(null);
+                        setEmail('');
+                        setPassword('');
                       }}
                       className="text-xs text-[#00338D] hover:underline font-bold"
                     >
@@ -1967,7 +1983,10 @@ export default function LandingPage() {
                     onClick={() => {
                       setShowForgotModal(false);
                       setShowLoginModal(true);
+                      setEmail('');
+                      setPassword('');
                       setForgotError(null);
+                      setForgotSuccess(null);
                     }}
                     className="text-[#00338D] font-bold hover:underline"
                   >

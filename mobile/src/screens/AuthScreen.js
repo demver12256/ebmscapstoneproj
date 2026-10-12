@@ -442,8 +442,6 @@ export default function AuthScreen({ onLoginSuccess }) {
 
       setForgotSuccess(response?.data?.message || 'Matagumpay na napalitan ang iyong password! Bumabalik sa login...');
       setTimeout(() => {
-        const loginIdentifier = response?.data?.login_identifier ||
-          (forgotMethod === 'email' ? forgotIdentifier : '');
         setForgotStep(1);
         setForgotIdentifier('');
         setForgotRecoveryToken('');
@@ -453,7 +451,7 @@ export default function AuthScreen({ onLoginSuccess }) {
         setForgotConfirmPassword('');
         setForgotSuccess('');
         setForgotError('');
-        setLoginIdentifier(loginIdentifier);
+        setLoginIdentifier('');
         setLoginPassword('');
         setMode('login');
       }, 2000);
@@ -521,12 +519,14 @@ export default function AuthScreen({ onLoginSuccess }) {
                 <TouchableOpacity
                   onPress={() => {
                     setForgotMethod('email');
-                    setForgotIdentifier(loginIdentifier.includes('@') ? loginIdentifier : '');
+                    setForgotIdentifier('');
                     setForgotStep(1);
                     setForgotRecoveryToken('');
                     setForgotMaskedDestination('');
                     setForgotError('');
                     setForgotSuccess('');
+                    setLoginIdentifier('');
+                    setLoginPassword('');
                     setMode('forgot');
                   }}
                 >
@@ -1106,6 +1106,8 @@ export default function AuthScreen({ onLoginSuccess }) {
                   onPress={() => {
                     setForgotError('');
                     setForgotSuccess('');
+                    setLoginIdentifier('');
+                    setLoginPassword('');
                     setMode('login');
                   }}
                 >
