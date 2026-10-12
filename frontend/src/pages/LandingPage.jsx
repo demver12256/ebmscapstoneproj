@@ -16,15 +16,24 @@ import BeniAidBot from '../components/BeniAidBot';
 const MOBILE_APK_VERSION = '1.3.0-20261012';
 
 // Google Sign-In Button component
-const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
+const GoogleSignInButton = ({ onSuccess, onError, onDownloadApk, onUseEmailPassword, text = 'signin_with' }) => {
   const buttonRef = useRef(null);
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [scriptFailed, setScriptFailed] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [showIpGuide, setShowIpGuide] = useState(false);
+
+  const isIpAddress = typeof window !== 'undefined' && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(window.location.hostname);
 
   useEffect(() => {
     let interval;
     let timeout;
+
+    // Google strictly blocks raw IP addresses (e.g. 192.168.x.x) from GSI script initialization
+    if (isIpAddress) {
+      setScriptFailed(true);
+      return;
+    }
 
     const loadGoogleScript = () => {
       if (!document.getElementById('google-gsi-client')) {
@@ -98,9 +107,14 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
       clearInterval(interval);
       clearTimeout(timeout);
     };
-  }, [onSuccess, onError, text]);
+  }, [onSuccess, onError, text, isIpAddress]);
 
   const handleFallbackClick = async () => {
+    if (isIpAddress) {
+      setShowIpGuide(true);
+      return;
+    }
+
     if (window.google?.accounts?.id) {
       setGoogleLoading(true);
       try {
@@ -132,8 +146,9 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
 
   return (
     <div>
-      <div ref={buttonRef} className={`w-full flex justify-center ${scriptLoaded ? '' : 'hidden'}`} />
-      {!scriptLoaded && !scriptFailed && (
+      <div ref={buttonRef} className={`w-full flex justify-center ${scriptLoaded && !isIpAddress ? '' : 'hidden'}`} />
+      
+      {!scriptLoaded && !scriptFailed && !isIpAddress && (
         <button
           type="button"
           disabled
@@ -146,12 +161,13 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
           Connecting Google Sign-In...
         </button>
       )}
-      {!scriptLoaded && scriptFailed && (
+
+      {(isIpAddress || (!scriptLoaded && scriptFailed)) && (
         <button
           type="button"
           onClick={handleFallbackClick}
           disabled={googleLoading}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all duration-200 text-slate-700 font-medium text-sm shadow-sm"
+          className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all duration-200 text-slate-700 font-medium text-sm shadow-xs"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
@@ -162,10 +178,107 @@ const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
           {googleLoading ? 'Connecting...' : (text === 'signup_with' ? 'Sign up with Google' : 'Sign in with Google')}
         </button>
       )}
-      {typeof window !== 'undefined' && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(window.location.hostname) && (
-        <p className="text-[11px] text-amber-700 bg-amber-50/80 p-2 rounded-lg border border-amber-200 mt-2 text-center leading-relaxed">
-          ⚠️ <strong>Google Sign-In:</strong> I-access ang app sa <strong className="font-mono text-slate-800">http://localhost:3000</strong> sa computer upang gumana ang Google (hindi pinapayagan ng Google ang direktang IP address).
-        </p>
+
+      {isIpAddress && (
+        <div className="mt-2.5 rounded-xl bg-blue-50/80 p-3 border border-blue-200/80 text-left">
+          <div className="flex items-start gap-2.5">
+            <Smartphone className="w-4 h-4 text-[#0038A8] mt-0.5 shrink-0" />
+            <div className="text-[11px] leading-relaxed text-slate-700">
+              <p className="font-bold text-[#0038A8]">Gamit ang Cellphone (CP)?</p>
+              <p className="mt-0.5 text-slate-600">
+                Pinagbabawalan ng Google ang direct IP (<code className="font-mono text-slate-900 font-semibold">{window.location.hostname}</code>) sa web browser. Para makapag-sign in sa CP:
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {onDownloadApk && (
+                  <button
+                    type="button"
+                    onClick={onDownloadApk}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0038A8] text-white text-[11px] font-bold rounded-lg hover:bg-[#002D87] transition shadow-xs"
+                  >
+                    <Download className="w-3.5 h-3.5" /> I-download ang BeniAid APK
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowIpGuide(true)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 text-[11px] font-bold rounded-lg hover:bg-slate-100 transition shadow-xs"
+                >
+                  Paano mag-login?
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showIpGuide && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 relative border border-slate-100 text-slate-800 animate-in fade-in zoom-in-95 duration-200">
+            <button
+              type="button"
+              onClick={() => setShowIpGuide(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center mb-4">
+              <div className="inline-flex p-3 rounded-2xl bg-blue-50 text-[#0038A8] mb-2 border border-blue-100 shadow-2xs">
+                <Smartphone className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">Google Sign-In sa Cellphone (CP)</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Dahil naka-access ka via IP address (<span className="font-mono font-bold text-slate-700">{window.location.hostname}</span>), hinaharang ito ng opisyal na Google OAuth security policy sa web browser.
+              </p>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-600">
+              <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100">
+                <p className="font-bold text-[#00338D] text-xs flex items-center gap-1.5">
+                  <Download className="w-4 h-4" /> Solusyon 1 (Inirerekomenda): BeniAid Mobile App
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                  I-download ang official BeniAid Android app. Sa mobile app, suportado ang Android Google Play Services at may digital QR pass!
+                </p>
+                {onDownloadApk && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowIpGuide(false);
+                      onDownloadApk();
+                    }}
+                    className="mt-2.5 w-full py-2 bg-[#00338D] hover:bg-[#002566] text-white font-bold rounded-lg transition text-center shadow-xs text-xs flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-4 h-4" /> I-download ang BeniAid APK
+                  </button>
+                )}
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <p className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                  <Lock className="w-4 h-4" /> Solusyon 2: Username / Email at Password
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                  Maaari kang mag-login gamit ang Username o Email sa form. Kung Gmail ang gamit mo at wala ka pang password, i-click ang <strong>"Forgot password?"</strong> sa form para magpadala ng code sa Gmail mo at makagawa ng password.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowIpGuide(false);
+                    onUseEmailPassword?.();
+                  }}
+                  className="mt-2.5 w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg transition text-center text-xs"
+                >
+                  Mag-login gamit ang Email &amp; Password
+                </button>
+              </div>
+
+              <p className="text-[10px] text-slate-400 text-center pt-1">
+                Tip: Sa computer/laptop, buksan ang <span className="font-mono font-semibold">http://localhost:3000</span> upang gumana ang Google popup.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1556,6 +1669,7 @@ export default function LandingPage() {
                 <GoogleSignInButton
                   onSuccess={handleGoogleSuccess}
                   onError={handleGoogleError}
+                  onDownloadApk={handleInstallApp}
                   text="signin_with"
                 />
 
