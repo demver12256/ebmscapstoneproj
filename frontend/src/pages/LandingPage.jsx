@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import BeniAidBot from '../components/BeniAidBot';
 
-const MOBILE_APK_VERSION = '1.2.0-20261011';
+const MOBILE_APK_VERSION = '1.3.0-20261012';
 
 // Google Sign-In Button component
 const GoogleSignInButton = ({ onSuccess, onError, text = 'signin_with' }) => {
