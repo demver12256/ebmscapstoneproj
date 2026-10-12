@@ -1,4 +1,4 @@
-import { User, Phone, MapPin, Calendar, Mail, CreditCard, IdCard, Upload, QrCode, Printer, X, ShieldCheck } from 'lucide-react';
+import { User, Phone, MapPin, Calendar, Mail, CreditCard, IdCard, Upload, QrCode, Printer, X, ShieldCheck, Download } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
 import { useState, useEffect } from 'react';
@@ -12,6 +12,8 @@ export default function BeneficiaryProfilePage() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [downloadingQrPass, setDownloadingQrPass] = useState(false);
+  const [qrPhotoError, setQrPhotoError] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -141,6 +143,259 @@ export default function BeneficiaryProfilePage() {
   };
 
   const backendUrl = getBackendUrl();
+
+  const resolvePhotoUrl = (rawPath) => {
+    if (!rawPath) return null;
+    if (rawPath.startsWith('http') || rawPath.startsWith('data:')) return rawPath;
+    const clean = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    return `${backendUrl}/${clean}`;
+  };
+
+  const handleDownloadQrPass = async () => {
+    if (!beneficiary) return;
+    setDownloadingQrPass(true);
+    try {
+      const canvas = document.createElement('canvas');
+      const width = 640;
+      const height = 860;
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      // Outer card background
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.roundRect(10, 10, width - 20, height - 20, 24);
+      ctx.fill();
+
+      // Outer border
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#002B49';
+      ctx.stroke();
+
+      // Inner subtle card background
+      const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
+      bgGradient.addColorStop(0, '#FFFFFF');
+      bgGradient.addColorStop(1, '#F8FAFC');
+      ctx.fillStyle = bgGradient;
+      ctx.beginPath();
+      ctx.roundRect(14, 14, width - 28, height - 28, 20);
+      ctx.fill();
+
+      // Top decorative bar
+      ctx.fillStyle = '#002B49';
+      ctx.beginPath();
+      ctx.roundRect(14, 14, width - 28, 12, [20, 20, 0, 0]);
+      ctx.fill();
+
+      // Header text
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+      ctx.fillText('REPUBLIC OF THE PHILIPPINES', width / 2, 54);
+
+      ctx.fillStyle = '#002B49';
+      ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+      ctx.fillText('DSWD / MSWDO BONGABONG', width / 2, 78);
+
+      // Pill badge
+      const badgeText = 'TEMPORARY DIGITAL ID • CLAIM PASS';
+      ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+      const badgeWidth = ctx.measureText(badgeText).width + 24;
+      const badgeX = (width - badgeWidth) / 2;
+      const badgeY = 92;
+      ctx.fillStyle = '#DBEAFE';
+      ctx.beginPath();
+      ctx.roundRect(badgeX, badgeY, badgeWidth, 22, 11);
+      ctx.fill();
+      ctx.fillStyle = '#1E40AF';
+      ctx.fillText(badgeText, width / 2, badgeY + 15);
+
+      // Separator line
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(35, 128);
+      ctx.lineTo(width - 35, 128);
+      ctx.stroke();
+
+      // Beneficiary Row: Photo + Details
+      const photoSize = 100;
+      const photoX = 35;
+      const photoY = 145;
+
+      let photoDrawn = false;
+      const photoUrl = resolvePhotoUrl(beneficiary.profile_picture);
+
+      if (photoUrl && !qrPhotoError) {
+        try {
+          const photoImg = new Image();
+          photoImg.crossOrigin = 'anonymous';
+          await new Promise((resolve, reject) => {
+            photoImg.onload = resolve;
+            photoImg.onerror = reject;
+            photoImg.src = photoUrl;
+          });
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.roundRect(photoX, photoY, photoSize, photoSize, 14);
+          ctx.clip();
+          ctx.drawImage(photoImg, photoX, photoY, photoSize, photoSize);
+          ctx.restore();
+
+          ctx.strokeStyle = '#93C5FD';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(photoX, photoY, photoSize, photoSize, 14);
+          ctx.stroke();
+          photoDrawn = true;
+        } catch (err) {
+          console.warn('Could not load photo for profile pass canvas:', err);
+        }
+      }
+
+      if (!photoDrawn) {
+        ctx.fillStyle = '#F1F5F9';
+        ctx.beginPath();
+        ctx.roundRect(photoX, photoY, photoSize, photoSize, 14);
+        ctx.fill();
+        ctx.strokeStyle = '#CBD5E1';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#94A3B8';
+        ctx.font = 'bold 36px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        const initials = (beneficiary.first_name?.[0] || '') + (beneficiary.last_name?.[0] || '');
+        ctx.fillText(initials || 'ID', photoX + photoSize / 2, photoY + photoSize / 2 + 12);
+      }
+
+      // Details
+      ctx.textAlign = 'left';
+      const textX = photoX + photoSize + 18;
+      const fullName = `${beneficiary.first_name} ${beneficiary.middle_name ? beneficiary.middle_name + ' ' : ''}${beneficiary.last_name}`.trim();
+
+      ctx.fillStyle = '#0F172A';
+      ctx.font = 'bold 18px system-ui, -apple-system, sans-serif';
+      ctx.fillText(fullName, textX, photoY + 24);
+
+      ctx.fillStyle = '#1D4ED8';
+      ctx.font = 'bold 13px monospace, monospace';
+      const idLabel = beneficiary.category?.toLowerCase().includes('4ps') ? 'HH No: ' : 'ID: ';
+      const idVal = beneficiary.household_id_number || beneficiary.beneficiary_id_code || 'N/A';
+      ctx.fillText(`${idLabel}${idVal}`, textX, photoY + 46);
+
+      if (beneficiary.category) {
+        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+        const catWidth = ctx.measureText(beneficiary.category).width + 16;
+        ctx.fillStyle = '#F3E8FF';
+        ctx.beginPath();
+        ctx.roundRect(textX, photoY + 56, catWidth, 20, 6);
+        ctx.fill();
+        ctx.fillStyle = '#6B21A8';
+        ctx.fillText(beneficiary.category, textX + 8, photoY + 70);
+      }
+
+      ctx.fillStyle = '#475569';
+      ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
+      const brgyName = beneficiary.Barangay?.barangay_name || beneficiary.barangay_name || 'N/A';
+      ctx.fillText(`Brgy. ${brgyName}`, textX, photoY + 94);
+
+      // QR Box
+      const qrBoxX = 50;
+      const qrBoxY = 270;
+      const qrBoxWidth = width - 100;
+      const qrBoxHeight = 440;
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.roundRect(qrBoxX, qrBoxY, qrBoxWidth, qrBoxHeight, 20);
+      ctx.fill();
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      if (beneficiary.qr_image_url) {
+        const qrImg = new Image();
+        await new Promise((resolve, reject) => {
+          qrImg.onload = resolve;
+          qrImg.onerror = reject;
+          qrImg.src = beneficiary.qr_image_url;
+        });
+
+        const qrSize = 250;
+        const qrX = (width - qrSize) / 2;
+        const qrY = qrBoxY + 30;
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.roundRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24, 16);
+        ctx.fill();
+        ctx.strokeStyle = '#E2E8F0';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+      }
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'bold 11px monospace, monospace';
+      const tokenStr = beneficiary.qr_token
+        ? `SECURITY TOKEN: ${beneficiary.qr_token.slice(0, 16)}...`
+        : `CODE: ${beneficiary.qr_code || idVal}`;
+      ctx.fillText(tokenStr, width / 2, qrBoxY + 340);
+
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
+      ctx.fillText('I-scan ang QR code na ito para sa payout verification & attendance', width / 2, qrBoxY + 372);
+
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = 'normal 11px system-ui, -apple-system, sans-serif';
+      ctx.fillText('Valid government temporary claim stub • Tamper-resistant cryptographic token', width / 2, qrBoxY + 394);
+
+      // Footer
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(35, 760);
+      ctx.lineTo(width - 35, 760);
+      ctx.stroke();
+
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'normal 11px system-ui, -apple-system, sans-serif';
+      ctx.textAlign = 'left';
+      const rfidText = beneficiary.RFID_number
+        ? `RFID Card: ${beneficiary.RFID_number}`
+        : 'RFID Card: Walang RFID (Temporary QR Active)';
+      ctx.fillText(rfidText, 35, 790);
+
+      ctx.textAlign = 'right';
+      const issuedDate = new Date(beneficiary.qr_generated_at || Date.now()).toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+      ctx.fillText(`Issued: ${issuedDate}`, width - 35, 790);
+
+      const link = document.createElement('a');
+      const safeName = fullName.replace(/[^a-zA-Z0-9]/g, '_');
+      link.download = `Digital_QR_Pass_${safeName}.png`;
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Failed to download QR pass:', error);
+      alert('Hindi ma-download ang QR Pass. Subukang muli.');
+    } finally {
+      setDownloadingQrPass(false);
+    }
+  };
 
   if (loading) {
     return <div className="p-8">Loading...</div>;
@@ -390,16 +645,21 @@ export default function BeneficiaryProfilePage() {
                 <div className="flex items-start gap-4">
                   {/* Photo or Avatar */}
                   <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 border-2 border-blue-200 shrink-0 flex items-center justify-center shadow-xs">
-                    {beneficiary.profile_picture ? (
-                      <img
-                        src={`${backendUrl}/${beneficiary.profile_picture}`}
-                        alt={beneficiary.first_name}
-                        className="w-full h-full object-cover"
-                        crossOrigin="anonymous"
-                      />
-                    ) : (
-                      <User className="w-10 h-10 text-slate-400" />
-                    )}
+                    {(() => {
+                      const photoSrc = resolvePhotoUrl(beneficiary.profile_picture);
+                      if (photoSrc && !qrPhotoError) {
+                        return (
+                          <img
+                            src={photoSrc}
+                            alt={beneficiary.first_name}
+                            className="w-full h-full object-cover"
+                            crossOrigin="anonymous"
+                            onError={() => setQrPhotoError(true)}
+                          />
+                        );
+                      }
+                      return <User className="w-10 h-10 text-slate-400" />;
+                    })()}
                   </div>
 
                   {/* Info Text */}
@@ -464,6 +724,15 @@ export default function BeneficiaryProfilePage() {
 
             {/* Modal Actions */}
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadQrPass}
+                disabled={downloadingQrPass}
+                className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Download className={`w-3.5 h-3.5 ${downloadingQrPass ? 'animate-bounce' : ''}`} />
+                {downloadingQrPass ? 'Dina-download...' : 'I-download ang Pass'}
+              </button>
               <button
                 type="button"
                 onClick={handlePrintQrPass}

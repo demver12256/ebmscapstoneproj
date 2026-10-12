@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { interventionApi } from '../services/api';
+import { interventionApi, beneficiaryApi } from '../services/api';
 import { API_ORIGIN } from '../config/api';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
 import {
   FileHeart, CheckCircle, XCircle, Clock, Search, Eye,
   Building2, TrendingUp, X, Check, RefreshCw,
-  Sparkles, ExternalLink, Paperclip, LayoutGrid, Table as TableIcon,
-  ShieldCheck, MapPin, RotateCcw
+  ExternalLink, Paperclip, LayoutGrid, Table as TableIcon,
+  ShieldCheck, MapPin, RotateCcw, Plus, Download, Upload
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -49,6 +49,32 @@ const COMMON_AGENCIES = [
   'Private Foundation'
 ];
 
+const FORM_AGENCIES = [
+  'PhilHealth',
+  'PCSO (Philippine Charity Sweepstakes Office)',
+  'LGU (Local Government Unit)',
+  'Barangay',
+  'DOH (Department of Health)',
+  'DSWD (Regional/Provincial)',
+  'NGO (Non-Government Organization)',
+  'Private Foundation',
+  'Iba pa / Other'
+];
+
+const COMMON_ASSISTANCE_TYPES = [
+  'Medical Assistance',
+  'Hospital Bill Assistance',
+  'Medicines Assistance',
+  'Laboratory Assistance',
+  'Financial Assistance',
+  'Burial Assistance',
+  'Educational Assistance',
+  'Food Assistance',
+  'Livelihood Assistance',
+  'Transportation Assistance',
+  'Iba pa / Other'
+];
+
 export default function InterventionsManagementPage() {
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'pending' | 'verified' | 'rejected'
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'cards'
@@ -66,6 +92,27 @@ export default function InterventionsManagementPage() {
   const [staffNotes, setStaffNotes] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [toast, setToast] = useState(null);
+
+  // Record Intervention Modal State
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [beneficiariesList, setBeneficiariesList] = useState([]);
+  const [loadingBeneficiaries, setLoadingBeneficiaries] = useState(false);
+  const [beneficiarySearchQuery, setBeneficiarySearchQuery] = useState('');
+  const [submittingRecord, setSubmittingRecord] = useState(false);
+  const [uploadingDocForDetail, setUploadingDocForDetail] = useState(false);
+  const [recordForm, setRecordForm] = useState({
+    beneficiary_id: '',
+    agency_name: '',
+    custom_agency: '',
+    assistance_type: '',
+    custom_type: '',
+    amount: '',
+    date_received: new Date().toISOString().split('T')[0],
+    description: '',
+    proof_document: null,
+    status: 'Verified',
+    staff_notes: ''
+  });
 
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
@@ -145,6 +192,115 @@ export default function InterventionsManagementPage() {
       showToast('error', error.response?.data?.message || 'Failed to reject intervention');
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const loadBeneficiariesList = useCallback(async () => {
+    try {
+      setLoadingBeneficiaries(true);
+      const res = await beneficiaryApi.list();
+      const list = res.data?.data || res.data || [];
+      const approvedOnly = list.filter(b => b.status === 'Approved' || !b.status || b.status === 'active');
+      setBeneficiariesList(approvedOnly);
+    } catch (err) {
+      console.warn('Failed to load beneficiaries for intervention modal:', err);
+    } finally {
+      setLoadingBeneficiaries(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showRecordModal && beneficiariesList.length === 0) {
+      loadBeneficiariesList();
+    }
+  }, [showRecordModal, beneficiariesList.length, loadBeneficiariesList]);
+
+  const handleCreateIntervention = async (e) => {
+    e.preventDefault();
+    if (!recordForm.beneficiary_id) {
+      showToast('error', 'Pumili ng benepisyaryo para sa interbensyon.');
+      return;
+    }
+
+    const agency = recordForm.agency_name === 'Iba pa / Other' ? recordForm.custom_agency : recordForm.agency_name;
+    const type = recordForm.assistance_type === 'Iba pa / Other' ? recordForm.custom_type : recordForm.assistance_type;
+
+    if (!agency || !agency.trim()) {
+      showToast('error', 'Ilagay ang ahensya o organisasyon.');
+      return;
+    }
+    if (!type || !type.trim()) {
+      showToast('error', 'Ilagay ang uri ng tulong / assistance type.');
+      return;
+    }
+    if (!recordForm.date_received) {
+      showToast('error', 'Ilagay ang petsa ng pagtanggap.');
+      return;
+    }
+
+    setSubmittingRecord(true);
+    try {
+      const formData = new FormData();
+      formData.append('beneficiary_id', recordForm.beneficiary_id);
+      formData.append('agency_name', agency.trim());
+      formData.append('assistance_type', type.trim());
+      formData.append('amount', recordForm.amount || '0');
+      formData.append('date_received', recordForm.date_received);
+      if (recordForm.description) formData.append('description', recordForm.description.trim());
+      if (recordForm.status) formData.append('status', recordForm.status);
+      if (recordForm.staff_notes) formData.append('staff_notes', recordForm.staff_notes.trim());
+      if (recordForm.proof_document) {
+        formData.append('proof_document', recordForm.proof_document);
+      }
+
+      await interventionApi.createIntervention(formData);
+      showToast('success', 'Matagumpay na na-record ang interbensyon!');
+      setShowRecordModal(false);
+      resetRecordForm();
+      await loadData();
+    } catch (err) {
+      console.error('Failed to create intervention:', err);
+      showToast('error', err.response?.data?.message || 'Nabigong i-record ang interbensyon');
+    } finally {
+      setSubmittingRecord(false);
+    }
+  };
+
+  const resetRecordForm = () => {
+    setRecordForm({
+      beneficiary_id: '',
+      agency_name: '',
+      custom_agency: '',
+      assistance_type: '',
+      custom_type: '',
+      amount: '',
+      date_received: new Date().toISOString().split('T')[0],
+      description: '',
+      proof_document: null,
+      status: 'Verified',
+      staff_notes: ''
+    });
+    setBeneficiarySearchQuery('');
+  };
+
+  const handleUploadDocumentToCurrent = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !viewDetailsIntervention) return;
+
+    setUploadingDocForDetail(true);
+    try {
+      const formData = new FormData();
+      formData.append('proof_document', file);
+      const res = await interventionApi.uploadProofDocument(viewDetailsIntervention.id, formData);
+      const newUrl = res.data?.data?.proof_document_url;
+      showToast('success', 'Matagumpay na na-upload ang proof document!');
+      setViewDetailsIntervention(prev => prev ? { ...prev, proof_document_url: newUrl } : null);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to upload proof document:', err);
+      showToast('error', err.response?.data?.message || 'Nabigong i-upload ang proof document');
+    } finally {
+      setUploadingDocForDetail(false);
     }
   };
 
@@ -274,6 +430,18 @@ export default function InterventionsManagementPage() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              resetRecordForm();
+              setShowRecordModal(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs active:scale-95"
+            title="Mag-record ng bagong interbensyon mula sa ibang ahensya"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Record Intervention</span>
+          </button>
           <button
             type="button"
             onClick={loadData}
@@ -1144,20 +1312,65 @@ export default function InterventionsManagementPage() {
                 </div>
               )}
 
-              {/* Proof Document preview link */}
-              {viewDetailsIntervention.proof_document_url && (
-                <div className="p-3.5 rounded-xl border border-blue-100 bg-blue-50/60 flex items-center justify-between text-xs">
+              {/* Proof Document preview link / upload */}
+              {viewDetailsIntervention.proof_document_url ? (
+                <div className="p-3.5 rounded-xl border border-blue-100 bg-blue-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2">
-                    <Paperclip className="w-4 h-4 text-blue-600" />
-                    <span className="font-bold text-blue-900">Proof of Assistance Document</span>
+                    <Paperclip className="w-4 h-4 text-blue-600 shrink-0" />
+                    <div>
+                      <span className="font-bold text-blue-900 block">Proof of Assistance Document</span>
+                      <span className="text-[10px] text-blue-600">Nakalakip na katibayan / dokumento</span>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setDocumentPreviewUrl(getDocumentUrl(viewDetailsIntervention.proof_document_url))}
-                    className="px-3 py-1 bg-blue-600 text-white font-bold rounded-lg text-xs hover:bg-blue-700 transition"
-                  >
-                    View Document
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setDocumentPreviewUrl(getDocumentUrl(viewDetailsIntervention.proof_document_url))}
+                      className="px-3 py-1.5 bg-blue-600 text-white font-bold rounded-lg text-xs hover:bg-blue-700 transition shadow-2xs flex items-center gap-1"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      View Document
+                    </button>
+                    <a
+                      href={getDocumentUrl(viewDetailsIntervention.proof_document_url)}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-lg text-xs hover:bg-emerald-700 transition shadow-2xs flex items-center gap-1"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Download
+                    </a>
+                    <label className="px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-lg text-xs hover:bg-slate-50 transition shadow-2xs cursor-pointer flex items-center gap-1">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{uploadingDocForDetail ? '...' : 'Palitan'}</span>
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp"
+                        className="hidden"
+                        disabled={uploadingDocForDetail}
+                        onChange={handleUploadDocumentToCurrent}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <Paperclip className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span>Walang nakalakip na proof document.</span>
+                  </div>
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition shadow-2xs self-start sm:self-auto">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{uploadingDocForDetail ? 'Nag-a-upload...' : 'Mag-attach ng Katibayan'}</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp"
+                      className="hidden"
+                      disabled={uploadingDocForDetail}
+                      onChange={handleUploadDocumentToCurrent}
+                    />
+                  </label>
                 </div>
               )}
 
@@ -1239,7 +1452,17 @@ export default function InterventionsManagementPage() {
               )}
             </div>
 
-            <div className="pt-2 text-right">
+            <div className="pt-2 flex items-center justify-between">
+              <a
+                href={documentPreviewUrl}
+                download
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl text-xs hover:bg-emerald-700 transition shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>I-download ang File</span>
+              </a>
               <button
                 type="button"
                 onClick={() => setDocumentPreviewUrl(null)}
@@ -1248,6 +1471,306 @@ export default function InterventionsManagementPage() {
                 Close Preview
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━ Record Intervention Modal ━━━ */}
+      {showRecordModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-50 text-blue-700 rounded-xl">
+                  <FileHeart className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Mag-record ng External Intervention</h3>
+                  <p className="text-xs text-slate-500">I-tala ang tulong na natanggap ng benepisyaryo mula sa ibang ahensya</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRecordModal(false);
+                  resetRecordForm();
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateIntervention} className="space-y-4">
+              {/* Beneficiary Selection */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Piliin ang Benepisyaryo <span className="text-rose-500">*</span>
+                </label>
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Mag-search ng pangalan o Household / ID code..."
+                      value={beneficiarySearchQuery}
+                      onChange={(e) => setBeneficiarySearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
+                    />
+                  </div>
+
+                  {/* Beneficiary Dropdown / Select */}
+                  <select
+                    value={recordForm.beneficiary_id}
+                    onChange={(e) => setRecordForm({ ...recordForm, beneficiary_id: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-slate-900"
+                    required
+                  >
+                    <option value="">
+                      {loadingBeneficiaries ? 'Kinukuha ang listahan ng benepisyaryo...' : `-- Piliin ang Benepisyaryo (${beneficiariesList.length} rehistrado) --`}
+                    </option>
+                    {beneficiariesList
+                      .filter(b => {
+                        if (!beneficiarySearchQuery.trim()) return true;
+                        const q = beneficiarySearchQuery.toLowerCase();
+                        const name = `${b.first_name} ${b.last_name}`.toLowerCase();
+                        const id = (b.household_id_number || b.beneficiary_id_code || '').toLowerCase();
+                        const brgy = (b.Barangay?.barangay_name || b.barangay || '').toLowerCase();
+                        return name.includes(q) || id.includes(q) || brgy.includes(q);
+                      })
+                      .map(b => (
+                        <option key={b.id} value={b.id}>
+                          {b.last_name}, {b.first_name} {b.middle_name || ''} — [{b.category}] ({b.household_id_number || b.beneficiary_id_code || 'No ID'}) - Brgy. {b.Barangay?.barangay_name || b.barangay || 'N/A'}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Agency and Type Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Agency */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Ahensya / Organisasyon <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={recordForm.agency_name}
+                    onChange={(e) => setRecordForm({ ...recordForm, agency_name: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-slate-900"
+                    required
+                  >
+                    <option value="">-- Piliin ang Ahensya --</option>
+                    {FORM_AGENCIES.map(a => (
+                      <option key={a} value={a}>{a}</option>
+                    ))}
+                  </select>
+                  {recordForm.agency_name === 'Iba pa / Other' && (
+                    <input
+                      type="text"
+                      placeholder="Ilagay ang buong pangalan ng ahensya..."
+                      value={recordForm.custom_agency}
+                      onChange={(e) => setRecordForm({ ...recordForm, custom_agency: e.target.value })}
+                      className="mt-2 w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 font-medium"
+                      required
+                    />
+                  )}
+                </div>
+
+                {/* Assistance Type */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Uri ng Tulong (Assistance Type) <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={recordForm.assistance_type}
+                    onChange={(e) => setRecordForm({ ...recordForm, assistance_type: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-slate-900"
+                    required
+                  >
+                    <option value="">-- Piliin ang Uri ng Tulong --</option>
+                    {COMMON_ASSISTANCE_TYPES.map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  {recordForm.assistance_type === 'Iba pa / Other' && (
+                    <input
+                      type="text"
+                      placeholder="Ilagay ang uri ng tulong..."
+                      value={recordForm.custom_type}
+                      onChange={(e) => setRecordForm({ ...recordForm, custom_type: e.target.value })}
+                      className="mt-2 w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 font-medium"
+                      required
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Amount and Date Received Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Amount */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Halaga / Amount (₱)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">₱</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={recordForm.amount}
+                      onChange={(e) => setRecordForm({ ...recordForm, amount: e.target.value })}
+                      className="w-full pl-7 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                {/* Date Received */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Petsa ng Pagtanggap <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={recordForm.date_received}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setRecordForm({ ...recordForm, date_received: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 font-medium text-slate-900"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Detalye / Description
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Karagdagang detalye tungkol sa natanggap na tulong (ospital, reseta, certificate, atbp.)..."
+                  value={recordForm.description}
+                  onChange={(e) => setRecordForm({ ...recordForm, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 resize-none font-medium text-slate-900"
+                />
+              </div>
+
+              {/* Proof Document File Upload (Attachment) */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Katibayan / Proof Document (PDF, JPG, PNG, WEBP)
+                </label>
+                <div className="border-2 border-dashed border-slate-200 hover:border-blue-400 rounded-2xl p-4 bg-slate-50/50 hover:bg-blue-50/30 transition text-center space-y-2">
+                  {recordForm.proof_document ? (
+                    <div className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-blue-200 shadow-2xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Paperclip className="w-4 h-4 text-blue-600 shrink-0" />
+                        <div className="text-left min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate">
+                            {recordForm.proof_document.name}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {(recordForm.proof_document.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setRecordForm({ ...recordForm, proof_document: null })}
+                        className="p-1 hover:bg-slate-100 rounded-lg text-rose-500"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1.5" />
+                      <p className="text-xs font-semibold text-slate-700">
+                        I-click o i-drag ang file dito para i-upload
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        Suportado ang PDF, JPG, PNG, WEBP hanggang 10MB
+                      </p>
+                      <label className="inline-block mt-2 px-3 py-1 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-xs font-bold text-blue-600 cursor-pointer shadow-2xs transition">
+                        <span>Pumili ng File</span>
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                              setRecordForm({ ...recordForm, proof_document: e.target.files[0] });
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Status & Staff Notes */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Katayuan (Verification Status)
+                  </label>
+                  <select
+                    value={recordForm.status}
+                    onChange={(e) => setRecordForm({ ...recordForm, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 font-bold text-slate-900"
+                  >
+                    <option value="Verified">Verified (Opisyal na Na-validate)</option>
+                    <option value="Pending">Pending Review (Hihintayin ang Verification)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Staff Notes / Komento
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Hal. Resibo na-validate sa PCSO..."
+                    value={recordForm.staff_notes}
+                    onChange={(e) => setRecordForm({ ...recordForm, staff_notes: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRecordModal(false);
+                    resetRecordForm();
+                  }}
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs transition"
+                >
+                  Kanselahin
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingRecord}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition shadow-xs"
+                >
+                  {submittingRecord ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Sine-save...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>I-save ang Intervention</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

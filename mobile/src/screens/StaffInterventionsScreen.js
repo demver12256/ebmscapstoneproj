@@ -13,6 +13,7 @@ import {
   ScrollView,
   RefreshControl,
   Alert,
+  Linking,
 } from 'react-native';
 import { interventionApi } from '../services/api';
 
@@ -309,6 +310,23 @@ const StaffInterventionsScreen = ({ onBack, onOpenDrawer, user, darkMode = false
                 </View>
               ) : null}
 
+              {selectedItem?.proof_document_url ? (
+                <View style={styles.docBox}>
+                  <Text style={[styles.docTitle, darkMode && styles.darkSub]}>Nakalakip na Katibayan / Proof</Text>
+                  <TouchableOpacity
+                    style={styles.docBtn}
+                    onPress={() => {
+                      const url = selectedItem.proof_document_url.startsWith('http')
+                        ? selectedItem.proof_document_url
+                        : `http://localhost:5000${selectedItem.proof_document_url.startsWith('/') ? '' : '/'}${selectedItem.proof_document_url}`;
+                      Linking.openURL(url).catch(() => Alert.alert('Hindi Mabuksan', 'Hindi mabuksan ang document link.'));
+                    }}
+                  >
+                    <Text style={styles.docBtnText}>📎 Buksan / Tingnan ang Proof Document</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
               {(selectedItem?.status || '').toLowerCase() === 'pending' && (
                 <View style={styles.actionSection}>
                   <Text style={[styles.actionSectionTitle, darkMode && styles.darkText]}>Aksyon ng Staff</Text>
@@ -477,6 +495,10 @@ const styles = StyleSheet.create({
   descBox: { backgroundColor: '#f8fafc', padding: 12, borderRadius: 10, marginTop: 12 },
   descTitle: { fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 4, textTransform: 'uppercase' },
   descText: { fontSize: 12.5, color: '#334155', lineHeight: 18 },
+  docBox: { backgroundColor: '#eff6ff', padding: 12, borderRadius: 10, marginTop: 12, borderWidth: 1, borderColor: '#bfdbfe' },
+  docTitle: { fontSize: 11, fontWeight: '700', color: '#1e40af', marginBottom: 8, textTransform: 'uppercase' },
+  docBtn: { backgroundColor: '#2563eb', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center' },
+  docBtnText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   actionSection: { marginTop: 18 },
   actionSectionTitle: { fontSize: 14, fontWeight: '800', color: '#1e293b', marginBottom: 10 },
   verifyBigBtn: {

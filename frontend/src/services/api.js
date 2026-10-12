@@ -274,6 +274,15 @@ export const interventionApi = {
   deleteMyIntervention: (id) => apiClient.delete(`/interventions/me/${id}`),
   
   // Staff/Admin endpoints
+  createIntervention: (formData) => apiClient.post('/interventions', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updateIntervention: (id, formData) => apiClient.put(`/interventions/${id}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  uploadProofDocument: (id, formData) => apiClient.post(`/interventions/${id}/document`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
   getPendingInterventions: () => apiClient.get('/interventions/pending'),
   getAllInterventions: (params) => apiClient.get('/interventions/all', { params }),
   getBeneficiaryInterventions: (beneficiaryId) => apiClient.get(`/interventions/beneficiary/${beneficiaryId}`),

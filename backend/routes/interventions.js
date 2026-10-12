@@ -495,4 +495,185 @@ router.get('/stats', authorize('admin', 'staff', 'barangay'), async (req, res, n
   }
 });
 
+// ── POST /api/interventions ── Staff/Admin creates intervention record for a beneficiary
+router.post('/', authorize('admin', 'staff', 'barangay'), upload.single('proof_document'), async (req, res, next) => {
+  try {
+    const {
+      beneficiary_id,
+      agency_name,
+      assistance_type,
+      amount,
+      description,
+      date_received,
+      status,
+      staff_notes
+    } = req.body;
+
+    if (!beneficiary_id || !agency_name || !assistance_type || !date_received) {
+      return res.status(400).json({
+        success: false,
+        message: 'Beneficiary ID, agency name, assistance type, and date received are required'
+      });
+    }
+
+    const beneficiary = await Beneficiary.findByPk(beneficiary_id);
+    if (!beneficiary) {
+      return res.status(404).json({ success: false, message: 'Beneficiary not found' });
+    }
+
+    // Staff can only create for their barangay
+    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
+      return res.status(403).json({ success: false, message: 'Access denied: Beneficiary belongs to a different barangay' });
+    }
+
+    const proofDocumentUrl = req.file ? `/uploads/interventions/${req.file.filename}` : null;
+    const finalStatus = status && ['Pending', 'Verified', 'Rejected'].includes(status) ? status : 'Verified';
+
+    const intervention = await Intervention.create({
+      beneficiary_id: beneficiary.id,
+      user_id: beneficiary.user_id,
+      barangay_id: beneficiary.barangay_id,
+      agency_name: agency_name.trim(),
+      assistance_type: assistance_type.trim(),
+      amount: amount ? parseFloat(amount) : 0,
+      description: description ? description.trim() : null,
+      date_received,
+      proof_document_url: proofDocumentUrl,
+      status: finalStatus,
+      verified_by: finalStatus === 'Verified' ? req.user.id : null,
+      verified_at: finalStatus === 'Verified' ? new Date() : null,
+      staff_notes: staff_notes ? staff_notes.trim() : null
+    });
+
+    // Notify beneficiary
+    if (beneficiary.user_id) {
+      await Notification.create({
+        user_id: beneficiary.user_id,
+        type: 'intervention_recorded',
+        title: 'New Intervention Record Added',
+        message: `An assistance record from ${intervention.agency_name} (${intervention.assistance_type}) has been recorded for you.`,
+        is_read: false
+      }).catch(err => console.warn('Notification error:', err));
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Intervention successfully recorded',
+      data: intervention
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── PUT /api/interventions/:id ── Staff/Admin updates intervention record
+router.put('/:id', authorize('admin', 'staff', 'barangay'), upload.single('proof_document'), async (req, res, next) => {
+  try {
+    const intervention = await Intervention.findByPk(req.params.id, {
+      include: [Beneficiary]
+    });
+    if (!intervention) {
+      return res.status(404).json({ success: false, message: 'Intervention not found' });
+    }
+
+    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && intervention.barangay_id !== req.user.barangay_id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const {
+      agency_name,
+      assistance_type,
+      amount,
+      description,
+      date_received,
+      status,
+      staff_notes,
+      rejection_reason
+    } = req.body;
+
+    const updates = {};
+    if (agency_name) updates.agency_name = agency_name.trim();
+    if (assistance_type) updates.assistance_type = assistance_type.trim();
+    if (amount !== undefined) updates.amount = parseFloat(amount) || 0;
+    if (description !== undefined) updates.description = description ? description.trim() : null;
+    if (date_received) updates.date_received = date_received;
+    if (status && ['Pending', 'Verified', 'Rejected'].includes(status)) {
+      updates.status = status;
+      if (status === 'Verified') {
+        updates.verified_by = req.user.id;
+        updates.verified_at = new Date();
+        updates.rejection_reason = null;
+      } else if (status === 'Rejected') {
+        updates.rejection_reason = rejection_reason || 'Rejected by staff';
+        updates.verified_by = req.user.id;
+        updates.verified_at = new Date();
+      }
+    }
+    if (staff_notes !== undefined) updates.staff_notes = staff_notes ? staff_notes.trim() : null;
+
+    if (req.file) {
+      if (intervention.proof_document_url) {
+        const oldFilePath = path.join(__dirname, '..', intervention.proof_document_url);
+        if (fs.existsSync(oldFilePath)) {
+          try { fs.unlinkSync(oldFilePath); } catch (e) {}
+        }
+      }
+      updates.proof_document_url = `/uploads/interventions/${req.file.filename}`;
+    }
+
+    await intervention.update(updates);
+
+    res.json({
+      success: true,
+      message: 'Intervention updated successfully',
+      data: intervention
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── POST /api/interventions/:id/document ── Upload / Attach proof document
+router.post('/:id/document', authorize('admin', 'staff', 'barangay', 'beneficiary'), upload.single('proof_document'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    const intervention = await Intervention.findByPk(req.params.id);
+    if (!intervention) {
+      return res.status(404).json({ success: false, message: 'Intervention not found' });
+    }
+
+    if (req.user.role === 'beneficiary' && intervention.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    }
+
+    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && intervention.barangay_id !== req.user.barangay_id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Delete old file if exists
+    if (intervention.proof_document_url) {
+      const oldFilePath = path.join(__dirname, '..', intervention.proof_document_url);
+      if (fs.existsSync(oldFilePath)) {
+        try { fs.unlinkSync(oldFilePath); } catch (e) {}
+      }
+    }
+
+    const documentUrl = `/uploads/interventions/${req.file.filename}`;
+    await intervention.update({ proof_document_url: documentUrl });
+
+    res.json({
+      success: true,
+      message: 'Proof document uploaded successfully',
+      data: {
+        proof_document_url: documentUrl
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

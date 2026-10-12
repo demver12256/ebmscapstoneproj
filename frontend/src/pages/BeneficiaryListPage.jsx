@@ -74,6 +74,15 @@ export default function BeneficiaryListPage() {
   const [qrPassLoading, setQrPassLoading] = useState(false);
   const [qrPassRegenerating, setQrPassRegenerating] = useState(false);
   const [qrPassError, setQrPassError] = useState(null);
+  const [downloadingQrPass, setDownloadingQrPass] = useState(false);
+  const [qrPhotoError, setQrPhotoError] = useState(false);
+
+  const resolvePhotoUrl = (rawPath) => {
+    if (!rawPath) return null;
+    if (rawPath.startsWith('http') || rawPath.startsWith('data:')) return rawPath;
+    const clean = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    return `${backendUrl}/${clean}`;
+  };
 
   const isMswdoAdmin = user?.role === 'mswdo_admin';
   const CATEGORIES = [
@@ -492,6 +501,7 @@ export default function BeneficiaryListPage() {
     setQrModalBeneficiary(ben);
     setQrPassData(null);
     setQrPassError(null);
+    setQrPhotoError(false);
     setQrPassLoading(true);
     try {
       const res = await beneficiaryApi.getQrPass(ben.id);
@@ -542,6 +552,13 @@ export default function BeneficiaryListPage() {
       window.print();
       return;
     }
+    const printPhotoUrl = resolvePhotoUrl(
+      qrPassData.profile_picture ||
+      qrPassData.profile_photo ||
+      qrModalBeneficiary?.profile_picture ||
+      qrModalBeneficiary?.User?.profile_picture
+    );
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -555,6 +572,8 @@ export default function BeneficiaryListPage() {
             .republic { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: bold; margin: 0; }
             .agency { font-size: 13px; font-weight: 800; color: #002B49; text-transform: uppercase; margin: 4px 0; }
             .badge { display: inline-block; background: #e0f2fe; color: #0369a1; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; margin-top: 4px; }
+            .photo-wrap { margin: 12px auto; width: 80px; height: 80px; border-radius: 14px; overflow: hidden; border: 2px solid #93C5FD; display: flex; align-items: center; justify-content: center; background: #f1f5f9; }
+            .photo-wrap img { width: 100%; height: 100%; object-fit: cover; }
             .name { font-size: 18px; font-weight: 900; color: #0f172a; margin: 10px 0 2px 0; text-transform: uppercase; }
             .id-code { font-family: monospace; font-size: 13px; font-weight: 700; color: #0038A8; margin: 0 0 6px 0; }
             .category { display: inline-block; background: #f3e8ff; color: #6b21a8; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; margin-bottom: 6px; }
@@ -573,6 +592,11 @@ export default function BeneficiaryListPage() {
               <h2 class="agency">${user?.role === 'mswdo_admin' ? 'Municipal Social Welfare & Development Office' : 'DSWD / MSWDO Bongabong'}</h2>
               <div class="badge">Temporary Digital ID • Claim Pass</div>
             </div>
+            ${printPhotoUrl ? `
+              <div class="photo-wrap">
+                <img src="${printPhotoUrl}" alt="Profile" />
+              </div>
+            ` : ''}
             <div class="name">${qrPassData.full_name}</div>
             <div class="id-code">${qrPassData.household_id_number || qrPassData.beneficiary_id_code}</div>
             <div class="category">${qrPassData.category}</div>
@@ -597,6 +621,267 @@ export default function BeneficiaryListPage() {
     `;
     printWindow.document.write(htmlContent);
     printWindow.document.close();
+  };
+
+  const handleDownloadQrPass = async () => {
+    if (!qrPassData) return;
+    setDownloadingQrPass(true);
+    try {
+      const canvas = document.createElement('canvas');
+      const width = 640;
+      const height = 860;
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      // Outer card background
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.roundRect(10, 10, width - 20, height - 20, 24);
+      ctx.fill();
+
+      // Outer border
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#002B49';
+      ctx.stroke();
+
+      // Inner subtle card background
+      const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
+      bgGradient.addColorStop(0, '#FFFFFF');
+      bgGradient.addColorStop(1, '#F8FAFC');
+      ctx.fillStyle = bgGradient;
+      ctx.beginPath();
+      ctx.roundRect(14, 14, width - 28, height - 28, 20);
+      ctx.fill();
+
+      // Top decorative bar
+      ctx.fillStyle = '#002B49';
+      ctx.beginPath();
+      ctx.roundRect(14, 14, width - 28, 12, [20, 20, 0, 0]);
+      ctx.fill();
+
+      // Header text
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+      ctx.fillText('REPUBLIC OF THE PHILIPPINES', width / 2, 54);
+
+      ctx.fillStyle = '#002B49';
+      ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+      const agencyName = user?.role === 'mswdo_admin'
+        ? 'MUNICIPAL SOCIAL WELFARE & DEVELOPMENT OFFICE'
+        : 'DSWD / MSWDO BONGABONG';
+      ctx.fillText(agencyName, width / 2, 78);
+
+      // Pill badge: Temporary Digital ID • Claim Pass
+      const badgeText = 'TEMPORARY DIGITAL ID • CLAIM PASS';
+      ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+      const badgeWidth = ctx.measureText(badgeText).width + 24;
+      const badgeX = (width - badgeWidth) / 2;
+      const badgeY = 92;
+      ctx.fillStyle = '#DBEAFE';
+      ctx.beginPath();
+      ctx.roundRect(badgeX, badgeY, badgeWidth, 22, 11);
+      ctx.fill();
+      ctx.fillStyle = '#1E40AF';
+      ctx.fillText(badgeText, width / 2, badgeY + 15);
+
+      // Separator line
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(35, 128);
+      ctx.lineTo(width - 35, 128);
+      ctx.stroke();
+
+      // Beneficiary Row: Photo + Details
+      const photoSize = 100;
+      const photoX = 35;
+      const photoY = 145;
+
+      // Load profile photo if available
+      let photoDrawn = false;
+      const photoUrl = resolvePhotoUrl(
+        qrPassData.profile_picture ||
+        qrPassData.profile_photo ||
+        qrModalBeneficiary?.profile_picture ||
+        qrModalBeneficiary?.User?.profile_picture
+      );
+
+      if (photoUrl && !qrPhotoError) {
+        try {
+          const photoImg = new Image();
+          photoImg.crossOrigin = 'anonymous';
+          await new Promise((resolve, reject) => {
+            photoImg.onload = resolve;
+            photoImg.onerror = reject;
+            photoImg.src = photoUrl;
+          });
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.roundRect(photoX, photoY, photoSize, photoSize, 14);
+          ctx.clip();
+          ctx.drawImage(photoImg, photoX, photoY, photoSize, photoSize);
+          ctx.restore();
+
+          ctx.strokeStyle = '#93C5FD';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(photoX, photoY, photoSize, photoSize, 14);
+          ctx.stroke();
+          photoDrawn = true;
+        } catch (err) {
+          console.warn('Could not load photo for pass canvas:', err);
+        }
+      }
+
+      if (!photoDrawn) {
+        ctx.fillStyle = '#F1F5F9';
+        ctx.beginPath();
+        ctx.roundRect(photoX, photoY, photoSize, photoSize, 14);
+        ctx.fill();
+        ctx.strokeStyle = '#CBD5E1';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#94A3B8';
+        ctx.font = 'bold 36px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        const initials = (qrPassData.first_name?.[0] || '') + (qrPassData.last_name?.[0] || '');
+        ctx.fillText(initials || 'ID', photoX + photoSize / 2, photoY + photoSize / 2 + 12);
+      }
+
+      // Beneficiary Details (Left-aligned next to photo)
+      ctx.textAlign = 'left';
+      const textX = photoX + photoSize + 18;
+
+      // Full name
+      ctx.fillStyle = '#0F172A';
+      ctx.font = 'bold 18px system-ui, -apple-system, sans-serif';
+      ctx.fillText(qrPassData.full_name || '', textX, photoY + 24);
+
+      // Household / ID
+      ctx.fillStyle = '#1D4ED8';
+      ctx.font = 'bold 13px monospace, monospace';
+      const idLabel = qrPassData.category?.toLowerCase().includes('4ps') ? 'HH No: ' : 'ID: ';
+      const idVal = qrPassData.household_id_number || qrPassData.beneficiary_id_code || 'N/A';
+      ctx.fillText(`${idLabel}${idVal}`, textX, photoY + 46);
+
+      // Category Pill
+      if (qrPassData.category) {
+        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+        const catWidth = ctx.measureText(qrPassData.category).width + 16;
+        ctx.fillStyle = '#F3E8FF';
+        ctx.beginPath();
+        ctx.roundRect(textX, photoY + 56, catWidth, 20, 6);
+        ctx.fill();
+        ctx.fillStyle = '#6B21A8';
+        ctx.fillText(qrPassData.category, textX + 8, photoY + 70);
+      }
+
+      // Barangay
+      ctx.fillStyle = '#475569';
+      ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
+      ctx.fillText(`Brgy. ${qrPassData.barangay || 'N/A'}`, textX, photoY + 94);
+
+      // QR Box in Center
+      const qrBoxX = 50;
+      const qrBoxY = 270;
+      const qrBoxWidth = width - 100;
+      const qrBoxHeight = 440;
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.roundRect(qrBoxX, qrBoxY, qrBoxWidth, qrBoxHeight, 20);
+      ctx.fill();
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Load QR Image
+      if (qrPassData.qr_image_url) {
+        const qrImg = new Image();
+        await new Promise((resolve, reject) => {
+          qrImg.onload = resolve;
+          qrImg.onerror = reject;
+          qrImg.src = qrPassData.qr_image_url;
+        });
+
+        const qrSize = 250;
+        const qrX = (width - qrSize) / 2;
+        const qrY = qrBoxY + 30;
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.roundRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24, 16);
+        ctx.fill();
+        ctx.strokeStyle = '#E2E8F0';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+      }
+
+      // Security Token
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'bold 11px monospace, monospace';
+      const tokenStr = qrPassData.qr_token
+        ? `SECURITY TOKEN: ${qrPassData.qr_token.slice(0, 16)}...`
+        : `CODE: ${qrPassData.qr_code || ''}`;
+      ctx.fillText(tokenStr, width / 2, qrBoxY + 340);
+
+      // Advisory Text
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
+      ctx.fillText('I-scan ang QR code na ito para sa payout verification & attendance', width / 2, qrBoxY + 372);
+
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = 'normal 11px system-ui, -apple-system, sans-serif';
+      ctx.fillText('Valid government temporary claim stub • Tamper-resistant cryptographic token', width / 2, qrBoxY + 394);
+
+      // Footer Info
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(35, 760);
+      ctx.lineTo(width - 35, 760);
+      ctx.stroke();
+
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'normal 11px system-ui, -apple-system, sans-serif';
+      ctx.textAlign = 'left';
+      const rfidText = qrPassData.RFID_number
+        ? `RFID Card: ${qrPassData.RFID_number}`
+        : 'RFID Card: Walang RFID (Temporary QR Active)';
+      ctx.fillText(rfidText, 35, 790);
+
+      ctx.textAlign = 'right';
+      const issuedDate = new Date(qrPassData.qr_generated_at || Date.now()).toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+      ctx.fillText(`Issued: ${issuedDate}`, width - 35, 790);
+
+      // Trigger download
+      const link = document.createElement('a');
+      const safeName = (qrPassData.full_name || 'beneficiary').replace(/[^a-zA-Z0-9]/g, '_');
+      link.download = `Digital_QR_Pass_${safeName}.png`;
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Failed to download QR pass:', error);
+      alert('Hindi ma-download ang QR Pass. Subukang muli.');
+    } finally {
+      setDownloadingQrPass(false);
+    }
   };
 
   const columns = [
@@ -2945,16 +3230,22 @@ export default function BeneficiaryListPage() {
                     <div className="flex items-start gap-4">
                       {/* Photo or Avatar */}
                       <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 border-2 border-blue-200 shrink-0 flex items-center justify-center shadow-xs">
-                        {qrPassData.profile_photo ? (
-                          <img
-                            src={qrPassData.profile_photo.startsWith('http') ? qrPassData.profile_photo : `${backendUrl}${qrPassData.profile_photo}`}
-                            alt={qrPassData.full_name}
-                            className="w-full h-full object-cover"
-                            crossOrigin="anonymous"
-                          />
-                        ) : (
-                          <User className="w-10 h-10 text-slate-400" />
-                        )}
+                        {(() => {
+                          const rawPhoto = qrPassData.profile_picture || qrPassData.profile_photo || qrModalBeneficiary?.profile_picture || qrModalBeneficiary?.User?.profile_picture;
+                          const photoSrc = resolvePhotoUrl(rawPhoto);
+                          if (photoSrc && !qrPhotoError) {
+                            return (
+                              <img
+                                src={photoSrc}
+                                alt={qrPassData.full_name}
+                                className="w-full h-full object-cover"
+                                crossOrigin="anonymous"
+                                onError={() => setQrPhotoError(true)}
+                              />
+                            );
+                          }
+                          return <User className="w-10 h-10 text-slate-400" />;
+                        })()}
                       </div>
 
                       {/* Info Text */}
@@ -3036,14 +3327,25 @@ export default function BeneficiaryListPage() {
 
               <div className="flex items-center gap-2 ml-auto">
                 {qrPassData && (
-                  <button
-                    type="button"
-                    onClick={handlePrintQrPass}
-                    className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    I-print ang Pass
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDownloadQrPass}
+                      disabled={downloadingQrPass}
+                      className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Download className={`w-3.5 h-3.5 ${downloadingQrPass ? 'animate-bounce' : ''}`} />
+                      {downloadingQrPass ? 'Dina-download...' : 'I-download ang Pass'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePrintQrPass}
+                      className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      I-print ang Pass
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"

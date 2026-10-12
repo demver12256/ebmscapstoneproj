@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { interventionApi } from '../services/api';
+import { API_ORIGIN } from '../config/api';
 import {
   FileHeart, Upload, Clock, CheckCircle, XCircle, Plus, Edit2, Trash2,
-  Calendar, Building2, AlertCircle, FileText, X, Check, Eye
+  Building2, AlertCircle, X, Eye,
+  Paperclip, Download, ExternalLink
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -67,7 +69,12 @@ export default function MyInterventionsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [toast, setToast] = useState(null);
-  const [selectedIntervention, setSelectedIntervention] = useState(null);
+  const [documentPreviewUrl, setDocumentPreviewUrl] = useState(null);
+
+  const getDocumentUrl = (path) => {
+    if (!path) return null;
+    return `${API_ORIGIN}${path}`;
+  };
 
   const [form, setForm] = useState({
     agency_name: '',
@@ -377,17 +384,46 @@ export default function MyInterventionsPage() {
             {/* Proof Document */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Proof Document (Receipt, Certificate, etc.)
+                Proof Document (Receipt, Certificate, Medical Slip, atbp.)
               </label>
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.webp"
-                onChange={(e) => setForm({ ...form, proof_document: e.target.files[0] })}
-                className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Max 10MB. Accepted formats: PDF, JPG, PNG, WEBP
-              </p>
+              {form.proof_document ? (
+                <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Paperclip className="w-4 h-4 text-blue-600 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 truncate">{form.proof_document.name}</p>
+                      <p className="text-[10px] text-slate-500">{(form.proof_document.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, proof_document: null })}
+                    className="p-1 hover:bg-blue-100 rounded-lg text-rose-500"
+                    title="Alisin ang file"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="border-2 border-dashed border-slate-200 hover:border-blue-400 rounded-xl p-4 bg-slate-50/60 text-center transition">
+                  <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1.5" />
+                  <p className="text-xs font-semibold text-slate-700">Mag-attach ng katibayan o resibo</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">PDF, JPG, PNG, WEBP (Hanggang 10MB)</p>
+                  <label className="inline-block mt-2 px-3 py-1 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-xs font-bold text-blue-600 cursor-pointer shadow-2xs transition">
+                    <span>Pumili ng File</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) {
+                          setForm({ ...form, proof_document: e.target.files[0] });
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
@@ -487,15 +523,15 @@ export default function MyInterventionsPage() {
 
                   <div className="flex items-center gap-2">
                     {intervention.proof_document_url && (
-                      <a
-                        href={`${process.env.REACT_APP_API_URL?.replace('/api', '') || 'http://localhost:5000'}${intervention.proof_document_url}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="View Document"
+                      <button
+                        type="button"
+                        onClick={() => setDocumentPreviewUrl(getDocumentUrl(intervention.proof_document_url))}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold"
+                        title="Tingnan ang Katibayan / Proof Document"
                       >
                         <Eye className="w-4 h-4" />
-                      </a>
+                        <span className="hidden sm:inline">Katibayan</span>
+                      </button>
                     )}
                     
                     {intervention.status !== 'Verified' && (
@@ -523,6 +559,78 @@ export default function MyInterventionsPage() {
           })
         )}
       </div>
+
+      {/* ━━━ In-App Proof Document Preview Modal (Matching Image 3) ━━━ */}
+      {documentPreviewUrl && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-4 shadow-2xl flex flex-col max-h-[92vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <Paperclip className="w-4 h-4 text-blue-600" />
+                Proof Document Preview
+              </span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={documentPreviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition"
+                  title="Open original in new tab"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setDocumentPreviewUrl(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-2 flex items-center justify-center bg-slate-100 rounded-xl my-2">
+              {documentPreviewUrl.toLowerCase().endsWith('.pdf') ? (
+                <iframe
+                  src={documentPreviewUrl}
+                  title="PDF Document"
+                  className="w-full h-[65vh] rounded-lg"
+                />
+              ) : (
+                <img
+                  src={documentPreviewUrl}
+                  alt="Proof Document"
+                  className="max-h-[68vh] max-w-full object-contain rounded-lg shadow-sm"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = '/beniaid-logo.png';
+                  }}
+                />
+              )}
+            </div>
+
+            <div className="pt-2 flex items-center justify-between">
+              <a
+                href={documentPreviewUrl}
+                download
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl text-xs hover:bg-emerald-700 transition shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>I-download ang File</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setDocumentPreviewUrl(null)}
+                className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl text-xs hover:bg-slate-800 transition"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
