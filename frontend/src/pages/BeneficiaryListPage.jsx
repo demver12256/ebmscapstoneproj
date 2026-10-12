@@ -2868,6 +2868,22 @@ export default function BeneficiaryListPage() {
                 )}
               </div>
             </div>
+
+            {/* Modern Confirmation Modal matching Image 2 floating directly on top of Image 1 */}
+            <ConfirmModal
+              isOpen={showApproveConfirm}
+              title="Approve Application"
+              message="Are you sure you want to approve this application"
+              targetName={selectedApp ? [selectedApp.first_name, selectedApp.last_name].filter(Boolean).join(' ') : ''}
+              note="This will issue a unique Beneficiary ID code. This action cannot be undone."
+              noteType="danger"
+              confirmText="Approve"
+              cancelText="Cancel"
+              confirmVariant="primary"
+              loading={approvingLoading}
+              onConfirm={confirmApproveApplication}
+              onCancel={() => setShowApproveConfirm(false)}
+            />
           </div>
         </div>
       )}
@@ -3041,22 +3057,6 @@ export default function BeneficiaryListPage() {
           </div>
         </div>
       )}
-
-      {/* Modern Confirmation Modal matching Image 2 */}
-      <ConfirmModal
-        isOpen={showApproveConfirm}
-        title="Approve Application"
-        message="Are you sure you want to approve this application for"
-        targetName={selectedApp ? `${selectedApp.first_name} ${selectedApp.last_name}` : ''}
-        note="This will issue a unique Beneficiary ID code. This action cannot be undone."
-        noteType="danger"
-        confirmText="Approve"
-        cancelText="Cancel"
-        confirmVariant="primary"
-        loading={approvingLoading}
-        onConfirm={confirmApproveApplication}
-        onCancel={() => setShowApproveConfirm(false)}
-      />
     </div>
   );
 }
