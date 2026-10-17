@@ -171,7 +171,12 @@ const connectDatabase = async () => {
   }
   // alter:{drop:false} adds new columns/tables but skips re-creating existing indexes,
   // preventing the duplicate _2, _3... index buildup that hits MySQL's 64-key limit.
-  await sequelize.sync({ alter: { drop: false } });
+  if (process.env.NODE_ENV === 'production') {
+  // Do NOT sync. Run migrations separately in CI/CD.
+  } else {
+    await sequelize.sync({ alter: { drop: false } });
+  }
+  
   console.log('MySQL database connection established successfully.');
 
   // Issue QR passes to approved beneficiaries that don't have one yet
