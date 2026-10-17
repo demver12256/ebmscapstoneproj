@@ -30,7 +30,10 @@ const { errorHandler } = require('./middleware/error.middleware');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
-  process.env.FRONTEND_URL,
+  'https://ebms.world',
+  'https://www.ebms.world',
+  'https://ebmscapstoneproj-production.up.railway.app', // The Railway frontend URL
+  process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, '') : null, // Strip trailing slash if it exists
   'http://localhost:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3000',
