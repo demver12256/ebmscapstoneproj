@@ -36,6 +36,48 @@ function parseTargetBarangayIds(input) {
   return bIds.map(Number).filter(id => !isNaN(id) && id > 0);
 }
 
+// Helper function to safely parse target_sitios input into an array of non-empty strings
+function parseTargetSitios(input) {
+  if (!input) return [];
+  let sitios = [];
+  if (typeof input === 'string') {
+    try { sitios = JSON.parse(input); } catch (e) { sitios = [input]; }
+  } else if (Array.isArray(input)) {
+    sitios = input;
+  } else {
+    sitios = [input];
+  }
+  if (!Array.isArray(sitios)) sitios = [sitios];
+  return sitios
+    .map((s) => String(s || '').trim())
+    .filter((s) => s.length > 0);
+}
+
+function normalizeSitioName(val) {
+  return String(val || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^(sitio|purok|brgy\.?|barangay)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function beneficiaryMatchesSitios(beneficiary, targetSitiosInput) {
+  const targetSitios = parseTargetSitios(targetSitiosInput);
+  if (targetSitios.length === 0) return true; // Empty means all sitios in the target barangay(s)
+
+  const benSitioRaw = String(beneficiary?.sitio || '').trim().toLowerCase();
+  if (!benSitioRaw) return false;
+
+  const benSitioNorm = normalizeSitioName(benSitioRaw);
+  return targetSitios.some((target) => {
+    const tRaw = String(target || '').trim().toLowerCase();
+    const tNorm = normalizeSitioName(tRaw);
+    if (!tRaw) return false;
+    return benSitioRaw === tRaw || (benSitioNorm && tNorm && benSitioNorm === tNorm);
+  });
+}
+
 function getBeneficiaryAnnouncementCutoff(beneficiary) {
   const value = beneficiary?.approved_at || beneficiary?.approval_date || beneficiary?.createdAt || beneficiary?.created_at;
   if (!value) return null;
@@ -98,8 +140,8 @@ async function removeHistoricalAnnouncementRecords(beneficiary, userId, recipien
   return new Set(recipientIds);
 }
 
-// Helper function to find target matching beneficiaries directly by Barangay & Category (Approved beneficiaries)
-async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsInput) {
+// Helper function to find target matching beneficiaries directly by Barangay, Category & optional Sitio (Approved beneficiaries)
+async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsInput, targetSitiosInput = []) {
   let catList = [];
   if (typeof targetCategoriesOrPrograms === 'string') {
     try { catList = JSON.parse(targetCategoriesOrPrograms); } catch (e) { catList = [targetCategoriesOrPrograms]; }
@@ -176,6 +218,11 @@ async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsI
     ],
   });
 
+  const parsedSitios = parseTargetSitios(targetSitiosInput);
+  if (parsedSitios.length > 0) {
+    return matchingBeneficiaries.filter((b) => beneficiaryMatchesSitios(b, parsedSitios));
+  }
+
   return matchingBeneficiaries;
 }
 
@@ -183,7 +230,8 @@ async function getMatchingBeneficiaries(targetCategoriesOrPrograms, barangayIdsI
 async function dispatchAnnouncementNotifications(announcement, adminUserId, { forceResendSms = false } = {}) {
   const matchingBeneficiaries = await getMatchingBeneficiaries(
     announcement.target_programs,
-    announcement.target_barangays
+    announcement.target_barangays,
+    announcement.target_sitios
   );
 
   const previousAnnouncementSms = matchingBeneficiaries.length > 0
@@ -399,7 +447,8 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
 async function syncEditedCompletedAnnouncementRecipients(announcement) {
   const matchingBeneficiaries = await getMatchingBeneficiaries(
     announcement.target_programs,
-    announcement.target_barangays
+    announcement.target_barangays,
+    announcement.target_sitios
   );
   const matchingBeneficiaryIds = matchingBeneficiaries.map((beneficiary) => beneficiary.id);
   const matchingUserIds = matchingBeneficiaries.map((beneficiary) => beneficiary.user_id).filter(Boolean);
@@ -468,13 +517,49 @@ async function syncEditedCompletedAnnouncementRecipients(announcement) {
   return matchingBeneficiaries.length;
 }
 
-// ── GET /preview-count ── Preview matching beneficiary count (Admin/Staff/Barangay)
+// ── GET /preview-count ── Preview matching beneficiary count & available sitios (Admin/Staff/Barangay)
 router.get('/preview-count', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const { target_programs, target_categories, target_barangays } = req.query;
+    const { target_programs, target_categories, target_barangays, target_sitios } = req.query;
     const catsInput = target_categories || target_programs;
-    const matches = await getMatchingBeneficiaries(catsInput, target_barangays);
-    res.json({ success: true, count: matches.length });
+    const allBarangayMatches = await getMatchingBeneficiaries(catsInput, target_barangays, []);
+
+    const sitioMap = new Map();
+    allBarangayMatches.forEach((b) => {
+      const rawSitio = String(b.sitio || '').trim();
+      if (!rawSitio) return;
+      const key = normalizeSitioName(rawSitio) || rawSitio.toLowerCase();
+      if (!sitioMap.has(key)) {
+        sitioMap.set(key, { sitio: rawSitio, count: 0 });
+      }
+      sitioMap.get(key).count += 1;
+    });
+
+    const bIds = parseTargetBarangayIds(target_barangays);
+    if (bIds.length > 0) {
+      const allBrgyApproved = await Beneficiary.findAll({
+        where: { status: 'Approved', barangay_id: { [Op.in]: bIds } },
+        attributes: ['sitio'],
+        raw: true,
+      });
+      allBrgyApproved.forEach((b) => {
+        const rawSitio = String(b.sitio || '').trim();
+        if (!rawSitio) return;
+        const key = normalizeSitioName(rawSitio) || rawSitio.toLowerCase();
+        if (!sitioMap.has(key)) {
+          sitioMap.set(key, { sitio: rawSitio, count: 0 });
+        }
+      });
+    }
+
+    const availableSitios = Array.from(sitioMap.values()).sort((a, b) => a.sitio.localeCompare(b.sitio));
+    const matches = allBarangayMatches.filter((b) => beneficiaryMatchesSitios(b, target_sitios));
+
+    res.json({
+      success: true,
+      count: matches.length,
+      available_sitios: availableSitios,
+    });
   } catch (error) {
     next(error);
   }
@@ -541,7 +626,9 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
         targetBarangays.length === 0 ||
         (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
 
-      if (matchesBarangay && matchesCategory) {
+      const matchesSitio = beneficiaryMatchesSitios(beneficiary, ann.target_sitios);
+
+      if (matchesBarangay && matchesCategory && matchesSitio) {
         const timeToCheck = ann.end_time || '23:59';
         const expireTime = parseDateTime(ann.event_date, timeToCheck, ann.event_time);
         const isEnded = ann.status === 'completed' || (expireTime && new Date() >= expireTime);
@@ -631,7 +718,9 @@ router.get('/my-attendance', authorize('beneficiary'), async (req, res, next) =>
         });
       }
 
-      if (matchesBarangay && matchesCategory) {
+      const matchesSitio = beneficiaryMatchesSitios(beneficiary, r.Announcement.target_sitios);
+
+      if (matchesBarangay && matchesCategory && matchesSitio) {
         const item = r.Announcement.toJSON();
         item.attendance_status = r.attendance_status; // 'Pending' | 'Present' | 'Absent'
         item.scanned_at = r.scanned_at;
@@ -724,7 +813,7 @@ router.get('/', async (req, res, next) => {
         console.error('Error syncing beneficiary category:', e);
       }
 
-      // Auto-link any published or completed announcements targeting this beneficiary's barangay/category
+      // Auto-link any published or completed announcements targeting this beneficiary's barangay/category/sitio
       const publishedAnnouncements = await Announcement.findAll({
         where: { status: { [Op.in]: ['published', 'completed'] } },
       });
@@ -766,7 +855,9 @@ router.get('/', async (req, res, next) => {
           targetBarangays.length === 0 ||
           (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
 
-        if (matchesBarangay && matchesCategory) {
+        const matchesSitio = beneficiaryMatchesSitios(beneficiary, ann.target_sitios);
+
+        if (matchesBarangay && matchesCategory && matchesSitio) {
           const timeToCheck = ann.end_time || '23:59';
           const expireTime = parseDateTime(ann.event_date, timeToCheck, ann.event_time);
           const isEnded = ann.status === 'completed' || (expireTime && new Date() >= expireTime);
@@ -855,7 +946,9 @@ router.get('/', async (req, res, next) => {
           });
         }
 
-        if (matchesBarangay && matchesCategory) {
+        const matchesSitio = beneficiaryMatchesSitios(beneficiary, r.Announcement.target_sitios);
+
+        if (matchesBarangay && matchesCategory && matchesSitio) {
           const plain = r.Announcement.toJSON();
           plain.is_reissued_for_beneficiary = announcementWasReissuedAfter(
             r.Announcement,
@@ -1181,6 +1274,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       expiration_date,
       target_programs = [],
       target_barangays = [],
+      target_sitios = [],
       notify_mswdo = false,
     } = req.body;
 
@@ -1198,6 +1292,8 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       return res.status(400).json({ success: false, message: 'At least one target barangay must be selected' });
     }
 
+    const parsedSitios = parseTargetSitios(target_sitios);
+
     const announcement = await Announcement.create({
       title,
       message,
@@ -1211,6 +1307,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       expiration_date: expiration_date || null,
       target_programs: targetCatsOrProgs,
       target_barangays: parsedBarangays,
+      target_sitios: parsedSitios,
       notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : false,
       created_by_user_id: req.user.id,
       recipient_count: 0,
@@ -1719,6 +1816,7 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       target_programs,
       target_categories,
       target_barangays,
+      target_sitios,
       notify_mswdo,
     } = req.body;
 
@@ -1737,6 +1835,10 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       ? parseTargetBarangayIds(target_barangays) 
       : parseTargetBarangayIds(announcement.target_barangays);
 
+    const updatedSitios = target_sitios !== undefined
+      ? parseTargetSitios(target_sitios)
+      : parseTargetSitios(announcement.target_sitios);
+
     await announcement.update({
       title: title ?? announcement.title,
       message: message ?? announcement.message,
@@ -1749,6 +1851,7 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       expiration_date: expiration_date !== undefined ? expiration_date : announcement.expiration_date,
       target_programs: targetCatsOrProgs,
       target_barangays: updatedBarangays,
+      target_sitios: updatedSitios,
       beneficiary_visibility_at: new Date(),
       notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : announcement.notify_mswdo,
     });

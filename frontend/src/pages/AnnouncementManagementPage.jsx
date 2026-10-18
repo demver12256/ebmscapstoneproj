@@ -262,6 +262,9 @@ export default function AnnouncementManagementPage() {
   // Form State
   const [bgySelectionMode, setBgySelectionMode] = useState('single'); // 'single' | 'multiple'
   const [bgySearchFilter, setBgySearchFilter] = useState('');
+  const [sitioSelectionMode, setSitioSelectionMode] = useState('all'); // 'all' | 'specific'
+  const [availableSitios, setAvailableSitios] = useState([]);
+  const [customSitioInput, setCustomSitioInput] = useState('');
   const [formData, setFormData] = useState({
     title: '',
     message: '',
@@ -275,6 +278,7 @@ export default function AnnouncementManagementPage() {
     target_categories: [...activeAllowedCategories],
     target_programs: [],
     target_barangays: [],
+    target_sitios: [],
     notify_mswdo: false,
   });
 
@@ -295,6 +299,7 @@ export default function AnnouncementManagementPage() {
         target_categories: (prev.target_categories && prev.target_categories.length > 0) ? prev.target_categories : [...activeAllowedCategories],
         target_programs: loadedPrograms.map((p) => p.id),
         target_barangays: prev.target_barangays || [],
+        target_sitios: prev.target_sitios || [],
       }));
     } catch (err) {
       console.error('Failed to load programs/barangays metadata:', err);
@@ -335,11 +340,17 @@ export default function AnnouncementManagementPage() {
   }, [fetchAnnouncements]);
 
   // Live preview counter when target selections change
-  const updateTargetPreview = useCallback(async (categories, bIds) => {
+  const updateTargetPreview = useCallback(async (categories, bIds, sitios) => {
     const activeCats = categories || [];
     const activeBgrais = bIds || [];
+    const activeSitios = sitios || [];
 
-    if (activeCats.length === 0 || activeBgrais.length === 0) {
+    if (activeBgrais.length === 0) {
+      setPreviewCount(0);
+      setAvailableSitios([]);
+      return;
+    }
+    if (activeCats.length === 0) {
       setPreviewCount(0);
       return;
     }
@@ -348,8 +359,12 @@ export default function AnnouncementManagementPage() {
       const res = await announcementApi.previewTargetCount({
         target_categories: JSON.stringify(activeCats),
         target_barangays: JSON.stringify(activeBgrais),
+        target_sitios: JSON.stringify(activeSitios),
       });
       setPreviewCount(res.data?.count || 0);
+      if (Array.isArray(res.data?.available_sitios)) {
+        setAvailableSitios(res.data.available_sitios);
+      }
     } catch (err) {
       console.error('Failed to update target preview count:', err);
     } finally {
@@ -359,9 +374,13 @@ export default function AnnouncementManagementPage() {
 
   useEffect(() => {
     if (isModalOpen) {
-      updateTargetPreview(formData.target_categories || [], formData.target_barangays || []);
+      updateTargetPreview(
+        formData.target_categories || [],
+        formData.target_barangays || [],
+        formData.target_sitios || []
+      );
     }
-  }, [formData.target_categories, formData.target_barangays, isModalOpen, updateTargetPreview]);
+  }, [formData.target_categories, formData.target_barangays, formData.target_sitios, isModalOpen, updateTargetPreview]);
 
   const parseBarangayIds = (input) => {
     if (!input) return [];
@@ -375,6 +394,20 @@ export default function AnnouncementManagementPage() {
     }
     if (!Array.isArray(bIds)) bIds = [bIds];
     return bIds.map(Number).filter((id) => !isNaN(id) && id > 0);
+  };
+
+  const parseSitios = (input) => {
+    if (!input) return [];
+    let list = [];
+    if (typeof input === 'string') {
+      try { list = JSON.parse(input); } catch (e) { list = [input]; }
+    } else if (Array.isArray(input)) {
+      list = input;
+    } else {
+      list = [input];
+    }
+    if (!Array.isArray(list)) list = [list];
+    return list.map((s) => String(s || '').trim()).filter((s) => s.length > 0);
   };
 
   const mapCategoriesToProgramIds = (selectedCategories, allPrograms) => {
@@ -400,6 +433,9 @@ export default function AnnouncementManagementPage() {
     setEditingAnnouncement(null);
     setBgySelectionMode('single');
     setBgySearchFilter('');
+    setSitioSelectionMode('all');
+    setAvailableSitios([]);
+    setCustomSitioInput('');
     setFormData({
       title: '',
       message: '',
@@ -415,6 +451,7 @@ export default function AnnouncementManagementPage() {
       target_categories: [...activeAllowedCategories],
       target_programs: mapCategoriesToProgramIds(activeAllowedCategories, programs),
       target_barangays: [], // Default to empty so admin MUST explicitly pick the target barangay
+      target_sitios: [],
       notify_mswdo: false,
     });
     setIsModalOpen(true);
@@ -443,8 +480,11 @@ export default function AnnouncementManagementPage() {
     });
 
     const parsedTargetBarangays = parseBarangayIds(ann.target_barangays);
+    const parsedTargetSitios = parseSitios(ann.target_sitios);
     setBgySelectionMode(parsedTargetBarangays.length === 1 ? 'single' : 'multiple');
     setBgySearchFilter('');
+    setSitioSelectionMode(parsedTargetSitios.length > 0 ? 'specific' : 'all');
+    setCustomSitioInput('');
 
     setFormData({
       title: ann.title || '',
@@ -461,6 +501,7 @@ export default function AnnouncementManagementPage() {
       target_categories: matchedCategories.length > 0 ? matchedCategories : [...activeAllowedCategories],
       target_programs: annPrograms.length > 0 ? annPrograms : programs.map((p) => p.id),
       target_barangays: parsedTargetBarangays,
+      target_sitios: parsedTargetSitios,
       notify_mswdo: !!ann.notify_mswdo,
     });
     setIsModalOpen(true);
@@ -520,8 +561,38 @@ export default function AnnouncementManagementPage() {
       return {
         ...prev,
         target_barangays: allSelected ? [] : barangays.map((b) => Number(b.id)),
+        target_sitios: [],
       };
     });
+    setSitioSelectionMode('all');
+  };
+
+  const toggleSitioTarget = (sitioName) => {
+    const trimmed = String(sitioName || '').trim();
+    if (!trimmed) return;
+    setSitioSelectionMode('specific');
+    setFormData((prev) => {
+      const current = parseSitios(prev.target_sitios);
+      const exists = current.some((s) => s.toLowerCase() === trimmed.toLowerCase());
+      const updated = exists
+        ? current.filter((s) => s.toLowerCase() !== trimmed.toLowerCase())
+        : [...current, trimmed];
+      return { ...prev, target_sitios: updated };
+    });
+  };
+
+  const handleAddCustomSitio = () => {
+    const trimmed = String(customSitioInput || '').trim();
+    if (!trimmed) return;
+    setSitioSelectionMode('specific');
+    setFormData((prev) => {
+      const current = parseSitios(prev.target_sitios);
+      if (current.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
+        return prev;
+      }
+      return { ...prev, target_sitios: [...current, trimmed] };
+    });
+    setCustomSitioInput('');
   };
 
   // Submit announcement
@@ -536,11 +607,17 @@ export default function AnnouncementManagementPage() {
       alert('Please select at least one target barangay');
       return;
     }
+    const activeSitios = sitioSelectionMode === 'specific' ? parseSitios(formData.target_sitios) : [];
+    if (sitioSelectionMode === 'specific' && activeSitios.length === 0) {
+      alert('Pumili o maglagay ng kahit isang Sitio, o piliin ang "Lahat ng Sitio".');
+      return;
+    }
 
     const payload = {
       ...formData,
       target_categories: activeCats,
       target_programs: activeCats,
+      target_sitios: activeSitios,
     };
 
     setModalLoading(true);
@@ -958,6 +1035,14 @@ export default function AnnouncementManagementPage() {
                               {getBarangayNames(ann.target_barangays)}
                             </span>
                           </div>
+                          {parseSitios(ann.target_sitios).length > 0 && (
+                            <div>
+                              <span className="font-semibold text-slate-400 block text-[10px] uppercase">Target Sitio:</span>
+                              <span className="inline-block bg-amber-50 text-amber-900 font-bold px-2 py-0.5 rounded-md border border-amber-300">
+                                📍 {parseSitios(ann.target_sitios).join(', ')}
+                              </span>
+                            </div>
+                          )}
                           <div className="pt-0.5">
                             {ann.notify_mswdo ? (
                               <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
@@ -1420,9 +1505,11 @@ export default function AnnouncementManagementPage() {
                           value={formData.target_barangays.length === 1 ? formData.target_barangays[0] : ''}
                           onChange={(e) => {
                             const val = e.target.value;
+                            setSitioSelectionMode('all');
                             setFormData((prev) => ({
                               ...prev,
                               target_barangays: val ? [Number(val)] : [],
+                              target_sitios: [],
                             }));
                           }}
                           className="w-full px-3 py-2 bg-white border-2 border-emerald-400 rounded-xl font-bold text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 shadow-sm outline-none"
@@ -1483,23 +1570,185 @@ export default function AnnouncementManagementPage() {
                       </div>
                     )}
 
+                    {/* Target Sitio (Per-Sitio Announcement Filter) */}
+                    <div className="pt-2 border-t border-slate-200/80 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-[11px] font-black uppercase text-slate-700 flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Target Sitio <span className="text-[10px] font-semibold text-slate-400 normal-case">(Per Sitio o Lahat)</span></span>
+                        </label>
+                        <div className="flex items-center gap-1 bg-slate-200 p-0.5 rounded-lg text-[10px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSitioSelectionMode('all');
+                              setFormData((prev) => ({ ...prev, target_sitios: [] }));
+                            }}
+                            className={`px-2 py-0.5 rounded-md transition ${
+                              sitioSelectionMode === 'all'
+                                ? 'bg-amber-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Lahat ng Sitio
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSitioSelectionMode('specific')}
+                            className={`px-2 py-0.5 rounded-md transition ${
+                              sitioSelectionMode === 'specific'
+                                ? 'bg-amber-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Per Sitio Lamang
+                          </button>
+                        </div>
+                      </div>
+
+                      {sitioSelectionMode === 'specific' && (
+                        <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 space-y-2">
+                          {formData.target_barangays.length === 0 ? (
+                            <p className="text-[11px] text-amber-800 font-semibold">
+                              ⚠️ Pumili muna ng Target Barangay sa itaas upang lumabas ang mga rehistradong Sitio.
+                            </p>
+                          ) : (
+                            <>
+                              {availableSitios.length > 0 ? (
+                                <div className="space-y-1.5">
+                                  <span className="text-[10px] font-bold uppercase text-amber-900 block">
+                                    Piliin ang Sitio (mga rehistradong Sitio sa napiling Barangay):
+                                  </span>
+                                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+                                    {availableSitios.map((item) => {
+                                      const selected = parseSitios(formData.target_sitios).some(
+                                        (s) => s.toLowerCase() === item.sitio.toLowerCase()
+                                      );
+                                      return (
+                                        <button
+                                          key={item.sitio}
+                                          type="button"
+                                          onClick={() => toggleSitioTarget(item.sitio)}
+                                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                            selected
+                                              ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                                              : 'bg-white text-slate-700 border-amber-300 hover:bg-amber-100/60'
+                                          }`}
+                                        >
+                                          {selected ? (
+                                            <CheckSquare className="w-3.5 h-3.5 text-white shrink-0" />
+                                          ) : (
+                                            <Square className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                          )}
+                                          <span>{item.sitio}</span>
+                                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                                            selected ? 'bg-amber-800 text-amber-100' : 'bg-amber-100 text-amber-800'
+                                          }`}>
+                                            {item.count}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-[11px] text-slate-600 font-medium">
+                                  Walang naka-record na partikular na Sitio sa mga kasalukuyang benepisyaryo ng barangay na ito, ngunit maaari kang mag-type ng Sitio sa ibaba:
+                                </p>
+                              )}
+
+                              {/* Custom Sitio Input */}
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <input
+                                  type="text"
+                                  value={customSitioInput}
+                                  onChange={(e) => setCustomSitioInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleAddCustomSitio();
+                                    }
+                                  }}
+                                  placeholder="Mag-type ng Sitio (hal. Sitio Centro)..."
+                                  className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 font-semibold text-slate-800"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAddCustomSitio}
+                                  className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition shrink-0"
+                                >
+                                  + Idagdag
+                                </button>
+                              </div>
+
+                              {/* Selected Sitios Chips */}
+                              {parseSitios(formData.target_sitios).length > 0 && (
+                                <div className="flex items-center justify-between gap-2 pt-1 border-t border-amber-200/80">
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    <span className="text-[10px] font-extrabold text-amber-900 uppercase mr-1">Napiling Sitio:</span>
+                                    {parseSitios(formData.target_sitios).map((sitio) => (
+                                      <span
+                                        key={sitio}
+                                        className="inline-flex items-center gap-1 bg-amber-100 text-amber-950 border border-amber-400 px-2 py-0.5 rounded-md text-[11px] font-bold"
+                                      >
+                                        📍 {sitio}
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleSitioTarget(sitio)}
+                                          className="text-amber-700 hover:text-red-600 font-black ml-0.5"
+                                          title="Alisin ang Sitio"
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setFormData((prev) => ({ ...prev, target_sitios: [] }))}
+                                    className="text-[10px] font-bold text-red-600 hover:underline shrink-0"
+                                  >
+                                    I-clear
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Directing Notice Banner */}
                     {formData.target_barangays.length === 1 ? (
                       <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 text-xs text-emerald-950 font-bold flex items-start gap-2">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                         <div>
                           <span>
-                            Direktang Target: <strong>Barangay {barangays.find((b) => Number(b.id) === Number(formData.target_barangays[0]))?.barangay_name || 'Napili'}</strong> lamang.
+                            Direktang Target: <strong>Barangay {barangays.find((b) => Number(b.id) === Number(formData.target_barangays[0]))?.barangay_name || 'Napili'}</strong>
+                            {parseSitios(formData.target_sitios).length > 0 ? (
+                              <span className="text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-md ml-1">
+                                📍 Sitio: {parseSitios(formData.target_sitios).join(', ')} lamang
+                              </span>
+                            ) : (
+                              ' (Lahat ng Sitio)'
+                            )}
                           </span>
                           <p className="text-[11px] font-medium text-emerald-800 mt-0.5">
-                            Ang mga Staff at Benepisyaryo lamang ng barangay na ito ang makakatanggap ng notification at makakakita sa anunsyo.
+                            {parseSitios(formData.target_sitios).length > 0
+                              ? `Ang mga rehistradong benepisyaryo lamang sa Sitio ${parseSitios(formData.target_sitios).join(', ')} ng barangay na ito ang makakatanggap ng SMS/notification at makakakita sa anunsyo.`
+                              : 'Ang mga Staff at Benepisyaryo lamang ng barangay na ito ang makakatanggap ng notification at makakakita sa anunsyo.'}
                           </p>
                         </div>
                       </div>
                     ) : formData.target_barangays.length > 1 ? (
-                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-2 text-xs text-blue-900 font-semibold flex items-center gap-1.5">
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-2 text-xs text-blue-900 font-semibold flex items-center gap-1.5 flex-wrap">
                         <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span>Naka-target sa <strong>{formData.target_barangays.length}</strong> na mga Barangay.</span>
+                        <span>
+                          Naka-target sa <strong>{formData.target_barangays.length}</strong> na mga Barangay
+                          {parseSitios(formData.target_sitios).length > 0
+                            ? ` (📍 Sitio: ${parseSitios(formData.target_sitios).join(', ')} lamang)`
+                            : ' (Lahat ng Sitio)'}.
+                        </span>
                       </div>
                     ) : (
                       <div className="bg-amber-50 border border-amber-300 rounded-xl p-2 text-xs text-amber-900 font-semibold flex items-center gap-1.5">

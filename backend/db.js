@@ -169,6 +169,12 @@ const connectDatabase = async () => {
   } catch (err) {
     // Ignore error if table does not exist yet or already nullable
   }
+  try {
+    // Ensure target_sitios column exists on announcements table for per-sitio targeting
+    await sequelize.query('ALTER TABLE announcements ADD COLUMN target_sitios JSON NULL');
+  } catch (err) {
+    // Ignore error if column already exists
+  }
   // alter:{drop:false} adds new columns/tables but skips re-creating existing indexes,
   // preventing the duplicate _2, _3... index buildup that hits MySQL's 64-key limit.
   if (process.env.NODE_ENV === 'production') {

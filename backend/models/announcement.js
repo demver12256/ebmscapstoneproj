@@ -62,6 +62,12 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: [],
         comment: 'Array of barangay IDs e.g. [3, 5]',
       },
+      target_sitios: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+        comment: 'Optional array of target sitio names e.g. ["Sitio Centro"]. Empty means all sitios in target_barangays.',
+      },
       notify_mswdo: {
         type: DataTypes.BOOLEAN,
         allowNull: false,

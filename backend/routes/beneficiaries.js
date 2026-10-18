@@ -772,6 +772,38 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
 
     const benCategory = (beneficiary.category || '').toLowerCase();
 
+    const normalizeSitio = (val) =>
+      String(val || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^(sitio|purok|brgy\.?|barangay)\s+/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const matchesAnnouncementSitios = (targetSitiosInput) => {
+      if (!targetSitiosInput) return true;
+      let sitios = [];
+      if (typeof targetSitiosInput === 'string') {
+        try { sitios = JSON.parse(targetSitiosInput); } catch (e) { sitios = [targetSitiosInput]; }
+      } else if (Array.isArray(targetSitiosInput)) {
+        sitios = targetSitiosInput;
+      }
+      sitios = (Array.isArray(sitios) ? sitios : [sitios])
+        .map((s) => String(s || '').trim())
+        .filter(Boolean);
+      if (sitios.length === 0) return true;
+
+      const benSitioRaw = String(beneficiary?.sitio || '').trim().toLowerCase();
+      if (!benSitioRaw) return false;
+      const benSitioNorm = normalizeSitio(benSitioRaw);
+
+      return sitios.some((target) => {
+        const tRaw = String(target || '').trim().toLowerCase();
+        const tNorm = normalizeSitio(tRaw);
+        return benSitioRaw === tRaw || (benSitioNorm && tNorm && benSitioNorm === tNorm);
+      });
+    };
+
     for (const ann of publishedAnnouncements) {
       let targetBarangays = [];
       if (typeof ann.target_barangays === 'string') {
@@ -805,7 +837,9 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
         targetBarangays.length === 0 ||
         (beneficiary.barangay_id && targetBarangays.includes(Number(beneficiary.barangay_id)));
 
-      if (matchesBarangay && matchesCategory) {
+      const matchesSitio = matchesAnnouncementSitios(ann.target_sitios);
+
+      if (matchesBarangay && matchesCategory && matchesSitio) {
         await AnnouncementRecipient.findOrCreate({
           where: {
             announcement_id: ann.id,
@@ -896,7 +930,9 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
         });
       }
 
-      if (matchesBarangay && matchesCategory) {
+      const matchesSitio = matchesAnnouncementSitios(r.Announcement.target_sitios);
+
+      if (matchesBarangay && matchesCategory && matchesSitio) {
         const item = r.Announcement.toJSON();
         item.attendance_status = r.attendance_status; // 'Pending' | 'Present' | 'Absent'
         item.scanned_at = r.scanned_at;
