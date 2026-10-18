@@ -68,18 +68,18 @@ router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) 
   }
 });
 
-// Admin Applications list: Return registrations (Pending Review, Under Review, Rejected, Approved)
-// Only Administrator can view applicant submissions queue (MSWDO sees Senior/PWD only)
-router.get('/applications', authorize('admin'), async (req, res, next) => {
+// Admin & Staff Applications list: Return registrations (Pending Review, Under Review, Rejected, Approved)
+// Administrator and Barangay Staff can view applicant submissions queue
+router.get('/applications', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const where = {
       status: {
         [Op.ne]: 'Pending Submission'
       }
     };
-    // MSWDO admin only approves Senior Citizens & PWD applications (4Ps is approved by DSWD)
-    // DSWD admin approves 4Ps, Senior Citizens, and PWD
-    if (isMswdoRole(req.user.role)) {
+    if (['staff', 'barangay'].includes(req.user.role) && req.user.barangay_id) {
+      where.barangay_id = req.user.barangay_id;
+    } else if (isMswdoRole(req.user.role)) {
       where[Op.and] = [
         {
           [Op.or]: [
@@ -1292,12 +1292,15 @@ router.put('/applications/:id/review', authorize('admin'), async (req, res, next
   }
 });
 
-// Approve application (Admin only) — MSWDO limited to Senior/PWD
-router.post('/applications/:id/approve', authorize('admin'), async (req, res, next) => {
+// Approve application — Admin, MSWDO, and Barangay Staff
+router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+    if (['staff', 'barangay'].includes(req.user.role) && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You can only approve applications from your own Barangay' });
     }
     if (isMswdoRole(req.user.role) && !isMswdoCategory(beneficiary.category)) {
       return res.status(403).json({ success: false, message: 'MSWDO can only approve Senior Citizens and PWD applications. 4Ps applications must be approved by DSWD.' });
@@ -1371,12 +1374,15 @@ router.post('/applications/:id/approve', authorize('admin'), async (req, res, ne
   }
 });
 
-// Reject application (Admin only) — MSWDO limited to Senior/PWD
-router.post('/applications/:id/reject', authorize('admin'), async (req, res, next) => {
+// Reject application — Admin, MSWDO, and Barangay Staff
+router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+    if (['staff', 'barangay'].includes(req.user.role) && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You can only reject applications from your own Barangay' });
     }
     if (isMswdoRole(req.user.role) && !isMswdoCategory(beneficiary.category)) {
       return res.status(403).json({ success: false, message: 'MSWDO can only reject Senior Citizens and PWD applications. 4Ps applications must be handled by DSWD.' });
@@ -1582,9 +1588,9 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
       }
     }
 
-    // Only Admin can register or update RFID numbers
-    if (otherUpdates.RFID_number !== undefined && !['admin','mswdo_admin'].includes(req.user.role)) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: Only administrators can register or update RFID numbers' });
+    // Admin, MSWDO, and Barangay Staff can register or update RFID numbers
+    if (otherUpdates.RFID_number !== undefined && !['admin', 'mswdo_admin', 'staff', 'barangay'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: Insufficient privileges to register or update RFID numbers' });
     }
 
     // If payout account details changed, reset verification status
@@ -1625,18 +1631,18 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
   }
 });
 
-// ── POST /:id/verify-payout-account ── Verify beneficiary's payout account via name-matching (DSWD Admin only)
-router.post('/:id/verify-payout-account', authorize('admin'), async (req, res, next) => {
+// ── POST /:id/verify-payout-account ── Verify beneficiary's payout account (Admin & Barangay Staff)
+router.post('/:id/verify-payout-account', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     console.log(`[VERIFY PAYOUT] Request for beneficiary ID: ${req.params.id}, by user: ${req.user.id} (${req.user.role})`);
-
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Access Denied: Only DSWD Administrator can verify or manage payout accounts.' });
-    }
 
     const beneficiary = await Beneficiary.findByPk(req.params.id, { include: [User] });
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Beneficiary not found' });
+    }
+
+    if (['staff', 'barangay'].includes(req.user.role) && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You can only verify accounts from your own Barangay' });
     }
 
     // Must have digital payout preference

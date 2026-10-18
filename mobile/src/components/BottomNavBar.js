@@ -17,12 +17,12 @@ const BENEFICIARY_TABS = [
 ];
 
 const STAFF_TABS = [
-  { key: 'dashboard',          icon: '🏠',  label: 'Home'       },
-  { key: 'beneficiaryList',    icon: '👥',  label: 'Roster'     },
-  { key: 'assistanceRequests', icon: '🤲',  label: 'Assistance' },
-  { key: 'botAssistant',       icon: '🤖',  label: 'AI Bot'     },
-  { key: 'messages',           icon: '💬',  label: 'Messages'   },
-  { key: 'notifications',      icon: '🔔',  label: 'Alerts'     },
+  { key: 'dashboard',           icon: '🏠',  label: 'Home'       },
+  { key: 'beneficiaryList',     icon: '👥',  label: 'Roster'     },
+  { key: 'distributionScanner', icon: '📱',  label: 'Scanner'    },
+  { key: 'assistanceRequests',  icon: '🤲',  label: 'Assistance' },
+  { key: 'announcements',       icon: '📢',  label: 'Anunsyo'    },
+  { key: 'messages',            icon: '💬',  label: 'Messages'   },
 ];
 
 const BottomNavBar = ({
@@ -43,7 +43,8 @@ const BottomNavBar = ({
         const isActive =
           currentNav === tab.key ||
           (tab.key === 'assistanceRequests' && (currentNav === 'assistance' || currentNav === 'assistanceRequests')) ||
-          (tab.key === 'assistance' && (currentNav === 'requestAssistance' || currentNav === 'assistanceRequests'));
+          (tab.key === 'assistance' && (currentNav === 'requestAssistance' || currentNav === 'assistanceRequests')) ||
+          (tab.key === 'distributionScanner' && (currentNav === 'distributionScanner' || currentNav === 'attendanceScanner'));
 
         const badge =
           tab.key === 'messages'

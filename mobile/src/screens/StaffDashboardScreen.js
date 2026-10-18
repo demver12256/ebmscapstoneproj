@@ -69,11 +69,8 @@ export default function StaffDashboardScreen({
         dashboardApi.summary().catch(() => ({ data: { data: {} } })),
         dashboardApi.monthlyDistribution().catch(() => ({ data: { data: [] } })),
         announcementApi.list().catch(() => ({ data: { data: [] } })),
+        beneficiaryApi.listApplications().catch(() => ({ data: { data: [] } })),
       ];
-
-      if (['admin', 'mswdo_admin'].includes(user?.role)) {
-        promises.push(beneficiaryApi.listApplications().catch(() => ({ data: { data: [] } })));
-      }
 
       const results = await Promise.all(promises);
       const summaryData = results[0]?.data?.data || results[0]?.data || {};
@@ -91,7 +88,7 @@ export default function StaffDashboardScreen({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?.role]);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -106,6 +103,24 @@ export default function StaffDashboardScreen({
   const totalPrograms = summary?.totalPrograms || 1;
   const totalDistributionEvents = summary?.totalDistributionEvents || 0;
   const pendingRequests = summary?.pendingAssistanceRequests || 0;
+
+  const pendingApps = applications.filter(
+    (a) => a.status !== 'Approved' && a.status !== 'Rejected' && a.status !== 'Pending Submission'
+  );
+  const pendingAppsCount = pendingApps.length;
+
+  const recentActivity = applications.slice(0, 5).map((app) => {
+    const isApproved = app.status === 'Approved';
+    const isRejected = app.status === 'Rejected';
+    return {
+      id: app.id,
+      name: `${app.first_name || ''} ${app.last_name || ''}`.trim() || 'Beneficiary Applicant',
+      action: isApproved ? 'Application Approved' : isRejected ? 'Application Rejected' : 'New Application Submitted',
+      status: app.status || 'Pending Review',
+      time: formatTimeAgo(app.updated_at || app.created_at),
+      category: app.category || 'General',
+    };
+  });
 
   // Trend calculation
   const currentMonthData = monthly[monthly.length - 1] || {};
@@ -233,15 +248,46 @@ export default function StaffDashboardScreen({
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => onNavigate && onNavigate('beneficiaryList')}
+              onPress={() => onNavigate && onNavigate('reports')}
+              style={[styles.actionBtnOutline, darkMode && styles.darkActionBtnOutline]}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.actionBtnOutlineIcon}>📊</Text>
+              <Text style={[styles.actionBtnOutlineText, darkMode && styles.darkText]}>Reports</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => onNavigate && onNavigate('distributionScanner')}
               style={styles.actionBtnPrimary}
               activeOpacity={0.75}
             >
-              <Text style={styles.actionBtnPrimaryIcon}>👥</Text>
-              <Text style={styles.actionBtnPrimaryText}>Beneficiaries</Text>
+              <Text style={styles.actionBtnPrimaryIcon}>📱</Text>
+              <Text style={styles.actionBtnPrimaryText}>Scan RFID</Text>
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ━━━ Pending Applications Alert Banner ━━━ */}
+        {pendingAppsCount > 0 && (
+          <TouchableOpacity
+            style={styles.pendingQueueBanner}
+            activeOpacity={0.85}
+            onPress={() => onNavigate && onNavigate('beneficiaryList')}
+          >
+            <View style={styles.pendingQueueLeft}>
+              <View style={styles.pendingQueueIconWrap}>
+                <Text style={{ fontSize: 16 }}>⏳</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pendingQueueTitle}>Nakapilang Aplikasyon ({pendingAppsCount})</Text>
+                <Text style={styles.pendingQueueSub} numberOfLines={2}>
+                  May mga bagong aplikasyon ng residente na naghihintay ng rebyu at pag-apruba.
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.pendingQueueLink}>I-rebyu ›</Text>
+          </TouchableOpacity>
+        )}
 
         {/* ━━━ Upcoming Announcements Alert Banner ━━━ */}
         {firstAnnouncement && (
@@ -533,16 +579,100 @@ export default function StaffDashboardScreen({
           </View>
         </View>
 
-        {/* ━━━ Quick Management Operations ━━━ */}
+        {/* ━━━ Recent Applications & Activity (Matching Web ModernDashboard) ━━━ */}
+        <View style={[styles.chartCard, darkMode && styles.darkCard]}>
+          <View style={styles.chartHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.chartTitle, darkMode && styles.darkTitle]}>
+                Recent Applications & Activity
+              </Text>
+              <Text style={[styles.chartSubtitle, darkMode && styles.darkSubtext]}>
+                Mga pinakabagong rehistrasyon at aplikasyon ng residente
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => onNavigate && onNavigate('beneficiaryList')}
+              style={styles.reviewPendingLink}
+            >
+              <Text style={styles.reviewPendingLinkText}>Roster ›</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.activityList}>
+            {recentActivity.length > 0 ? (
+              recentActivity.map((act) => {
+                const isApproved = act.status === 'Approved';
+                const isRejected = act.status === 'Rejected';
+                return (
+                  <TouchableOpacity
+                    key={act.id}
+                    style={[styles.activityItem, darkMode && styles.darkItem]}
+                    activeOpacity={0.7}
+                    onPress={() => onNavigate && onNavigate('beneficiaryList')}
+                  >
+                    <View
+                      style={[
+                        styles.activityAvatar,
+                        {
+                          backgroundColor: isApproved
+                            ? '#dcfce7'
+                            : isRejected
+                            ? '#fee2e2'
+                            : '#fef3c7',
+                        },
+                      ]}
+                    >
+                      <Text style={{ fontSize: 13 }}>
+                        {isApproved ? '✓' : isRejected ? '✕' : '⏳'}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[styles.activityName, darkMode && styles.darkTitle]}
+                        numberOfLines={1}
+                      >
+                        {act.name}
+                      </Text>
+                      <Text style={[styles.activityAction, darkMode && styles.darkSubtext]}>
+                        {act.action} • {act.category}
+                      </Text>
+                    </View>
+                    <Text style={[styles.activityTime, darkMode && styles.darkSubtext]}>
+                      {act.time}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={styles.emptyChartWrap}>
+                <Text style={[styles.emptyChartText, darkMode && styles.darkSubtext]}>
+                  Walang bagong tala ng aktibidad sa kasalukuyan.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={styles.viewRosterBtn}
+            onPress={() => onNavigate && onNavigate('beneficiaryList')}
+          >
+            <Text style={styles.viewRosterBtnText}>
+              Tingnan ang Talaan ng mga Benepisyaryo →
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ━━━ Comprehensive Quick Operations (All Staff Modules) ━━━ */}
         <View style={[styles.chartCard, darkMode && styles.darkCard]}>
           <Text style={[styles.chartTitle, darkMode && styles.darkTitle]}>
             Quick Operations
           </Text>
           <Text style={[styles.chartSubtitle, darkMode && styles.darkSubtext, { marginBottom: 14 }]}>
-            Direct municipal and beneficiary actions
+            Komprehensibong kontrol at serbisyo para sa mga kawani ng barangay at DSWD
           </Text>
 
           <View style={styles.operationsGrid}>
+            {/* 1. Beneficiaries Roster */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -550,9 +680,54 @@ export default function StaffDashboardScreen({
             >
               <Text style={styles.opIcon}>👥</Text>
               <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Beneficiaries</Text>
-              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>View & search roster</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Roster & Aplikasyon</Text>
             </TouchableOpacity>
 
+            {/* 2. Distributions */}
+            <TouchableOpacity
+              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('distributions')}
+            >
+              <Text style={styles.opIcon}>📦</Text>
+              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Distributions</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Pamamahagi ng Ayuda</Text>
+            </TouchableOpacity>
+
+            {/* 3. Distribution Scanner */}
+            <TouchableOpacity
+              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('distributionScanner')}
+            >
+              <Text style={styles.opIcon}>📱</Text>
+              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Distribution Scanner</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>RFID/QR Claiming</Text>
+            </TouchableOpacity>
+
+            {/* 4. Attendance Scanner */}
+            <TouchableOpacity
+              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('attendanceScanner')}
+            >
+              <Text style={styles.opIcon}>📱</Text>
+              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Attendance Scanner</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>RFID Attendance</Text>
+            </TouchableOpacity>
+
+            {/* 5. Benefit Programs */}
+            <TouchableOpacity
+              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('programs')}
+            >
+              <Text style={styles.opIcon}>📋</Text>
+              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Benefit Programs</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>4Ps, Senior, PWD</Text>
+            </TouchableOpacity>
+
+            {/* 6. Assistance Requests */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -560,19 +735,43 @@ export default function StaffDashboardScreen({
             >
               <Text style={styles.opIcon}>🤲</Text>
               <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Assistance</Text>
-              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Review requests</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Ayuda & Kahilingan</Text>
             </TouchableOpacity>
 
+            {/* 7. Community Announcements */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
-              onPress={() => onNavigate && onNavigate('botAssistant')}
+              onPress={() => onNavigate && onNavigate('announcements')}
             >
-              <Text style={styles.opIcon}>🤖</Text>
-              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>BeniAid Bot</Text>
-              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>AI Assistance & FAQ</Text>
+              <Text style={styles.opIcon}>📢</Text>
+              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Announcements</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Anunsyo sa Barangay</Text>
             </TouchableOpacity>
 
+            {/* 8. Interventions */}
+            <TouchableOpacity
+              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('interventions')}
+            >
+              <Text style={styles.opIcon}>📄</Text>
+              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Interventions</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Tulong & Serbisyo</Text>
+            </TouchableOpacity>
+
+            {/* 9. Reports */}
+            <TouchableOpacity
+              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('reports')}
+            >
+              <Text style={styles.opIcon}>📊</Text>
+              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Reports</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Audit & Talaan</Text>
+            </TouchableOpacity>
+
+            {/* 10. Messages */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -580,7 +779,29 @@ export default function StaffDashboardScreen({
             >
               <Text style={styles.opIcon}>💬</Text>
               <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Messages</Text>
-              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Direct communications</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Mensahe sa Residente</Text>
+            </TouchableOpacity>
+
+            {/* 11. BeniAid AI Bot */}
+            <TouchableOpacity
+              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('botAssistant')}
+            >
+              <Text style={styles.opIcon}>🤖</Text>
+              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>BeniAid Bot</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>AI Staff Assistant</Text>
+            </TouchableOpacity>
+
+            {/* 12. User Accounts */}
+            <TouchableOpacity
+              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('users')}
+            >
+              <Text style={styles.opIcon}>👤⚙</Text>
+              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>User Accounts</Text>
+              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Mga Kawani & Staff</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1333,5 +1554,107 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 2,
   },
+  pendingQueueBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+  },
+  pendingQueueLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  pendingQueueIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#fef3c7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingQueueTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400e',
+  },
+  pendingQueueSub: {
+    fontSize: 11,
+    color: '#b45309',
+    marginTop: 2,
+  },
+  pendingQueueLink: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#b45309',
+    paddingLeft: 4,
+  },
+  reviewPendingLink: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#eff6ff',
+  },
+  reviewPendingLinkText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  activityList: {
+    marginTop: 10,
+    gap: 8,
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  activityAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  activityAction: {
+    fontSize: 10.5,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  activityTime: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  viewRosterBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+  },
+  viewRosterBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
 });
+
 

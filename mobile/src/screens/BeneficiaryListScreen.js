@@ -57,6 +57,7 @@ const getCategoryShort = (category) => {
 const BeneficiaryListScreen = ({ onBack, user }) => {
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [barangays, setBarangays] = useState([]);
+  const [pendingApplications, setPendingApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -64,6 +65,9 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
   const [selectedBarangayId, setSelectedBarangayId] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [listMode, setListMode] = useState('roster'); // 'roster' | 'applications'
+
+  // Selected Beneficiary Detail State
   const [selectedBeneficiary, setSelectedBeneficiary] = useState(null);
   const [detailTab, setDetailTab] = useState('profile');
   const [attendanceData, setAttendanceData] = useState(null);
@@ -71,10 +75,40 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
   const [enrollmentsData, setEnrollmentsData] = useState(null);
   const [tabLoading, setTabLoading] = useState(false);
 
+  // RFID & Payout Management
+  const [editingRfid, setEditingRfid] = useState(false);
+  const [rfidInput, setRfidInput] = useState('');
+  const [savingRfid, setSavingRfid] = useState(false);
+  const [verifyingPayout, setVerifyingPayout] = useState(false);
+  const [showFullAccountNo, setShowFullAccountNo] = useState(false);
+
+  // Edit Beneficiary Modal
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editForm, setEditForm] = useState({ contact_number: '', address: '', sitio: '', civil_status: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Pending Application Review & Rejection
+  const [selectedApp, setSelectedApp] = useState(null);
+  const [approvingApp, setApprovingApp] = useState(false);
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [selectedMissingDocs, setSelectedMissingDocs] = useState([]);
+  const [rejectingApp, setRejectingApp] = useState(false);
+
+  // Document Viewer
+  const [docPreviewUrl, setDocPreviewUrl] = useState(null);
+  const [docPreviewTitle, setDocPreviewTitle] = useState('');
+
   // QR Pass State
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrPassData, setQrPassData] = useState(null);
+
+  const resolveDocUrl = (url) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return `${FILES_BASE_URL}/${url.replace(/^\/+/, '')}`;
+  };
 
   const handleOpenBeneficiaryQr = async (beneficiary) => {
     if (!beneficiary) return;
@@ -89,6 +123,21 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     } catch (err) {
       console.warn('Failed to load beneficiary QR Pass:', err);
       Alert.alert('Notice', err?.response?.data?.message || 'Hindi ma-load ang QR Pass ng benepisyaryo.');
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const handleRegenerateQr = async (beneficiaryId) => {
+    try {
+      setQrLoading(true);
+      const res = await beneficiaryApi.regenerateQrPass(beneficiaryId);
+      if (res.data?.data) {
+        setQrPassData(res.data.data);
+        Alert.alert('Tagumpay', 'Matagumpay na na-regenerate ang QR Pass token!');
+      }
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi na-regenerate ang QR Pass.');
     } finally {
       setQrLoading(false);
     }
@@ -119,12 +168,18 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
   const loadData = useCallback(async () => {
     try {
       setError('');
-      const [benefRes, brgyRes] = await Promise.all([
-        beneficiaryApi.list(),
-        barangayApi.list(),
+      const [benefRes, brgyRes, appsRes] = await Promise.all([
+        beneficiaryApi.list().catch(() => ({ data: { data: [] } })),
+        barangayApi.list().catch(() => ({ data: { data: [] } })),
+        beneficiaryApi.listApplications().catch(() => ({ data: { data: [] } })),
       ]);
       setBeneficiaries(benefRes.data?.data || []);
       setBarangays(brgyRes.data?.data || []);
+      const allApps = appsRes.data?.data || [];
+      const pendingList = allApps.filter(
+        (a) => a.status !== 'Approved' && a.status !== 'Pending Submission'
+      );
+      setPendingApplications(pendingList);
     } catch (err) {
       setError(err?.response?.data?.message || err.message || 'Failed to load beneficiaries');
     } finally {
@@ -155,6 +210,135 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     }
     return true;
   });
+
+  const filteredApplications = pendingApplications.filter((app) => {
+    if (selectedBarangayId && String(app.barangay_id) !== selectedBarangayId) return false;
+    if (selectedCategory && app.category !== selectedCategory) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const fullName = `${app.first_name || ''} ${app.middle_name || ''} ${app.last_name || ''}`.toLowerCase();
+      const brgy = (app.Barangay?.barangay_name || app.Barangay?.name || '').toLowerCase();
+      const idCode = (app.beneficiary_id_code || app.household_id_number || '').toLowerCase();
+      return fullName.includes(q) || brgy.includes(q) || idCode.includes(q);
+    }
+    return true;
+  });
+
+  const handleApproveApplication = (app) => {
+    Alert.alert(
+      'Aprubahan ang Aplikasyon',
+      `Sigurado ka bang nais mong aprubahan ang aplikasyon ni ${app.first_name} ${app.last_name}? Awtomatikong magbibigay ang system ng opisyal na Beneficiary ID Code.`,
+      [
+        { text: 'Kanselahin', style: 'cancel' },
+        {
+          text: 'Aprubahan',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setApprovingApp(true);
+              const res = await beneficiaryApi.approveApplication(app.id);
+              Alert.alert('Tagumpay', res.data?.message || 'Matagumpay na naaprubahan ang aplikasyon!');
+              setSelectedApp(null);
+              await loadData();
+            } catch (err) {
+              Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi naaprubahan ang aplikasyon.');
+            } finally {
+              setApprovingApp(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRejectApplication = async () => {
+    if (!rejectionReason.trim()) {
+      Alert.alert('Kailangan ang Dahilan', 'Pakilagay ang dahilan ng pagtanggi sa aplikasyon.');
+      return;
+    }
+    try {
+      setRejectingApp(true);
+      const res = await beneficiaryApi.rejectApplication(selectedApp.id, {
+        rejection_reason: rejectionReason.trim(),
+        missing_documents: selectedMissingDocs,
+      });
+      Alert.alert('Na-reject', res.data?.message || 'Naitagubilin ang pagtanggi sa aplikasyon.');
+      setRejectModalVisible(false);
+      setSelectedApp(null);
+      setRejectionReason('');
+      setSelectedMissingDocs([]);
+      await loadData();
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi nai-save ang desisyon.');
+    } finally {
+      setRejectingApp(false);
+    }
+  };
+
+  const handleSaveRfid = async () => {
+    if (!rfidInput.trim()) {
+      Alert.alert('Walang RFID', 'Pakilagay ang bagong RFID number bago i-save.');
+      return;
+    }
+    try {
+      setSavingRfid(true);
+      await beneficiaryApi.update(selectedBeneficiary.id, { RFID_number: rfidInput.trim() });
+      Alert.alert('Tagumpay', `Na-assign ang RFID: ${rfidInput.trim()} kay ${selectedBeneficiary.first_name}!`);
+      setSelectedBeneficiary((prev) => ({ ...prev, RFID_number: rfidInput.trim() }));
+      setEditingRfid(false);
+      await loadData();
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi nai-save ang RFID.');
+    } finally {
+      setSavingRfid(false);
+    }
+  };
+
+  const handleVerifyPayout = async (action) => {
+    try {
+      setVerifyingPayout(true);
+      const payload = action === 'verified' ? { force: true } : { action: 'reject' };
+      await beneficiaryApi.verifyPayoutAccount(selectedBeneficiary.id, payload);
+      Alert.alert(
+        'Tagumpay',
+        action === 'verified' ? 'Na-verify na ang payout account ng benepisyaryo!' : 'Tinanggihan ang payout account.'
+      );
+      setSelectedBeneficiary((prev) => ({
+        ...prev,
+        account_verification_status: action === 'verified' ? 'verified' : 'rejected',
+      }));
+      await loadData();
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi nai-update ang verification.');
+    } finally {
+      setVerifyingPayout(false);
+    }
+  };
+
+  const handleOpenEditModal = (b) => {
+    setEditForm({
+      contact_number: b.contact_number || '',
+      address: b.address || '',
+      sitio: b.sitio || '',
+      civil_status: b.civil_status || 'Single',
+    });
+    setEditModalVisible(true);
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      setSavingEdit(true);
+      await beneficiaryApi.update(selectedBeneficiary.id, editForm);
+      Alert.alert('Tagumpay', 'Matagumpay na na-update ang impormasyon ng benepisyaryo!');
+      setSelectedBeneficiary((prev) => ({ ...prev, ...editForm }));
+      setEditModalVisible(false);
+      await loadData();
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi na-update ang impormasyon.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   // Load all 3 tabs' live database data in parallel
   const loadBeneficiaryDetails = async (ben) => {
@@ -225,6 +409,63 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     );
   };
 
+  const renderApplicationCard = ({ item }) => {
+    const fullName = `${item.last_name || ''}, ${item.first_name || ''} ${item.middle_name || ''}`.trim();
+    const barangayName = item.Barangay?.barangay_name || item.Barangay?.name || '—';
+    const catShort = getCategoryShort(item.category);
+    const docCount = item.Documents?.length || 0;
+
+    return (
+      <View style={[s.card, { borderLeftColor: '#f59e0b' }]}>
+        <View style={s.cardHeader}>
+          <View style={[s.avatar, { backgroundColor: '#fef3c7' }]}>
+            <Text style={[s.avatarText, { color: '#d97706' }]}>
+              {(item.first_name?.[0] || '').toUpperCase()}{(item.last_name?.[0] || '').toUpperCase()}
+            </Text>
+          </View>
+          <View style={s.cardInfo}>
+            <Text style={s.cardName} numberOfLines={1}>{fullName}</Text>
+            <Text style={s.cardMeta}>📍 {barangayName} {item.sitio ? `• ${item.sitio}` : ''}</Text>
+          </View>
+          <View style={[s.categoryBadge, { backgroundColor: '#fef3c7', borderColor: '#fde68a' }]}>
+            <Text style={[s.categoryText, { color: '#b45309' }]}>{item.status || 'Pending'}</Text>
+          </View>
+        </View>
+        <View style={s.cardFooter}>
+          <View style={s.footerItem}>
+            <Text style={s.footerLabel}>Kategorya</Text>
+            <Text style={s.footerValue}>{catShort}</Text>
+          </View>
+          <View style={s.footerItem}>
+            <Text style={s.footerLabel}>Dokumento</Text>
+            <Text style={s.footerValue}>📎 {docCount} Kalakip</Text>
+          </View>
+          <View style={s.footerItem}>
+            <Text style={s.footerLabel}>Petsa</Text>
+            <Text style={s.footerValue}>{formatDate(item.updated_at || item.created_at)}</Text>
+          </View>
+        </View>
+        <View style={s.appCardActions}>
+          <TouchableOpacity
+            style={s.appReviewBtn}
+            onPress={() => setSelectedApp(item)}
+            activeOpacity={0.8}
+          >
+            <Text style={s.appReviewBtnText}>👁 Suriin ang Aplikasyon</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.appQuickApproveBtn, approvingApp && { opacity: 0.6 }]}
+            onPress={() => handleApproveApplication(item)}
+            disabled={approvingApp}
+            activeOpacity={0.8}
+          >
+            <Text style={s.appQuickApproveBtnText}>✓ Aprubahan</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   const renderProfileTab = () => {
     const b = selectedBeneficiary;
     if (!b) return null;
@@ -233,7 +474,12 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     return (
       <ScrollView style={s.tabContent}>
         <View style={s.profileSection}>
-          <Text style={s.profileSectionTitle}>Personal Information</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <Text style={s.profileSectionTitle}>Personal Information</Text>
+            <TouchableOpacity style={s.editInfoBtn} onPress={() => handleOpenEditModal(b)}>
+              <Text style={s.editInfoBtnText}>✏ I-edit</Text>
+            </TouchableOpacity>
+          </View>
           {[
             ['Full Name', fullName],
             ['Sex', b.sex],
@@ -260,7 +506,6 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
             ['Household ID', b.household_id_number],
             ['National ID', b.national_id_number],
             ['PSA Birth Cert', b.psa_birth_cert_number],
-            ['RFID Number', b.RFID_number],
             ['Status', b.status],
             ['Approval Date', formatDate(b.approval_date)],
           ].map(([label, value]) => (
@@ -269,6 +514,50 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
               <Text style={s.profileValue}>{value || '—'}</Text>
             </View>
           ))}
+
+          {/* RFID Assignment Row */}
+          <View style={s.rfidSection}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.rfidLabel}>💳 PHYSICAL RFID CARD</Text>
+                <Text style={s.rfidValue}>{b.RFID_number ? b.RFID_number : 'Walang nakatakdang RFID Card'}</Text>
+              </View>
+              <TouchableOpacity
+                style={s.rfidEditToggleBtn}
+                onPress={() => {
+                  setEditingRfid(!editingRfid);
+                  setRfidInput(b.RFID_number || '');
+                }}
+              >
+                <Text style={s.rfidEditToggleBtnText}>{editingRfid ? '✕ Kanselahin' : (b.RFID_number ? 'Palitan' : '+ I-assign')}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {editingRfid && (
+              <View style={s.rfidEditBox}>
+                <TextInput
+                  style={s.rfidInput}
+                  value={rfidInput}
+                  onChangeText={setRfidInput}
+                  placeholder="I-type o i-scan ang 10-digit RFID..."
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="default"
+                  autoCapitalize="characters"
+                />
+                <TouchableOpacity
+                  style={[s.rfidSaveBtn, savingRfid && { opacity: 0.6 }]}
+                  onPress={handleSaveRfid}
+                  disabled={savingRfid}
+                >
+                  {savingRfid ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={s.rfidSaveBtnText}>I-save ang RFID</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         </View>
 
         <View style={s.profileSection}>
@@ -276,15 +565,47 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
           {[
             ['Preference', b.payout_preference === 'digital' ? '💳 Digital' : '💵 Cash OTC'],
             ['Provider', b.payout_provider],
-            ['Account No.', b.payout_account_number ? '••••' + b.payout_account_number.slice(-4) : '—'],
+            ['Account No.', b.payout_account_number ? (showFullAccountNo ? b.payout_account_number : '••••' + b.payout_account_number.slice(-4)) : '—'],
             ['Account Name', b.payout_account_name],
-            ['Verification', b.account_verification_status],
+            ['Verification', (b.account_verification_status || 'unverified').toUpperCase()],
           ].map(([label, value]) => (
             <View key={label} style={s.profileRow}>
               <Text style={s.profileLabel}>{label}</Text>
               <Text style={s.profileValue}>{value || '—'}</Text>
             </View>
           ))}
+
+          {b.payout_preference === 'digital' && b.payout_account_number && (
+            <View style={s.payoutActionsRow}>
+              <TouchableOpacity
+                style={s.toggleAccountNoBtn}
+                onPress={() => setShowFullAccountNo(!showFullAccountNo)}
+              >
+                <Text style={s.toggleAccountNoText}>{showFullAccountNo ? 'Itago ang Numero' : 'Ipakita ang Buong Numero'}</Text>
+              </TouchableOpacity>
+
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                {b.account_verification_status !== 'verified' && (
+                  <TouchableOpacity
+                    style={[s.verifyPayoutBtn, verifyingPayout && { opacity: 0.6 }]}
+                    onPress={() => handleVerifyPayout('verified')}
+                    disabled={verifyingPayout}
+                  >
+                    <Text style={s.verifyPayoutBtnText}>✓ I-verify ang Account</Text>
+                  </TouchableOpacity>
+                )}
+                {b.account_verification_status !== 'rejected' && (
+                  <TouchableOpacity
+                    style={[s.rejectPayoutBtn, verifyingPayout && { opacity: 0.6 }]}
+                    onPress={() => handleVerifyPayout('rejected')}
+                    disabled={verifyingPayout}
+                  >
+                    <Text style={s.rejectPayoutBtnText}>✕ I-reject</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
         </View>
       </ScrollView>
     );
@@ -623,10 +944,41 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
         </TouchableOpacity>
         <View style={s.headerCenter}>
           <Text style={s.headerTitle}>Beneficiaries</Text>
-          <Text style={s.headerCount}>{filteredBeneficiaries.length} records</Text>
+          <Text style={s.headerCount}>
+            {listMode === 'roster'
+              ? `${filteredBeneficiaries.length} Rehistrado`
+              : `${filteredApplications.length} Nakapilang Aplikasyon`}
+          </Text>
         </View>
         <TouchableOpacity onPress={() => setShowFilters(!showFilters)} style={s.filterBtn}>
           <Text style={s.filterIcon}>{showFilters ? '✕' : '⚙'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Segmented Mode Tabs: Registered Roster vs Pending Applications */}
+      <View style={s.modeTabRow}>
+        <TouchableOpacity
+          style={[s.modeTabBtn, listMode === 'roster' && s.modeTabBtnActive]}
+          onPress={() => setListMode('roster')}
+          activeOpacity={0.8}
+        >
+          <Text style={[s.modeTabBtnText, listMode === 'roster' && s.modeTabBtnTextActive]}>
+            👥 Rehistrado ({filteredBeneficiaries.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.modeTabBtn, listMode === 'applications' && s.modeTabBtnActive]}
+          onPress={() => setListMode('applications')}
+          activeOpacity={0.8}
+        >
+          <Text style={[s.modeTabBtnText, listMode === 'applications' && s.modeTabBtnTextActive]}>
+            ⏳ Aplikasyon
+          </Text>
+          {pendingApplications.length > 0 && (
+            <View style={s.tabBadgeCount}>
+              <Text style={s.tabBadgeCountText}>{pendingApplications.length}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -637,7 +989,7 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
           style={s.searchInput}
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search by name, barangay, or ID..."
+          placeholder={listMode === 'roster' ? 'Search by name, barangay, or ID...' : 'Search applications...'}
           placeholderTextColor="#64748b"
         />
         {searchQuery ? (
@@ -701,7 +1053,9 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
       {loading ? (
         <View style={s.centered}>
           <ActivityIndicator size="large" color="#2563eb" />
-          <Text style={s.loadingText}>Loading beneficiaries...</Text>
+          <Text style={s.loadingText}>
+            {listMode === 'roster' ? 'Loading beneficiaries...' : 'Loading applications...'}
+          </Text>
         </View>
       ) : error ? (
         <View style={s.centered}>
@@ -712,14 +1066,18 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
         </View>
       ) : (
         <FlatList
-          data={filteredBeneficiaries}
+          data={listMode === 'roster' ? filteredBeneficiaries : filteredApplications}
           keyExtractor={(item) => String(item.id)}
-          renderItem={renderBeneficiaryCard}
+          renderItem={listMode === 'roster' ? renderBeneficiaryCard : renderApplicationCard}
           contentContainerStyle={s.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={
             <View style={s.centered}>
-              <Text style={s.emptyText}>No beneficiaries found matching your filters.</Text>
+              <Text style={s.emptyText}>
+                {listMode === 'roster'
+                  ? 'Walang nakitang rehistradong benepisyaryo sa napiling filter.'
+                  : 'Walang nakapilang aplikasyon sa kasalukuyan.'}
+              </Text>
             </View>
           }
         />
@@ -921,6 +1279,283 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
                 <Text style={s.qrCloseBtnText}>Isara</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* ── Pending Application Review Modal ── */}
+      <Modal visible={!!selectedApp} animationType="slide" onRequestClose={() => setSelectedApp(null)}>
+        <SafeAreaView style={s.modalPage}>
+          <View style={s.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedApp(null)} style={s.modalBackBtn}>
+              <Text style={s.modalBackText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={s.modalTitle} numberOfLines={1}>
+              {selectedApp ? `Aplikasyon: ${selectedApp.first_name} ${selectedApp.last_name}` : ''}
+            </Text>
+          </View>
+
+          {selectedApp && (
+            <ScrollView style={s.tabContent}>
+              <View style={s.appReviewHero}>
+                <View style={[s.modalAvatar, { backgroundColor: '#fef3c7' }]}>
+                  <Text style={[s.modalAvatarText, { color: '#d97706' }]}>
+                    {(selectedApp.first_name?.[0] || '').toUpperCase()}{(selectedApp.last_name?.[0] || '').toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.modalName}>
+                    {selectedApp.first_name} {selectedApp.middle_name ? selectedApp.middle_name + ' ' : ''}{selectedApp.last_name}
+                  </Text>
+                  <Text style={s.modalMeta}>
+                    📍 {selectedApp.Barangay?.barangay_name || selectedApp.Barangay?.name || '—'} {selectedApp.sitio ? `(${selectedApp.sitio})` : ''}
+                  </Text>
+                  <View style={[s.categoryBadge, { backgroundColor: '#fef3c7', borderColor: '#fde68a', alignSelf: 'flex-start', marginTop: 4 }]}>
+                    <Text style={[s.categoryText, { color: '#b45309' }]}>STATUS: {selectedApp.status || 'Pending Review'}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={s.profileSection}>
+                <Text style={s.profileSectionTitle}>Impormasyon ng Aplikante</Text>
+                {[
+                  ['Kategorya', selectedApp.category],
+                  ['Kasarian', selectedApp.sex],
+                  ['Kaarawan', formatDate(selectedApp.birthdate)],
+                  ['Civil Status', selectedApp.civil_status],
+                  ['Contact Number', selectedApp.contact_number],
+                  ['Tirahan', selectedApp.address],
+                  ['Sitio / Purok', selectedApp.sitio || '—'],
+                  ['Barangay', selectedApp.Barangay?.barangay_name || selectedApp.Barangay?.name || '—'],
+                  ['IP Classification', selectedApp.ip_classification || 'None'],
+                  ['Household / 4Ps No.', selectedApp.household_id_number || '—'],
+                  ['Petsa ng Pagsumite', formatDate(selectedApp.created_at || selectedApp.updated_at)],
+                ].map(([label, value]) => (
+                  <View key={label} style={s.profileRow}>
+                    <Text style={s.profileLabel}>{label}</Text>
+                    <Text style={s.profileValue}>{value || '—'}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={s.profileSection}>
+                <Text style={s.profileSectionTitle}>Kalakip na mga Dokumento ({selectedApp.Documents?.length || 0})</Text>
+                {(!selectedApp.Documents || selectedApp.Documents.length === 0) ? (
+                  <Text style={s.emptyTab}>Walang in-upload na dokumento ang aplikante.</Text>
+                ) : (
+                  selectedApp.Documents.map((doc, idx) => (
+                    <View key={doc.id || idx} style={s.docItemCard}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.docItemTitle}>{doc.document_type || 'Kalakip na Dokumento'}</Text>
+                        <Text style={s.docItemSub} numberOfLines={1}>{doc.file_name || doc.file_path || 'Uploaded File'}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={s.docViewBtn}
+                        onPress={() => {
+                          setDocPreviewUrl(resolveDocUrl(doc.file_path));
+                          setDocPreviewTitle(doc.document_type || 'Kalakip na Dokumento');
+                        }}
+                      >
+                        <Text style={s.docViewBtnText}>👁 Tingnan</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+              </View>
+
+              <View style={s.appDecisionCard}>
+                <Text style={s.appDecisionTitle}>Aksyon ng Tagasuri (Staff Endorsement / Approval)</Text>
+                <Text style={s.appDecisionDesc}>
+                  Kapag inaprubahan, awtomatikong bibigyan ng system ang residente ng opisyal na Beneficiary ID Code at magiging kwalipikado sa mga programa at ayuda.
+                </Text>
+
+                <View style={{ gap: 10, marginTop: 12 }}>
+                  <TouchableOpacity
+                    style={[s.approveActionBtn, approvingApp && { opacity: 0.6 }]}
+                    onPress={() => handleApproveApplication(selectedApp)}
+                    disabled={approvingApp}
+                  >
+                    {approvingApp ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={s.approveActionBtnText}>✓ Aprubahan ang Aplikasyon</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={s.rejectActionBtn}
+                    onPress={() => setRejectModalVisible(true)}
+                  >
+                    <Text style={s.rejectActionBtnText}>✕ Tanggihan / I-reject ang Aplikasyon</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
+
+      {/* ── Reject Application Modal ── */}
+      <Modal visible={rejectModalVisible} transparent animationType="fade" onRequestClose={() => setRejectModalVisible(false)}>
+        <View style={s.rejectOverlay}>
+          <View style={s.rejectCard}>
+            <View style={s.rejectHeader}>
+              <Text style={s.rejectTitle}>Pagtanggi sa Aplikasyon</Text>
+              <TouchableOpacity onPress={() => setRejectModalVisible(false)}>
+                <Text style={s.rejectClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 350 }}>
+              <Text style={s.rejectSubtitle}>Pumili ng mga kulang na dokumento (opsyonal):</Text>
+              {[
+                'Valid Government ID',
+                'Barangay Certificate of Indigency',
+                '1x1 ID Picture',
+                'Certificate of Residency',
+                'Proof of Income / 4Ps Certificate',
+                'Medical Certificate (for PWD / Senior)',
+              ].map((docName) => {
+                const isSelected = selectedMissingDocs.includes(docName);
+                return (
+                  <TouchableOpacity
+                    key={docName}
+                    style={[s.missingDocChip, isSelected && s.missingDocChipActive]}
+                    onPress={() => {
+                      if (isSelected) {
+                        setSelectedMissingDocs(selectedMissingDocs.filter((d) => d !== docName));
+                      } else {
+                        setSelectedMissingDocs([...selectedMissingDocs, docName]);
+                      }
+                    }}
+                  >
+                    <Text style={[s.missingDocText, isSelected && s.missingDocTextActive]}>
+                      {isSelected ? '✓ ' : '+ '} {docName}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <Text style={[s.rejectSubtitle, { marginTop: 12 }]}>Dahilan ng Pagtanggi (Kailangan):</Text>
+              <TextInput
+                style={s.rejectInput}
+                value={rejectionReason}
+                onChangeText={setRejectionReason}
+                placeholder="Hal. Kulang ang isinumiteng patunay ng tirahan o hindi malinaw ang kopya ng valid ID..."
+                placeholderTextColor="#94a3b8"
+                multiline
+                numberOfLines={3}
+              />
+            </ScrollView>
+
+            <View style={s.rejectBtnRow}>
+              <TouchableOpacity
+                style={s.rejectCancelBtn}
+                onPress={() => setRejectModalVisible(false)}
+              >
+                <Text style={s.rejectCancelText}>Kanselahin</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.rejectSubmitBtn, rejectingApp && { opacity: 0.6 }]}
+                onPress={handleRejectApplication}
+                disabled={rejectingApp}
+              >
+                {rejectingApp ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={s.rejectSubmitText}>Isumite ang Rejection</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Edit Beneficiary Information Modal ── */}
+      <Modal visible={editModalVisible} transparent animationType="fade" onRequestClose={() => setEditModalVisible(false)}>
+        <View style={s.rejectOverlay}>
+          <View style={s.rejectCard}>
+            <View style={s.rejectHeader}>
+              <Text style={s.rejectTitle}>I-edit ang Impormasyon ng Benepisyaryo</Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <Text style={s.rejectClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }}>
+              <Text style={s.editFieldLabel}>CONTACT NUMBER</Text>
+              <TextInput
+                style={s.editInput}
+                value={editForm.contact_number}
+                onChangeText={(val) => setEditForm((prev) => ({ ...prev, contact_number: val }))}
+                placeholder="09123456789"
+                keyboardType="phone-pad"
+              />
+
+              <Text style={s.editFieldLabel}>TIRAHAN / ADDRESS</Text>
+              <TextInput
+                style={s.editInput}
+                value={editForm.address}
+                onChangeText={(val) => setEditForm((prev) => ({ ...prev, address: val }))}
+                placeholder="House no., Street..."
+              />
+
+              <Text style={s.editFieldLabel}>SITIO / PUROK</Text>
+              <TextInput
+                style={s.editInput}
+                value={editForm.sitio}
+                onChangeText={(val) => setEditForm((prev) => ({ ...prev, sitio: val }))}
+                placeholder="Sitio..."
+              />
+
+              <Text style={s.editFieldLabel}>CIVIL STATUS</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                {['Single', 'Married', 'Widowed', 'Separated'].map((st) => (
+                  <TouchableOpacity
+                    key={st}
+                    style={[s.statusChip, editForm.civil_status === st && s.statusChipActive]}
+                    onPress={() => setEditForm((prev) => ({ ...prev, civil_status: st }))}
+                  >
+                    <Text style={[s.statusChipText, editForm.civil_status === st && s.statusChipTextActive]}>{st}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={s.rejectBtnRow}>
+              <TouchableOpacity style={s.rejectCancelBtn} onPress={() => setEditModalVisible(false)}>
+                <Text style={s.rejectCancelText}>Kanselahin</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.approveActionBtn, { flex: 1, paddingVertical: 10 }, savingEdit && { opacity: 0.6 }]}
+                onPress={handleSaveEdit}
+                disabled={savingEdit}
+              >
+                {savingEdit ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.approveActionBtnText}>I-save</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Document Image Preview Modal ── */}
+      <Modal visible={!!docPreviewUrl} transparent animationType="fade" onRequestClose={() => setDocPreviewUrl(null)}>
+        <SafeAreaView style={s.docPreviewOverlay}>
+          <View style={s.docPreviewHeader}>
+            <Text style={s.docPreviewHeaderTitle} numberOfLines={1}>{docPreviewTitle || 'Dokumento'}</Text>
+            <TouchableOpacity onPress={() => setDocPreviewUrl(null)} style={s.docPreviewCloseBtn}>
+              <Text style={s.docPreviewCloseText}>✕ Isara</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={s.docPreviewBody}>
+            {docPreviewUrl && (
+              <Image
+                source={{ uri: docPreviewUrl }}
+                style={s.docPreviewImage}
+                resizeMode="contain"
+              />
+            )}
           </View>
         </SafeAreaView>
       </Modal>
@@ -1299,6 +1934,497 @@ const s = StyleSheet.create({
   qrShareBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   qrCloseBtn: { minHeight: 44, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   qrCloseBtnText: { color: '#334155', fontSize: 13, fontWeight: '800' },
+
+  // Segmented Mode Tabs
+  modeTabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderRadius: 12,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    elevation: 1,
+  },
+  modeTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 9,
+    gap: 6,
+  },
+  modeTabBtnActive: {
+    backgroundColor: '#1e40af',
+  },
+  modeTabBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  modeTabBtnTextActive: {
+    color: '#ffffff',
+  },
+  tabBadgeCount: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+  },
+  tabBadgeCountText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  // Application card actions
+  appCardActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  appReviewBtn: {
+    flex: 1,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appReviewBtnText: {
+    color: '#1d4ed8',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  appQuickApproveBtn: {
+    backgroundColor: '#16a34a',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appQuickApproveBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  // Edit info button in profile
+  editInfoBtn: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  editInfoBtnText: {
+    color: '#1d4ed8',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // RFID Assignment Section
+  rfidSection: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  rfidLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: 0.5,
+  },
+  rfidValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e293b',
+    marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  rfidEditToggleBtn: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  rfidEditToggleBtnText: {
+    color: '#1d4ed8',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  rfidEditBox: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    gap: 8,
+  },
+  rfidInput: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 42,
+    fontSize: 13,
+    color: '#0f172a',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  rfidSaveBtn: {
+    backgroundColor: '#16a34a',
+    borderRadius: 8,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rfidSaveBtnText: {
+    color: '#fff',
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+
+  // Payout actions
+  payoutActionsRow: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  toggleAccountNoBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
+  },
+  toggleAccountNoText: {
+    color: '#2563eb',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  verifyPayoutBtn: {
+    flex: 1,
+    backgroundColor: '#16a34a',
+    borderRadius: 8,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyPayoutBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  rejectPayoutBtn: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectPayoutBtnText: {
+    color: '#dc2626',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  // Review Application Modal
+  appReviewHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    elevation: 1,
+    gap: 12,
+  },
+  docItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 10,
+  },
+  docItemTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  docItemSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  docViewBtn: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  docViewBtnText: {
+    color: '#1d4ed8',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  appDecisionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 24,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  appDecisionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+    textTransform: 'uppercase',
+  },
+  appDecisionDesc: {
+    fontSize: 11.5,
+    color: '#64748b',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  approveActionBtn: {
+    backgroundColor: '#16a34a',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  approveActionBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  rejectActionBtn: {
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#fca5a5',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectActionBtnText: {
+    color: '#dc2626',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  // Reject Overlay Modal
+  rejectOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.65)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  rejectCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    elevation: 12,
+  },
+  rejectHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    paddingBottom: 10,
+  },
+  rejectTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a',
+    flex: 1,
+  },
+  rejectClose: {
+    fontSize: 18,
+    color: '#94a3b8',
+    padding: 4,
+  },
+  rejectSubtitle: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748b',
+    marginBottom: 8,
+  },
+  missingDocChip: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginBottom: 6,
+  },
+  missingDocChipActive: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fca5a5',
+  },
+  missingDocText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  missingDocTextActive: {
+    color: '#dc2626',
+    fontWeight: '800',
+  },
+  rejectInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 12.5,
+    color: '#0f172a',
+    textAlignVertical: 'top',
+    minHeight: 70,
+  },
+  rejectBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  rejectCancelBtn: {
+    flex: 1,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectCancelText: {
+    color: '#475569',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  rejectSubmitBtn: {
+    flex: 1.5,
+    backgroundColor: '#dc2626',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectSubmitText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  // Edit fields
+  editFieldLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#64748b',
+    marginTop: 10,
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  editInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 42,
+    fontSize: 13,
+    color: '#0f172a',
+  },
+  statusChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#f8fafc',
+  },
+  statusChipActive: {
+    backgroundColor: '#1e40af',
+    borderColor: '#1e40af',
+  },
+  statusChipText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  statusChipTextActive: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+
+  // Document preview modal
+  docPreviewOverlay: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  docPreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+  },
+  docPreviewHeaderTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+    flex: 1,
+  },
+  docPreviewCloseBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  docPreviewCloseText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  docPreviewBody: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 10,
+  },
+  docPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
 });
 
 export default BeneficiaryListScreen;
