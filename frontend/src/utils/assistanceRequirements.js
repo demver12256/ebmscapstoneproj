@@ -1,3 +1,20 @@
+import { API_ORIGIN } from '../config/api';
+
+/**
+ * Resolve a relative upload path (e.g. "/uploads/documents/...") to a full backend URL
+ */
+export const resolveDocumentUrl = (rawUrl) => {
+  if (!rawUrl) return '';
+  const str = String(rawUrl).trim();
+  if (str.startsWith('data:') || str.startsWith('blob:')) return str;
+  if (str.startsWith('http://localhost:5000')) {
+    return `${API_ORIGIN}${str.replace(/^http:\/\/localhost:5000/, '')}`;
+  }
+  if (str.startsWith('http://') || str.startsWith('https://')) return str;
+  const cleanPath = str.startsWith('/') ? str : `/${str}`;
+  return `${API_ORIGIN}${cleanPath}`;
+};
+
 /**
  * Unified Requirements Configuration for DSWD & MSWDO Assistance Services
  * Provides bilingual (Filipino & English) metadata, mandatory flags, and guidance.
@@ -325,15 +342,24 @@ export const getRequirementsForType = (assistanceType) => {
  * - An array already
  */
 export const parseAttachments = (raw) => {
+  const normalizeItem = (item) => {
+    if (!item || typeof item !== 'object') return item;
+    return {
+      ...item,
+      rawUrl: item.url,
+      url: resolveDocumentUrl(item.url),
+    };
+  };
+
   if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw)) return raw.map(normalizeItem);
   if (typeof raw === 'string') {
     const trimmed = raw.trim();
     if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
       try {
         const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) return parsed;
-        if (parsed && typeof parsed === 'object') return [parsed];
+        if (Array.isArray(parsed)) return parsed.map(normalizeItem);
+        if (parsed && typeof parsed === 'object') return [normalizeItem(parsed)];
       } catch (e) {
         // Not valid JSON, fallback to single URL
       }
@@ -341,7 +367,8 @@ export const parseAttachments = (raw) => {
     return [
       {
         name: trimmed.split('/').pop() || 'Supporting Document',
-        url: trimmed,
+        rawUrl: trimmed,
+        url: resolveDocumentUrl(trimmed),
       },
     ];
   }

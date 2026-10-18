@@ -250,6 +250,15 @@ router.post('/', upload.any(), async (req, res, next) => {
       ? req.files
       : (req.file ? [req.file] : []);
 
+    if (uploadedFiles.length > 0) {
+      const { saveUploadedFileToDb } = require('../utils/fileStorage');
+      await Promise.all(
+        uploadedFiles.map((f) =>
+          saveUploadedFileToDb(`/uploads/documents/assistance/${f.filename}`, f.path, f.mimetype)
+        )
+      );
+    }
+
     if (uploadedFiles.length === 1 && (!attachmentMetadata || attachmentMetadata.length === 0)) {
       attachmentUrl = `/uploads/documents/assistance/${uploadedFiles[0].filename}`;
     } else if (uploadedFiles.length > 0) {

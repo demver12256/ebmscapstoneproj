@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { assistanceRequestApi, beneficiaryApi } from '../services/api';
-import { parseAttachments, getRequirementsForType } from '../utils/assistanceRequirements';
+import { parseAttachments, getRequirementsForType, resolveDocumentUrl } from '../utils/assistanceRequirements';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
 import {
@@ -49,6 +49,7 @@ export default function AssistanceRequestsManagementPage() {
   const [filterType, setFilterType] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [previewAttachment, setPreviewAttachment] = useState(null);
 
   // Status Action Modal
   const [actionModal, setActionModal] = useState(null);
@@ -818,14 +819,19 @@ export default function AssistanceRequestsManagementPage() {
                                   <Paperclip className="w-3 h-3 text-emerald-600" />
                                   <span className="truncate">{matchingAtt.name}</span>
                                 </span>
-                                <a
-                                  href={matchingAtt.url?.startsWith('http') ? matchingAtt.url : `http://localhost:5000${matchingAtt.url}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-emerald-800 font-bold hover:underline shrink-0"
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPreviewAttachment({
+                                      ...matchingAtt,
+                                      url: resolveDocumentUrl(matchingAtt.url),
+                                      label: item.filipinoName || item.name,
+                                    })
+                                  }
+                                  className="text-emerald-800 font-bold hover:underline shrink-0 cursor-pointer"
                                 >
                                   View
-                                </a>
+                                </button>
                               </div>
                             )}
                           </div>
@@ -863,15 +869,20 @@ export default function AssistanceRequestsManagementPage() {
                             </span>
                           </div>
                         </div>
-                        <a
-                          href={att.url?.startsWith('http') ? att.url : `http://localhost:5000${att.url}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs shrink-0"
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPreviewAttachment({
+                              ...att,
+                              url: resolveDocumentUrl(att.url),
+                              label: att.requirementName || att.name,
+                            })
+                          }
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer"
                         >
+                          <Eye className="w-3.5 h-3.5" />
                           <span>View File</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1400,6 +1411,65 @@ export default function AssistanceRequestsManagementPage() {
                     </button>
                   </div>
                 </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document / Attachment Preview Modal */}
+      {previewAttachment && (
+        <div
+          className="fixed inset-0 z-[70] bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setPreviewAttachment(null)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 truncate">
+                  {previewAttachment.label || previewAttachment.requirementName || 'Submitted Requirement Document'}
+                </h3>
+                <p className="text-xs text-slate-500 truncate">
+                  {previewAttachment.name}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={resolveDocumentUrl(previewAttachment.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs"
+                >
+                  <span>Open in New Tab</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewAttachment(null)}
+                  className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-200/70 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto bg-slate-100 p-4 flex items-center justify-center min-h-[420px]">
+              {(previewAttachment.mimetype === 'application/pdf' ||
+                String(previewAttachment.name || previewAttachment.url || '').toLowerCase().endsWith('.pdf')) ? (
+                <iframe
+                  src={resolveDocumentUrl(previewAttachment.url)}
+                  title={previewAttachment.name || 'PDF Preview'}
+                  className="w-full h-[72vh] rounded-xl bg-white border border-slate-200"
+                />
+              ) : (
+                <img
+                  src={resolveDocumentUrl(previewAttachment.url)}
+                  alt={previewAttachment.name || 'Document Preview'}
+                  className="max-w-full max-h-[72vh] object-contain rounded-xl shadow-md bg-white"
+                />
               )}
             </div>
           </div>

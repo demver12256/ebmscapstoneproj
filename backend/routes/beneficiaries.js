@@ -570,6 +570,8 @@ router.post('/me/documents', authorize('beneficiary'), upload.single('document')
     }
 
     const relativePath = `uploads/documents/${req.file.filename}`;
+    const { saveUploadedFileToDb } = require('../utils/fileStorage');
+    await saveUploadedFileToDb(`/${relativePath}`, req.file.path, req.file.mimetype);
     const doc = await BeneficiaryDocument.create({
       beneficiary_id: beneficiary.id,
       document_type,
@@ -610,6 +612,8 @@ router.post('/me/profile-picture', authorize('beneficiary'), upload.single('prof
     }
 
     const relativePath = `uploads/documents/${req.file.filename}`;
+    const { saveUploadedFileToDb } = require('../utils/fileStorage');
+    await saveUploadedFileToDb(`/${relativePath}`, req.file.path, req.file.mimetype);
     await beneficiary.update({ profile_picture: relativePath });
 
     res.json({ success: true, message: 'Profile picture updated', data: { profile_picture: relativePath } });

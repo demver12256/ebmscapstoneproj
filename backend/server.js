@@ -85,7 +85,8 @@ app.use(
 );
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use('/uploads', cors(), express.static(path.join(__dirname, 'uploads')));
+const { initFileStorageTable, serveUploadedFileFallback } = require('./utils/fileStorage');
+app.use('/uploads', cors(), express.static(path.join(__dirname, 'uploads')), serveUploadedFileFallback);
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -234,6 +235,7 @@ const { checkAndProcessExpiredDistributions } = require('./utils/distributionSch
 
 connectDatabase()
   .then(async () => {
+    await initFileStorageTable();
     await createDefaultAdmin();
     autoCompleteExpiredAnnouncements().catch((err) => console.error('[ANNOUNCEMENTS] Auto-complete failed:', err.message));
     setInterval(() => {

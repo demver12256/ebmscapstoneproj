@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { assistanceRequestApi, beneficiaryApi } from '../services/api';
-import { getRequirementsForType, parseAttachments } from '../utils/assistanceRequirements';
+import { getRequirementsForType, parseAttachments, resolveDocumentUrl } from '../utils/assistanceRequirements';
 import {
   Building2, Landmark, HandHeart, HeartHandshake, Pill,
   FlaskConical, GraduationCap, Wallet, CheckCircle2, Clock,
@@ -992,7 +992,7 @@ export default function RequestAssistancePage() {
                             {parseAttachments(req.attachment_url).map((att, attIdx) => (
                               <a
                                 key={attIdx}
-                                href={att.url?.startsWith('http') ? att.url : `http://localhost:5000${att.url}`}
+                                href={resolveDocumentUrl(att.url)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 font-medium text-slate-600 hover:text-slate-900 text-[10px] bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-md transition-colors"
@@ -1137,7 +1137,7 @@ export default function RequestAssistancePage() {
                           </span>
                         </div>
                         <a
-                          href={att.url?.startsWith('http') ? att.url : `http://localhost:5000${att.url}`}
+                          href={resolveDocumentUrl(att.url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="font-semibold text-slate-900 hover:underline shrink-0 text-[11px] inline-flex items-center gap-1"

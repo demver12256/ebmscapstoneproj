@@ -580,6 +580,8 @@ router.post(
       }
 
       const relativePath = `uploads/documents/medical/${req.file.filename}`;
+      const { saveUploadedFileToDb } = require('../utils/fileStorage');
+      await saveUploadedFileToDb(`/${relativePath}`, req.file.path, req.file.mimetype);
 
       // Check if document of this code already exists; if so, replace it
       let doc = await MedicalAssistanceDocument.findOne({

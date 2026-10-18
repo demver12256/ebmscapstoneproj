@@ -40,7 +40,7 @@ import { beneficiaryApi, medicalAssistanceApi, distributionApi, assistanceReques
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
 import { isNonCashProgram, getNonCashDetails } from '../utils/nonCashPrograms';
-import { parseAttachments } from '../utils/assistanceRequirements';
+import { parseAttachments, resolveDocumentUrl } from '../utils/assistanceRequirements';
 
 export default function MyBenefitsPage() {
   const navigate = useNavigate();
@@ -802,7 +802,7 @@ export default function MyBenefitsPage() {
                         {parseAttachments(item.attachmentUrl).map((att, attIdx) => (
                           <a
                             key={attIdx}
-                            href={att.url?.startsWith('http') ? att.url : `http://localhost:5000${att.url}`}
+                            href={resolveDocumentUrl(att.url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors"
@@ -1225,7 +1225,7 @@ export default function MyBenefitsPage() {
                         </div>
                       </div>
                       <a
-                        href={`http://localhost:5000/${doc.file_path}`}
+                        href={resolveDocumentUrl(doc.file_path)}
                         target="_blank"
                         rel="noreferrer"
                         className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center gap-1 transition"
@@ -1391,7 +1391,7 @@ export default function MyBenefitsPage() {
                           </div>
                         </div>
                         <a
-                          href={att.url?.startsWith('http') ? att.url : `http://localhost:5000${att.url}`}
+                          href={resolveDocumentUrl(att.url)}
                           target="_blank"
                           rel="noreferrer"
                           className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center gap-1 transition"

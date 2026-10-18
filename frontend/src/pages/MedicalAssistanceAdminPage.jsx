@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { medicalAssistanceApi, barangayApi } from '../services/api';
+import { resolveDocumentUrl } from '../utils/assistanceRequirements';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
 import {
@@ -938,7 +939,7 @@ export default function MedicalAssistanceAdminPage() {
               </div>
               <div className="flex items-center gap-2">
                 <a
-                  href={`http://localhost:5000/${previewDoc.file_path}`}
+                  href={resolveDocumentUrl(previewDoc.file_path)}
                   target="_blank"
                   rel="noreferrer"
                   className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 flex items-center gap-1.5"
@@ -959,13 +960,13 @@ export default function MedicalAssistanceAdminPage() {
             <div className="flex-1 overflow-auto p-4 bg-slate-50 flex items-center justify-center min-h-[400px]">
               {previewDoc.mime_type?.includes('pdf') || previewDoc.file_name?.endsWith('.pdf') ? (
                 <iframe
-                  src={`http://localhost:5000/${previewDoc.file_path}`}
+                  src={resolveDocumentUrl(previewDoc.file_path)}
                   title={previewDoc.document_name}
                   className="w-full h-[65vh] rounded-xl border border-slate-200 bg-white"
                 />
               ) : (
                 <img
-                  src={`http://localhost:5000/${previewDoc.file_path}`}
+                  src={resolveDocumentUrl(previewDoc.file_path)}
                   alt={previewDoc.document_name}
                   className="max-h-[65vh] object-contain rounded-xl shadow-sm"
                 />
