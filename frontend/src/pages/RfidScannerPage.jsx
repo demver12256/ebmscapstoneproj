@@ -247,24 +247,35 @@ export default function RfidScannerPage() {
         return;
       }
 
-      const qrToken = cleanInput.replace(/^EBMS-QR:/i, '').trim();
-      const beneficiary = qualifiedBeneficiaries.find((b) => {
-        const matchesRfid = b.RFID_number && (
-          b.RFID_number.toLowerCase() === cleanInput.toLowerCase() ||
-          b.RFID_number.toLowerCase() === qrToken.toLowerCase()
-        );
-        const matchesQr = b.qr_code_token && (
-          b.qr_code_token.toLowerCase() === qrToken.toLowerCase() ||
-          b.qr_code_token.toLowerCase() === cleanInput.toLowerCase()
-        );
-        const matchesCode = b.beneficiary_id_code && (
-          b.beneficiary_id_code.toLowerCase() === qrToken.toLowerCase() ||
-          b.beneficiary_id_code.toLowerCase() === cleanInput.toLowerCase()
-        );
-        return matchesRfid || matchesQr || matchesCode;
-      });
+      // Fetch latest transactions for this event so QR and RFID matching never uses stale state
+      const txnRes = await distributionApi.getTransactions(selectedEvent);
+      const transactions = txnRes.data.data || [];
 
-      if (!beneficiary) {
+      const qrToken = cleanInput.replace(/^EBMS-QR:/i, '').trim();
+      const matchesInput = (b) => {
+        if (!b) return false;
+        const rfidVal = String(b.RFID_number || '').trim().toLowerCase();
+        const qrVal = String(b.qr_token || b.qr_code_token || '').trim().toLowerCase();
+        const qrFullVal = String(b.qr_code || '').trim().toLowerCase();
+        const codeVal = String(b.beneficiary_id_code || '').trim().toLowerCase();
+        const rawLower = cleanInput.toLowerCase();
+        const tokenLower = qrToken.toLowerCase();
+
+        const matchesRfid = rfidVal && (rfidVal === rawLower || rfidVal === tokenLower);
+        const matchesQr =
+          (qrVal && (qrVal === tokenLower || qrVal === rawLower)) ||
+          (qrFullVal && (qrFullVal === rawLower || qrFullVal === `ebms-qr:${tokenLower}`));
+        const matchesCode = codeVal && (codeVal === tokenLower || codeVal === rawLower);
+        return Boolean(matchesRfid || matchesQr || matchesCode);
+      };
+
+      const matchedTxn =
+        transactions.find((t) => t.status === 'pending' && matchesInput(t.Beneficiary)) ||
+        transactions.find((t) => matchesInput(t.Beneficiary));
+
+      const beneficiary = matchedTxn?.Beneficiary || qualifiedBeneficiaries.find(matchesInput);
+
+      if (!beneficiary || !matchedTxn) {
         setError(`Walang kwalipikadong benepisyaryo na may hawak ng RFID / QR Code: "${cleanInput}"`);
         setRfidInput('');
         setTimeout(() => {
@@ -273,12 +284,12 @@ export default function RfidScannerPage() {
         return;
       }
 
-      const isDuplicate = scannedRecords.some(
-        (r) => (r.beneficiaryId === beneficiary.id || (r.rfid && r.rfid === beneficiary.RFID_number)) && r.date === distributionDate
+      const isDuplicateLocal = scannedRecords.some(
+        (r) => r.beneficiaryId === beneficiary.id && r.date === distributionDate
       );
 
-      if (isDuplicate) {
-        setError(`${beneficiary.first_name} ${beneficiary.last_name} ay nakatanggap na ng benepisyo sa event na ito!`);
+      if (matchedTxn.status === 'released' || isDuplicateLocal) {
+        setError(`⚠️ Naka-claim na: Si ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code || 'N/A'}) ay nakatanggap na ng benepisyo sa event na ito! Hindi na kailangang i-scan ulit ang RFID o QR Code.`);
         setRfidInput('');
         setTimeout(() => {
           if (rfidInputRef.current) rfidInputRef.current.focus();
@@ -286,13 +297,7 @@ export default function RfidScannerPage() {
         return;
       }
 
-      const txnRes = await distributionApi.getTransactions(selectedEvent);
-      const transactions = txnRes.data.data || [];
-      const transaction = transactions.find(txn => 
-        txn.beneficiary_id === beneficiary.id && txn.status === 'pending'
-      );
-
-      if (!transaction) {
+      if (matchedTxn.status !== 'pending') {
         setError(`Walang nakabinbing ayuda (pending transaction) para kay ${beneficiary.first_name} ${beneficiary.last_name}`);
         setRfidInput('');
         setTimeout(() => {
@@ -301,8 +306,10 @@ export default function RfidScannerPage() {
         return;
       }
 
-      const isRfidScan = beneficiary.RFID_number && (
-        beneficiary.RFID_number.toLowerCase() === cleanInput.toLowerCase()
+      const transaction = matchedTxn;
+      const isRfidScan = Boolean(
+        beneficiary.RFID_number &&
+        beneficiary.RFID_number.trim().toLowerCase() === cleanInput.toLowerCase()
       );
 
       await distributionApi.releaseBenefit(selectedEvent, transaction.id, {
@@ -317,10 +324,13 @@ export default function RfidScannerPage() {
       const retroAmt = parseFloat(transaction.retro_amount || 0);
       const totalPayout = regularAmt + retroAmt;
       const retroPeriods = transaction.retro_periods || 0;
+      const isNonCash = transaction.disbursement_type === 'in_kind' || Boolean(transaction.item_name);
 
-      const successMsg = retroPeriods > 0
-        ? `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Na-release ang benepisyo! Kabuuan: ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })} (Regular: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} + Retro: ₱${retroAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} para sa ${retroPeriods} period(s))`
-        : `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Na-release ang benepisyo! Halaga: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
+      const successMsg = isNonCash && totalPayout === 0
+        ? `✅ ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code || 'N/A'}) - Na-release na ang benepisyo: ${transaction.item_name || 'In-Kind Relief Package'} (${isRfidScan ? 'RFID Card' : 'QR Pass'})!`
+        : retroPeriods > 0
+          ? `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Na-release ang benepisyo! Kabuuan: ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })} (Regular: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} + Retro: ₱${retroAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} para sa ${retroPeriods} period(s))`
+          : `✅ ${beneficiary.first_name} ${beneficiary.last_name} - Na-release ang benepisyo! Halaga: ₱${regularAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
       setSuccess(successMsg);
 
@@ -332,6 +342,7 @@ export default function RfidScannerPage() {
         beneficiary_id_code: beneficiary.beneficiary_id_code,
         category: beneficiary.category,
         amount: totalPayout,
+        item_name: transaction.item_name || null,
         regular_amount: regularAmt,
         retro_amount: retroAmt,
         retro_periods: retroPeriods,
@@ -342,13 +353,16 @@ export default function RfidScannerPage() {
       };
 
       setScannedRecords((prev) => [newRecord, ...prev]);
-      setQualifiedBeneficiaries((prev) => prev.filter((b) => b.id !== beneficiary.id));
+      const remainingPending = transactions
+        .filter((t) => t.status === 'pending' && t.id !== transaction.id && t.Beneficiary)
+        .map((t) => t.Beneficiary);
+      setQualifiedBeneficiaries(remainingPending);
       setRfidInput('');
 
       setTimeout(() => {
         if (rfidInputRef.current) rfidInputRef.current.focus();
       }, 100);
-      setTimeout(() => setSuccess(null), 4000);
+      setTimeout(() => setSuccess(null), 5000);
     } catch (err) {
       console.error('Error:', err);
       if (err.response) {
@@ -378,6 +392,9 @@ export default function RfidScannerPage() {
       }, 800);
     }
   };
+
+  const executeScanRef = useRef(executeScan);
+  executeScanRef.current = executeScan;
 
   const handleScan = (e) => {
     e.preventDefault();
@@ -453,8 +470,8 @@ export default function RfidScannerPage() {
           config,
           (decodedText) => {
             console.log('Camera scanned QR code:', decodedText);
-            if (!isProcessingScanRef.current) {
-              executeScan(decodedText);
+            if (!isProcessingScanRef.current && executeScanRef.current) {
+              executeScanRef.current(decodedText);
             }
           },
           () => {}
@@ -500,7 +517,9 @@ export default function RfidScannerPage() {
       setIsCameraActive(false);
       setCameraCaptureMode(false);
       setCameraLoading(false);
-      await executeScan(decodedText);
+      if (executeScanRef.current) {
+        await executeScanRef.current(decodedText);
+      }
     } catch (err) {
       console.error('QR image scan error:', err);
       setCameraError('Hindi mabasa ang QR code sa larawan. Subukang kunan itong muli nang malinaw at malapit.');

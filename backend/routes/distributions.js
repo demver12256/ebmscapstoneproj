@@ -1301,7 +1301,28 @@ router.get('/events/:id/transactions', authorize('admin', 'staff', 'barangay', '
       order: [['created_at', 'ASC']],
     });
 
-    res.json({ success: true, data: transactions });
+    const serializedTransactions = [];
+    for (const t of transactions) {
+      if (t.Beneficiary && !t.Beneficiary.qr_token) {
+        const generatedToken = Beneficiary.generateQrToken
+          ? Beneficiary.generateQrToken()
+          : require('crypto').randomBytes(16).toString('hex').toUpperCase();
+        await Beneficiary.update(
+          { qr_token: generatedToken, qr_generated_at: new Date() },
+          { where: { id: t.Beneficiary.id }, hooks: false }
+        );
+        t.Beneficiary.qr_token = generatedToken;
+      }
+      const plain = t.toJSON();
+      if (plain.Beneficiary) {
+        plain.Beneficiary.qr_code_token = plain.Beneficiary.qr_token || null;
+        plain.Beneficiary.qr_code = plain.Beneficiary.qr_token ? `EBMS-QR:${plain.Beneficiary.qr_token}` : null;
+        plain.Beneficiary.profile_photo = plain.Beneficiary.profile_picture || null;
+      }
+      serializedTransactions.push(plain);
+    }
+
+    res.json({ success: true, data: serializedTransactions });
   } catch (error) {
     next(error);
   }
