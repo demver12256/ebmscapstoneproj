@@ -1339,7 +1339,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       venue: venue || null,
       priority,
       status: finalStatus,
-      publish_date: finalStatus === 'published' ? new Date() : null,
+      publish_date: new Date(),
       expiration_date: expiration_date || null,
       target_programs: targetCatsOrProgs,
       target_barangays: parsedBarangays,
@@ -1353,24 +1353,32 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
     if (finalStatus === 'published') {
       await dispatchAnnouncementNotifications(announcement, req.user.id);
     } else if (finalStatus === 'pending_approval') {
-      const staffBrgy = await Barangay.findByPk(req.user.barangay_id);
-      const brgyLabel = staffBrgy?.barangay_name ? `Barangay ${staffBrgy.barangay_name}` : 'Barangay';
-      const dswdAdmins = await User.findAll({
-        where: { role: 'admin', is_active: true },
-        attributes: ['id'],
-      });
-      if (dswdAdmins.length > 0) {
-        await Notification.bulkCreate(
-          dswdAdmins.map((adminUser) => ({
-            user_id: adminUser.id,
-            title: `⏳ For Approval (${brgyLabel}): ${announcement.title}`,
-            message: `[BARANGAY STAFF REQUEST] Si ${req.user.first_name || 'Staff'} ${req.user.last_name || ''} ng ${brgyLabel} ay gumawa ng announcement na "${announcement.title}" (${previewMatches.length} target beneficiaries). Mangyaring i-review at i-approve sa Announcements page upang ma-publish.`,
-            type: 'announcement',
-            reference_id: announcement.id,
-            reference_type: 'announcement_staff',
-            is_read: false,
-          }))
-        );
+      let brgyLabel = 'Barangay';
+      try {
+        const staffBrgy = await Barangay.findByPk(req.user.barangay_id);
+        if (staffBrgy?.barangay_name) {
+          brgyLabel = `Barangay ${staffBrgy.barangay_name}`;
+        }
+        const dswdAdmins = await User.findAll({
+          where: { role: 'admin', status: 'active' },
+          attributes: ['id'],
+        });
+        if (dswdAdmins.length > 0) {
+          await Notification.bulkCreate(
+            dswdAdmins.map((adminUser) => ({
+              user_id: adminUser.id,
+              title: `⏳ For Approval (${brgyLabel}): ${announcement.title}`,
+              message: `[BARANGAY STAFF REQUEST] Si ${req.user.first_name || 'Staff'} ${req.user.last_name || ''} ng ${brgyLabel} ay gumawa ng announcement na "${announcement.title}" (${previewMatches.length} target beneficiaries). Mangyaring i-review at i-approve sa Announcements page upang ma-publish.`,
+              type: 'system',
+              reference_id: announcement.id,
+              reference_type: 'announcement_staff',
+              is_read: false,
+            })),
+            { ignoreDuplicates: true }
+          );
+        }
+      } catch (notifErr) {
+        console.error('Failed to notify DSWD Admins of pending staff announcement:', notifErr.message);
       }
 
       await AuditLog.create({
@@ -2004,15 +2012,19 @@ router.patch('/:id/approve', authorize('admin'), async (req, res, next) => {
 
     // Notify the Barangay Staff creator that their announcement was approved
     if (announcement.created_by_user_id && Number(announcement.created_by_user_id) !== Number(req.user.id)) {
-      await Notification.create({
-        user_id: announcement.created_by_user_id,
-        title: `✅ Approved & Published: ${announcement.title}`,
-        message: `Inaprubahan na ng DSWD Admin ang iyong announcement na "${announcement.title}". Naipadala na ang abiso at SMS sa ${recipientCount} na benepisyaryo ng iyong barangay.`,
-        type: 'announcement',
-        reference_id: announcement.id,
-        reference_type: 'announcement_staff',
-        is_read: false,
-      });
+      try {
+        await Notification.create({
+          user_id: announcement.created_by_user_id,
+          title: `✅ Approved & Published: ${announcement.title}`,
+          message: `Inaprubahan na ng DSWD Admin ang iyong announcement na "${announcement.title}". Naipadala na ang abiso at SMS sa ${recipientCount} na benepisyaryo ng iyong barangay.`,
+          type: 'system',
+          reference_id: announcement.id,
+          reference_type: 'announcement_staff',
+          is_read: false,
+        });
+      } catch (notifErr) {
+        console.error('Failed to notify staff creator of announcement approval:', notifErr.message);
+      }
     }
 
     await AuditLog.create({
@@ -2050,15 +2062,19 @@ router.patch('/:id/reject', authorize('admin'), async (req, res, next) => {
     });
 
     if (announcement.created_by_user_id && Number(announcement.created_by_user_id) !== Number(req.user.id)) {
-      await Notification.create({
-        user_id: announcement.created_by_user_id,
-        title: `❌ Disapproved Announcement: ${announcement.title}`,
-        message: `Hindi inaprubahan ng DSWD Admin ang iyong announcement na "${announcement.title}".${reason ? ` Dahilan: ${reason}` : ' Maaari mo itong i-edit at i-submit muli.'}`,
-        type: 'announcement',
-        reference_id: announcement.id,
-        reference_type: 'announcement_staff',
-        is_read: false,
-      });
+      try {
+        await Notification.create({
+          user_id: announcement.created_by_user_id,
+          title: `❌ Disapproved Announcement: ${announcement.title}`,
+          message: `Hindi inaprubahan ng DSWD Admin ang iyong announcement na "${announcement.title}".${reason ? ` Dahilan: ${reason}` : ' Maaari mo itong i-edit at i-submit muli.'}`,
+          type: 'system',
+          reference_id: announcement.id,
+          reference_type: 'announcement_staff',
+          is_read: false,
+        });
+      } catch (notifErr) {
+        console.error('Failed to notify staff creator of announcement rejection:', notifErr.message);
+      }
     }
 
     await AuditLog.create({

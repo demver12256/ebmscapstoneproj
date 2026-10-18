@@ -181,7 +181,15 @@ const connectDatabase = async () => {
       "ALTER TABLE announcements MODIFY COLUMN status ENUM('draft', 'pending_approval', 'scheduled', 'published', 'completed', 'rejected', 'archived') NOT NULL DEFAULT 'published'"
     );
   } catch (err) {
-    // Ignore error if table does not exist yet
+    console.warn('announcements.status ENUM migration skipped:', err.message);
+  }
+  try {
+    // Ensure notifications.type ENUM supports announcement notifications
+    await sequelize.query(
+      "ALTER TABLE notifications MODIFY COLUMN type ENUM('distribution', 'program', 'system', 'announcement', 'announcement_absence') NOT NULL DEFAULT 'system'"
+    );
+  } catch (err) {
+    console.warn('notifications.type ENUM migration skipped:', err.message);
   }
   // alter:{drop:false} adds new columns/tables but skips re-creating existing indexes,
   // preventing the duplicate _2, _3... index buildup that hits MySQL's 64-key limit.
