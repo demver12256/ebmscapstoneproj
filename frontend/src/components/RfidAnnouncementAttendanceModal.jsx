@@ -105,8 +105,9 @@ export default function RfidAnnouncementAttendanceModal({ announcement, onClose,
       });
 
       const data = res.data;
+      const isDuplicate = Boolean(data.already_present || data.duplicate);
       setLastScanResult({
-        status: 'success',
+        status: isDuplicate ? 'duplicate' : 'success',
         message: data.message,
         beneficiary: data.beneficiary,
         timestamp: new Date().toLocaleTimeString(),
@@ -119,10 +120,11 @@ export default function RfidAnnouncementAttendanceModal({ announcement, onClose,
       fetchAttendanceStats();
       if (onRefresh) onRefresh();
     } catch (err) {
-      const errorMsg = err.message || err.data?.message || 'Attendance scan failed';
-      const beneficiary = err.data?.beneficiary || null;
+      const errorMsg = err.response?.data?.message || err.data?.message || err.message || 'Attendance scan failed';
+      const beneficiary = err.response?.data?.beneficiary || err.data?.beneficiary || null;
+      const status = err.response?.status || err.status;
 
-      if (err.status === 409 || errorMsg.includes('DUPLICATE')) {
+      if (status === 409 || errorMsg.includes('DUPLICATE')) {
         setLastScanResult({
           status: 'duplicate',
           message: errorMsg,

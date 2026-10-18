@@ -1492,17 +1492,32 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
       });
     }
 
-    // Check if already marked present (Prevent duplicate scan)
+    // Check if already marked present (Prevent duplicate scan without throwing HTTP 409 console error)
     if (recipient.attendance_status === 'Present') {
-      return res.status(409).json({
-        success: false,
-        message: `DUPLICATE SCAN: Beneficiary ${beneficiary.first_name} ${beneficiary.last_name} has ALREADY been recorded present at ${recipient.scanned_at ? new Date(recipient.scanned_at).toLocaleTimeString() : 'earlier'}.`,
+      const totalRecipients = await AnnouncementRecipient.count({ where: { announcement_id: announcement.id } });
+      const presentCount = await AnnouncementRecipient.count({ where: { announcement_id: announcement.id, attendance_status: 'Present' } });
+
+      return res.status(200).json({
+        success: true,
+        already_present: true,
+        duplicate: true,
+        message: `DUPLICATE SCAN: Si ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code || 'N/A'}) ay NAITALA NA bilang Present kaninang ${recipient.scanned_at ? new Date(recipient.scanned_at).toLocaleTimeString() : 'mas maaga'}.`,
         beneficiary: {
           id: beneficiary.id,
           first_name: beneficiary.first_name,
           last_name: beneficiary.last_name,
+          RFID_number: beneficiary.RFID_number,
           beneficiary_id_code: beneficiary.beneficiary_id_code,
+          profile_photo: beneficiary.profile_photo,
+          category: beneficiary.category,
+          barangay_name: beneficiary.Barangay?.barangay_name,
           scanned_at: recipient.scanned_at,
+        },
+        stats: {
+          total_expected: totalRecipients,
+          total_present: presentCount,
+          total_absent: totalRecipients - presentCount,
+          percentage: totalRecipients > 0 ? Math.round((presentCount / totalRecipients) * 100) : 0,
         },
       });
     }
@@ -1547,6 +1562,7 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
         id: beneficiary.id,
         first_name: beneficiary.first_name,
         last_name: beneficiary.last_name,
+        RFID_number: beneficiary.RFID_number,
         beneficiary_id_code: beneficiary.beneficiary_id_code,
         profile_photo: beneficiary.profile_photo,
         category: beneficiary.category,

@@ -65,6 +65,7 @@ export default function RfidAttendancePage() {
     const loadAnnouncementDetails = async () => {
       if (!selectedAnnouncement) {
         setEventName('');
+        setScannedRecords([]);
         return;
       }
 
@@ -73,9 +74,28 @@ export default function RfidAttendancePage() {
         if (announcement) {
           setEventName(announcement.title);
         }
+
+        const statsRes = await announcementApi.getAttendanceStats(selectedAnnouncement);
+        const presentAttendees = statsRes.data?.data?.present_attendees || [];
+        const existingRecords = presentAttendees.map((item) => {
+          const ben = item.Beneficiary || {};
+          const scannedDateObj = item.scanned_at ? new Date(item.scanned_at) : new Date();
+          return {
+            id: item.id || `${ben.id}-${item.scanned_at}`,
+            beneficiary_id: ben.id,
+            rfid: ben.RFID_number || 'N/A (QR Pass)',
+            qr_code: null,
+            name: `${ben.first_name || ''} ${ben.last_name || ''}`.trim(),
+            beneficiary_id_code: ben.beneficiary_id_code,
+            category: ben.category,
+            time: scannedDateObj.toTimeString().split(' ')[0],
+            date: scannedDateObj.toISOString().split('T')[0],
+            status: 'present',
+          };
+        });
+        setScannedRecords(existingRecords);
       } catch (err) {
         console.error('Failed to load announcement details:', err);
-        setError('Failed to load announcement details');
       }
     };
     loadAnnouncementDetails();
@@ -184,48 +204,59 @@ export default function RfidAttendancePage() {
       });
 
       const beneficiary = response.data.beneficiary;
+      const isDuplicate = Boolean(response.data.already_present || response.data.duplicate);
 
       playSuccessBeep();
-      setSuccess(`✓ ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code}) - Naitala ang Attendance!`);
-      
-      setScannedRecords((prev) => [
-        {
-          id: Date.now(),
-          rfid: beneficiary.RFID_number || 'N/A (QR Pass)',
-          qr_code: code.startsWith('EBMS-QR:') ? code : null,
-          name: `${beneficiary.first_name} ${beneficiary.last_name}`,
-          beneficiary_id_code: beneficiary.beneficiary_id_code,
-          category: beneficiary.category,
-          time: scanTime,
-          date: scanDate,
-          status: 'present',
-        },
-        ...prev,
-      ]);
+      if (isDuplicate) {
+        setSuccess(`✓ ${response.data.message || `${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code}) - Naitala na ang Attendance!`}`);
+      } else {
+        setSuccess(`✓ ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code}) - Naitala ang Attendance!`);
+      }
+
+      if (beneficiary) {
+        const scannedAtObj = beneficiary.scanned_at ? new Date(beneficiary.scanned_at) : now;
+        setScannedRecords((prev) => {
+          const alreadyInList = prev.some(
+            (r) =>
+              (beneficiary.id && Number(r.beneficiary_id) === Number(beneficiary.id)) ||
+              (beneficiary.beneficiary_id_code && r.beneficiary_id_code === beneficiary.beneficiary_id_code)
+          );
+          if (alreadyInList) return prev;
+          return [
+            {
+              id: Date.now(),
+              beneficiary_id: beneficiary.id,
+              rfid: beneficiary.RFID_number || 'N/A (QR Pass)',
+              qr_code: code.startsWith('EBMS-QR:') ? code : null,
+              name: `${beneficiary.first_name} ${beneficiary.last_name}`,
+              beneficiary_id_code: beneficiary.beneficiary_id_code,
+              category: beneficiary.category,
+              time: scannedAtObj.toTimeString().split(' ')[0] || scanTime,
+              date: scannedAtObj.toISOString().split('T')[0] || scanDate,
+              status: 'present',
+            },
+            ...prev,
+          ];
+        });
+      }
 
       setRfidInput('');
       if (rfidInputRef.current) {
         rfidInputRef.current.focus();
       }
 
-      setTimeout(() => setSuccess(null), 3500);
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
-      console.error('Scan Error:', err);
-      if (err.response) {
-        const status = err.response.status;
-        const message = err.response.data?.message || err.message;
-        if (status === 409) {
-          setError(null);
-          setSuccess(`✓ ${message} Naitala na ang attendance ng benepisyaryo.`);
-        } else if (status === 404) {
-          setError(`❌ Hindi rehistrado ang RFID o QR Pass: ${message}`);
-        } else {
-          setError(`Error: ${message}`);
-        }
-      } else if (err.request) {
-        setError('❌ Network error: Cannot connect to server');
+      const status = err.response?.status;
+      const message = err.response?.data?.message || err.message;
+      if (status === 409) {
+        setError(null);
+        setSuccess(`✓ ${message}`);
+        setRfidInput('');
+      } else if (status === 404) {
+        setError(`❌ Hindi rehistrado ang RFID o QR Pass: ${message}`);
       } else {
-        setError(err.message || 'Failed to record attendance');
+        setError(`Error: ${message}`);
       }
       setTimeout(() => setError(null), 5000);
     } finally {

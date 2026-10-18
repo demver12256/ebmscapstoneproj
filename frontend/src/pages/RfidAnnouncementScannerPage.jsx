@@ -239,22 +239,35 @@ export default function RfidAnnouncementScannerPage() {
       });
 
       const data = res.data;
-      setSuccess(`✓ ${data.beneficiary?.first_name} ${data.beneficiary?.last_name} - Attendance recorded!`);
+      const isDuplicate = Boolean(data.already_present || data.duplicate);
+      setSuccess(
+        isDuplicate
+          ? `✓ ${data.message}`
+          : `✓ ${data.beneficiary?.first_name} ${data.beneficiary?.last_name} - Attendance recorded!`
+      );
 
-      // Prepend to scanned records
-      setScannedRecords((prev) => [
-        {
-          id: Date.now(),
-          rfid: scannedCode,
-          name: `${data.beneficiary?.first_name || ''} ${data.beneficiary?.last_name || ''}`.trim(),
-          beneficiary_id_code: data.beneficiary?.beneficiary_id_code,
-          category: data.beneficiary?.category,
-          barangay: data.beneficiary?.barangay_name || 'N/A',
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          status: 'recorded',
-        },
-        ...prev,
-      ]);
+      // Prepend to scanned records if not already present
+      setScannedRecords((prev) => {
+        const alreadyInList = prev.some(
+          (r) =>
+            (data.beneficiary?.beneficiary_id_code && r.beneficiary_id_code === data.beneficiary.beneficiary_id_code) ||
+            r.rfid === scannedCode
+        );
+        if (alreadyInList) return prev;
+        return [
+          {
+            id: Date.now(),
+            rfid: scannedCode,
+            name: `${data.beneficiary?.first_name || ''} ${data.beneficiary?.last_name || ''}`.trim(),
+            beneficiary_id_code: data.beneficiary?.beneficiary_id_code,
+            category: data.beneficiary?.category,
+            barangay: data.beneficiary?.barangay_name || 'N/A',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            status: 'recorded',
+          },
+          ...prev,
+        ];
+      });
 
       // Update stats if returned
       if (data.stats) {
