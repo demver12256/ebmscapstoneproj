@@ -385,8 +385,41 @@ const App = () => {
   }, [user?.id, user?.role]);
 
   const loadPopups = async () => {
-    if (!user || user.role !== 'beneficiary') {
+    if (!user) {
       setShowPopupModal(false);
+      return;
+    }
+
+    // Support staff, barangay, and admin notification popups (Matching Web StaffMswdoNotificationPopupModal)
+    if (user.role !== 'beneficiary') {
+      try {
+        const notifRes = await notificationApi.list().catch(() => ({ data: { data: [] } }));
+        const notifs = notifRes.data?.data || [];
+        const roleVisibleNotifs = notifs.filter((item) =>
+          user.role === 'admin' || item.reference_type !== 'payout_verification'
+        );
+        const unreadList = roleVisibleNotifs
+          .filter((n) => !n.is_read)
+          .map((n) => ({ ...n, popupType: 'notification' }));
+
+        setModalItems((prevModalItems) => {
+          const newItems = unreadList.filter((item) => {
+            const key = getPopupKey(item);
+            return !shownPopupIds.has(key);
+          });
+
+          if (newItems.length > 0) {
+            setShowPopupModal(true);
+            return newItems;
+          } else if (newItems.length === 0 && unreadList.length === 0) {
+            setShowPopupModal(false);
+            return [];
+          }
+          return prevModalItems;
+        });
+      } catch (err) {
+        console.warn('Failed to load staff popup notifications:', err?.message);
+      }
       return;
     }
     try {

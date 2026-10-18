@@ -68,9 +68,47 @@ const StaffAttendanceScannerScreen = ({ onBack, onOpenDrawer, user, darkMode = f
     }
   }, []);
 
+  const loadExistingAttendance = useCallback(async (annId) => {
+    if (!annId) return;
+    try {
+      const res = await announcementApi.getAttendance(annId);
+      const list = res.data?.data || res.data || [];
+      if (Array.isArray(list)) {
+        setAttendanceRecords(
+          list.map((record) => {
+            const b = record.Beneficiary || {};
+            const scanTime = record.scanned_at || record.created_at || record.createdAt;
+            const timeStr = scanTime
+              ? new Date(scanTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+              : 'Earlier';
+            return {
+              id: record.id || `${record.beneficiary_id}-${scanTime}`,
+              beneficiary_id: record.beneficiary_id,
+              name: `${b.first_name || 'Beneficiary'} ${b.last_name || ''}`.trim(),
+              code: b.beneficiary_id_code || b.RFID_number || 'N/A',
+              rfid: b.RFID_number || 'N/A (QR Pass)',
+              qr_code: b.qr_code_token || b.qr_token || null,
+              category: b.category || 'General',
+              time: timeStr,
+            };
+          })
+        );
+      }
+    } catch (err) {
+      console.warn('Failed to load existing attendance:', err?.message);
+    }
+  }, []);
+
   useEffect(() => {
     loadAnnouncements();
   }, [loadAnnouncements]);
+
+  useEffect(() => {
+    if (selectedAnnouncementId) {
+      loadExistingAttendance(selectedAnnouncementId);
+      setAlertMsg(null);
+    }
+  }, [selectedAnnouncementId, loadExistingAttendance]);
 
   const currentAnnouncement = announcements.find((a) => a.id === Number(selectedAnnouncementId));
   const isCurrentEnded = currentAnnouncement ? !isAnnouncementActiveForAttendance(currentAnnouncement) : false;
@@ -96,8 +134,29 @@ const StaffAttendanceScannerScreen = ({ onBack, onOpenDrawer, user, darkMode = f
       return;
     }
 
+    // Check if this card/QR is already recorded locally for this activity
+    const codeLower = code.toLowerCase();
+    const cleanCode = code.replace(/^EBMS-QR:/i, '').trim().toLowerCase();
+    const existingLocalRecord = attendanceRecords.find(
+      (r) =>
+        (r.rfid && r.rfid !== 'N/A (QR Pass)' && String(r.rfid).trim().toLowerCase() === codeLower) ||
+        (r.qr_code && String(r.qr_code).trim().toLowerCase() === cleanCode) ||
+        (r.code && String(r.code).trim().toLowerCase() === cleanCode) ||
+        (r.code && String(r.code).trim().toLowerCase() === codeLower)
+    );
+
+    if (existingLocalRecord) {
+      setAlertMsg({
+        type: 'warning',
+        text: `⚠️ Naka-record na si ${existingLocalRecord.name} (${existingLocalRecord.code}) sa attendance ng aktibidad na ito (Oras: ${existingLocalRecord.time}). Hindi na kailangang i-tap o i-scan ulit ang RFID o QR Code.`,
+      });
+      setRfidInput('');
+      return;
+    }
+
     setProcessing(true);
     setAlertMsg(null);
+    setRfidInput('');
 
     try {
       const response = await announcementApi.scanRfid(selectedAnnouncementId, {
@@ -106,6 +165,16 @@ const StaffAttendanceScannerScreen = ({ onBack, onOpenDrawer, user, darkMode = f
       });
 
       const b = response.data?.beneficiary || {};
+      const isAlreadyPresent = Boolean(response.data?.already_present || response.data?.duplicate);
+
+      if (isAlreadyPresent) {
+        setAlertMsg({
+          type: 'warning',
+          text: `⚠️ Naka-record na si ${b.first_name || ''} ${b.last_name || ''} (${b.beneficiary_id_code || b.RFID_number || code}) sa attendance ng aktibidad na ito. Hindi na kailangang i-tap o i-scan ulit ang RFID o QR Code.`,
+        });
+        return;
+      }
+
       const now = new Date();
       const timeStr = now.toLocaleTimeString('en-US', {
         hour: '2-digit',
@@ -115,8 +184,11 @@ const StaffAttendanceScannerScreen = ({ onBack, onOpenDrawer, user, darkMode = f
 
       const newRecord = {
         id: Date.now(),
+        beneficiary_id: b.id,
         name: `${b.first_name || 'Beneficiary'} ${b.last_name || ''}`.trim(),
         code: b.beneficiary_id_code || b.RFID_number || code,
+        rfid: b.RFID_number || 'N/A (QR Pass)',
+        qr_code: b.qr_code_token || b.qr_token || null,
         category: b.category || 'General',
         time: timeStr,
       };
@@ -126,13 +198,12 @@ const StaffAttendanceScannerScreen = ({ onBack, onOpenDrawer, user, darkMode = f
         type: 'success',
         text: `✓ Naitala ang Attendance ni ${newRecord.name} (${newRecord.code})!`,
       });
-      setRfidInput('');
     } catch (err) {
       const msg = err?.response?.data?.message || err.message || 'Failed to record attendance.';
       if (err?.response?.status === 409) {
         setAlertMsg({
-          type: 'success',
-          text: `✓ ${msg} (Naitala na ang attendance dati).`,
+          type: 'warning',
+          text: `⚠️ ${msg} (Naka-record na siya dati sa attendance).`,
         });
       } else {
         setAlertMsg({
@@ -140,7 +211,6 @@ const StaffAttendanceScannerScreen = ({ onBack, onOpenDrawer, user, darkMode = f
           text: `❌ ${msg}`,
         });
       }
-      setRfidInput('');
     } finally {
       setProcessing(false);
     }
@@ -359,12 +429,20 @@ const StaffAttendanceScannerScreen = ({ onBack, onOpenDrawer, user, darkMode = f
           <View
             style={[
               styles.alertBanner,
-              alertMsg.type === 'success' ? styles.alertSuccess : styles.alertError,
+              alertMsg.type === 'success'
+                ? styles.alertSuccess
+                : alertMsg.type === 'warning'
+                ? styles.alertWarning
+                : styles.alertError,
             ]}
           >
             <Text
               style={
-                alertMsg.type === 'success' ? styles.alertSuccessTxt : styles.alertErrorTxt
+                alertMsg.type === 'success'
+                  ? styles.alertSuccessTxt
+                  : alertMsg.type === 'warning'
+                  ? styles.alertWarningTxt
+                  : styles.alertErrorTxt
               }
             >
               {alertMsg.text}
@@ -705,6 +783,8 @@ const styles = StyleSheet.create({
   alertBanner: { padding: 12, borderRadius: 12, marginBottom: 14 },
   alertSuccess: { backgroundColor: '#dcfce7', borderWidth: 1, borderColor: '#86efac' },
   alertSuccessTxt: { color: '#15803d', fontWeight: '700', fontSize: 12.5 },
+  alertWarning: { backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#fcd34d' },
+  alertWarningTxt: { color: '#92400e', fontWeight: '700', fontSize: 12.5 },
   alertError: { backgroundColor: '#fee2e2', borderWidth: 1, borderColor: '#fca5a5' },
   alertErrorTxt: { color: '#b91c1c', fontWeight: '700', fontSize: 12.5 },
 

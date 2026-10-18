@@ -33,6 +33,19 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [selectedAnn, setSelectedAnn] = useState(null);
+  const [createModal, setCreateModal] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({
+    title: '',
+    message: '',
+    venue: '',
+    event_date: '',
+    event_time: '',
+    has_attendance: true,
+    target_sitios: '',
+    target_categories: ['4Ps', 'Senior Citizens', 'PWD'],
+    priority: 'Normal',
+  });
 
   const loadAnnouncements = useCallback(async () => {
     try {
@@ -56,6 +69,69 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
     loadAnnouncements();
   };
 
+  const handleCreateAnnouncement = async () => {
+    if (!form.title.trim() || !form.message.trim()) {
+      Alert.alert('Required Fields', 'Pakilagay ang Pamagat (Title) at Detalye (Message).');
+      return;
+    }
+    setCreating(true);
+    try {
+      const isBarangayStaff = user?.role === 'staff' || user?.role === 'barangay';
+      const sitiosList = form.target_sitios
+        ? form.target_sitios.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+      const payload = {
+        title: form.title.trim(),
+        message: form.message.trim(),
+        venue: form.venue.trim() || undefined,
+        event_date: form.event_date.trim() || undefined,
+        event_time: form.event_time.trim() || undefined,
+        priority: form.priority,
+        status: isBarangayStaff ? 'pending_approval' : 'published',
+        has_attendance: form.has_attendance,
+        target_categories: form.target_categories,
+        target_programs: form.target_categories,
+        target_sitios: sitiosList,
+        target_barangays: user?.barangay_id ? [user.barangay_id] : [],
+      };
+      await announcementApi.create(payload);
+      Alert.alert(
+        'Anunsyo Naisumite',
+        isBarangayStaff
+          ? 'Naisumite na ang anunsyo para sa DSWD Admin Approval bago mai-publish sa mga benepisyaryo.'
+          : 'Matagumpay na nai-publish ang bagong anunsyo.'
+      );
+      setCreateModal(false);
+      setForm({
+        title: '',
+        message: '',
+        venue: '',
+        event_date: '',
+        event_time: '',
+        has_attendance: true,
+        target_sitios: '',
+        target_categories: ['4Ps', 'Senior Citizens', 'PWD'],
+        priority: 'Normal',
+      });
+      loadAnnouncements();
+    } catch (err) {
+      Alert.alert('Submission Failed', err?.response?.data?.message || err.message || 'Hindi naisumite ang anunsyo.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const toggleCategory = (cat) => {
+    setForm((prev) => {
+      const exists = prev.target_categories.includes(cat);
+      if (exists) {
+        if (prev.target_categories.length === 1) return prev; // keep at least one
+        return { ...prev, target_categories: prev.target_categories.filter((c) => c !== cat) };
+      }
+      return { ...prev, target_categories: [...prev.target_categories, cat] };
+    });
+  };
+
   const filteredItems = announcements.filter((a) => {
     const q = searchQuery.toLowerCase().trim();
     const matchSearch =
@@ -66,6 +142,7 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
 
     if (filterType === 'attendance') return matchSearch && a.has_attendance;
     if (filterType === 'published') return matchSearch && a.status === 'published';
+    if (filterType === 'pending_approval') return matchSearch && a.status === 'pending_approval';
     if (filterType === 'draft') return matchSearch && a.status === 'draft';
     return matchSearch;
   });
@@ -105,9 +182,14 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
             <Text style={styles.headerSub}>Public notices & community event bulletins</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={loadAnnouncements} style={styles.refreshBtn}>
-          <Text style={styles.refreshBtnText}>↻</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity onPress={() => setCreateModal(true)} style={styles.createBtn}>
+            <Text style={styles.createBtnText}>+ Mag-anunsyo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={loadAnnouncements} style={styles.refreshBtn}>
+            <Text style={styles.refreshBtnText}>↻</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search & Filter Bar */}
@@ -132,6 +214,7 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
           {[
             { key: 'all', label: 'All' },
             { key: 'published', label: 'Published' },
+            { key: 'pending_approval', label: 'For DSWD Approval' },
             { key: 'attendance', label: 'With Attendance' },
             { key: 'draft', label: 'Draft' },
           ].map((st) => {
@@ -182,6 +265,7 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
             const timing = getAnnouncementTiming(item);
             const isEnded = timing === 'ended';
             const isCurrent = timing === 'current';
+            const isPendingApproval = item.status === 'pending_approval';
             return (
               <TouchableOpacity
                 style={[styles.annCard, darkMode && styles.darkCard, isEnded && { opacity: 0.65 }]}
@@ -203,17 +287,29 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
                         {(item.priority || 'Normal').toUpperCase()}
                       </Text>
                     </View>
-                    <View style={[styles.timingBadge, isEnded ? styles.timingEnded : isCurrent ? styles.timingCurrent : styles.timingUpcoming]}>
-                      <Text style={[styles.timingBadgeText, isEnded ? styles.timingEndedTxt : isCurrent ? styles.timingCurrentTxt : styles.timingUpcomingTxt]}>
-                        {isEnded ? 'TAPOS NA' : isCurrent ? 'KASALUKUYAN' : 'PAPARATING'}
-                      </Text>
-                    </View>
+                    {isPendingApproval ? (
+                      <View style={[styles.timingBadge, { backgroundColor: '#fef3c7', borderColor: '#fcd34d' }]}>
+                        <Text style={[styles.timingBadgeText, { color: '#b45309' }]}>FOR DSWD APPROVAL</Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.timingBadge, isEnded ? styles.timingEnded : isCurrent ? styles.timingCurrent : styles.timingUpcoming]}>
+                        <Text style={[styles.timingBadgeText, isEnded ? styles.timingEndedTxt : isCurrent ? styles.timingCurrentTxt : styles.timingUpcomingTxt]}>
+                          {isEnded ? 'TAPOS NA' : isCurrent ? 'KASALUKUYAN' : 'PAPARATING'}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </View>
 
                 {item.venue ? (
                   <Text style={styles.venueText}>📍 Venue: {item.venue}</Text>
                 ) : null}
+
+                {item.target_sitios && (
+                  <Text style={styles.sitioText}>
+                    🏡 Sitio: {Array.isArray(item.target_sitios) ? item.target_sitios.join(', ') : item.target_sitios}
+                  </Text>
+                )}
 
                 {item.content ? (
                   <Text style={[styles.contentSnippet, darkMode && styles.darkSub]} numberOfLines={2}>
@@ -271,6 +367,20 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
                 <Text style={styles.infoLabel}>Target Scope</Text>
                 <Text style={styles.infoVal}>{selectedAnn?.target_barangays || 'All Barangays'}</Text>
               </View>
+              {selectedAnn?.target_sitios ? (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Target Sitio</Text>
+                  <Text style={styles.infoVal}>
+                    {Array.isArray(selectedAnn.target_sitios) ? selectedAnn.target_sitios.join(', ') : selectedAnn.target_sitios}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Status</Text>
+                <Text style={[styles.infoVal, { fontWeight: '700', color: selectedAnn?.status === 'pending_approval' ? '#b45309' : '#15803d' }]}>
+                  {selectedAnn?.status === 'pending_approval' ? 'FOR DSWD APPROVAL' : (selectedAnn?.status || 'PUBLISHED').toUpperCase()}
+                </Text>
+              </View>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Attendance Status</Text>
                 <Text style={styles.infoVal}>{selectedAnn?.has_attendance ? 'Required (RFID/QR)' : 'Not Required'}</Text>
@@ -292,6 +402,138 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
                   <Text style={styles.launchAttendanceBtnText}>📲 Open Attendance Scanner</Text>
                 </TouchableOpacity>
               )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Create Announcement Modal */}
+      <Modal visible={createModal} transparent animationType="slide" onRequestClose={() => setCreateModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, darkMode && styles.darkText]}>Mag-anunsyo / Create Announcement</Text>
+              <TouchableOpacity onPress={() => setCreateModal(false)} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
+              {(user?.role === 'staff' || user?.role === 'barangay') && (
+                <View style={styles.approvalNoticeBox}>
+                  <Text style={styles.approvalNoticeTitle}>⏳ Kinakailangan ng Approval ng DSWD Admin</Text>
+                  <Text style={styles.approvalNoticeText}>
+                    Ang gagawin mong announcement para sa iyong Barangay ay ipapadala muna sa DSWD Admin para sa review at approval bago ito ma-publish at ma-text sa mga benepisyaryo.
+                  </Text>
+                </View>
+              )}
+
+              <Text style={[styles.formLabel, darkMode && styles.darkText]}>Pamagat ng Anunsyo *</Text>
+              <TextInput
+                style={[styles.formInput, darkMode && styles.darkInput]}
+                placeholder="Halimbawa: Pamamahagi ng Ayuda sa Barangay Hall"
+                placeholderTextColor="#94a3b8"
+                value={form.title}
+                onChangeText={(t) => setForm({ ...form, title: t })}
+              />
+
+              <Text style={[styles.formLabel, darkMode && styles.darkText]}>Mga Detalye / Mensahe *</Text>
+              <TextInput
+                style={[styles.formInput, styles.formTextArea, darkMode && styles.darkInput]}
+                placeholder="Ilagay ang kumpletong impormasyon, paalala, at dadalhing dokumento..."
+                placeholderTextColor="#94a3b8"
+                multiline
+                numberOfLines={4}
+                value={form.message}
+                onChangeText={(t) => setForm({ ...form, message: t })}
+              />
+
+              <Text style={[styles.formLabel, darkMode && styles.darkText]}>Lugar / Venue</Text>
+              <TextInput
+                style={[styles.formInput, darkMode && styles.darkInput]}
+                placeholder="Barangay Covered Court / Municipal Hall"
+                placeholderTextColor="#94a3b8"
+                value={form.venue}
+                onChangeText={(t) => setForm({ ...form, venue: t })}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.formLabel, darkMode && styles.darkText]}>Petsa (YYYY-MM-DD)</Text>
+                  <TextInput
+                    style={[styles.formInput, darkMode && styles.darkInput]}
+                    placeholder="2026-10-25"
+                    placeholderTextColor="#94a3b8"
+                    value={form.event_date}
+                    onChangeText={(t) => setForm({ ...form, event_date: t })}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.formLabel, darkMode && styles.darkText]}>Oras (e.g. 09:00 AM)</Text>
+                  <TextInput
+                    style={[styles.formInput, darkMode && styles.darkInput]}
+                    placeholder="09:00 AM"
+                    placeholderTextColor="#94a3b8"
+                    value={form.event_time}
+                    onChangeText={(t) => setForm({ ...form, event_time: t })}
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.formLabel, darkMode && styles.darkText]}>Target Sitio (Opsyonal)</Text>
+              <TextInput
+                style={[styles.formInput, darkMode && styles.darkInput]}
+                placeholder="Hal. Sitio Riverside, Purok 3 (Iwanang bakante kung buong barangay)"
+                placeholderTextColor="#94a3b8"
+                value={form.target_sitios}
+                onChangeText={(t) => setForm({ ...form, target_sitios: t })}
+              />
+
+              <Text style={[styles.formLabel, darkMode && styles.darkText]}>Target Beneficiary Categories:</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {['4Ps', 'Senior Citizens', 'PWD'].map((cat) => {
+                  const active = form.target_categories.includes(cat);
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[styles.categoryPill, active && styles.categoryPillActive]}
+                      onPress={() => toggleCategory(cat)}
+                    >
+                      <Text style={[styles.categoryPillText, active && styles.categoryPillTextActive]}>
+                        {active ? '✓ ' : '+ '}{cat}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.toggleAttendanceRow, darkMode && styles.darkCard]}
+                onPress={() => setForm({ ...form, has_attendance: !form.has_attendance })}
+                activeOpacity={0.8}
+              >
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={[styles.toggleAttendanceTitle, darkMode && styles.darkText]}>Kailangan ng Attendance (RFID/QR)?</Text>
+                  <Text style={styles.toggleAttendanceSub}>Papayagan ang Staff na mag-scan ng attendees sa araw ng pulong.</Text>
+                </View>
+                <Text style={{ fontSize: 20 }}>{form.has_attendance ? '☑️' : '⬜'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.submitCreateBtn, creating && { opacity: 0.6 }]}
+                onPress={handleCreateAnnouncement}
+                disabled={creating}
+              >
+                {creating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitCreateBtnText}>
+                    {user?.role === 'staff' || user?.role === 'barangay'
+                      ? 'Isumite para sa DSWD Admin Approval ↗'
+                      : 'I-publish ang Anunsyo 📢'}
+                  </Text>
+                )}
+              </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
@@ -441,6 +683,76 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   launchAttendanceBtnText: { color: '#ffffff', fontWeight: '800', fontSize: 13 },
+
+  sitioText: { fontSize: 12, color: '#0284c7', marginTop: 4, fontWeight: '600' },
+  createBtn: {
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 18,
+  },
+  createBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
+
+  // Create Modal Styles
+  approvalNoticeBox: {
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  approvalNoticeTitle: { fontSize: 12.5, fontWeight: '800', color: '#92400e', marginBottom: 3 },
+  approvalNoticeText: { fontSize: 11.5, color: '#78350f', lineHeight: 16 },
+  formLabel: { fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 5, marginTop: 10 },
+  formInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#1e293b',
+  },
+  formTextArea: { minHeight: 80, textAlignVertical: 'top' },
+  darkInput: { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' },
+  categoryPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+  },
+  categoryPillActive: {
+    backgroundColor: '#dbeafe',
+    borderColor: '#3b82f6',
+  },
+  categoryPillText: { fontSize: 11.5, fontWeight: '600', color: '#64748b' },
+  categoryPillTextActive: { color: '#1d4ed8', fontWeight: '800' },
+  toggleAttendanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginTop: 14,
+  },
+  toggleAttendanceTitle: { fontSize: 12.5, fontWeight: '700', color: '#1e293b' },
+  toggleAttendanceSub: { fontSize: 10.5, color: '#64748b', marginTop: 2 },
+  submitCreateBtn: {
+    backgroundColor: '#16a34a',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 30,
+  },
+  submitCreateBtnText: { color: '#ffffff', fontWeight: '800', fontSize: 13.5 },
 });
 
 export default StaffAnnouncementsScreen;

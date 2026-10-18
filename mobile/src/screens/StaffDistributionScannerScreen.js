@@ -93,28 +93,61 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
       return;
     }
 
+    if (currentEvent && currentEvent.status !== 'ongoing') {
+      setAlertMsg({
+        type: 'error',
+        text: `❌ Ang distribution session na ito ay hindi aktibo (Status: ${currentEvent.status}). Pakisabihan ang admin na simulan ang pamamahagi.`,
+      });
+      return;
+    }
+
     setProcessing(true);
     setAlertMsg(null);
+    setRfidInput('');
 
     try {
-      const cleanInput = code.replace(/^EBMS-QR:/i, '').trim();
+      const cleanInput = code.trim();
+      const qrToken = cleanInput.replace(/^EBMS-QR:/i, '').trim();
 
-      // Look up beneficiary in current event transactions
-      const matchedTxn = transactions.find((t) => {
-        const b = t.Beneficiary;
+      // Refresh transactions to avoid stale matching (Matching Web RfidScannerPage)
+      let currentTxns = transactions;
+      try {
+        const txnRes = await distributionApi.getTransactions(selectedEventId);
+        if (txnRes.data?.data) {
+          currentTxns = txnRes.data.data;
+          setTransactions(currentTxns);
+        }
+      } catch (e) {
+        // Fallback to local transactions if offline or network hiccup
+      }
+
+      const matchesInput = (b) => {
         if (!b) return false;
-        const matchesRfid = b.RFID_number && b.RFID_number.toLowerCase() === cleanInput.toLowerCase();
-        const matchesQr = b.qr_code_token && b.qr_code_token.toLowerCase() === cleanInput.toLowerCase();
-        const matchesCode = b.beneficiary_id_code && b.beneficiary_id_code.toLowerCase() === cleanInput.toLowerCase();
-        return matchesRfid || matchesQr || matchesCode;
-      });
+        const rfidVal = String(b.RFID_number || '').trim().toLowerCase();
+        const qrVal = String(b.qr_token || b.qr_code_token || '').trim().toLowerCase();
+        const qrFullVal = String(b.qr_code || '').trim().toLowerCase();
+        const codeVal = String(b.beneficiary_id_code || '').trim().toLowerCase();
+        const rawLower = cleanInput.toLowerCase();
+        const tokenLower = qrToken.toLowerCase();
+
+        const matchesRfid = rfidVal && (rfidVal === rawLower || rfidVal === tokenLower);
+        const matchesQr =
+          (qrVal && (qrVal === tokenLower || qrVal === rawLower)) ||
+          (qrFullVal && (qrFullVal === rawLower || qrFullVal === `ebms-qr:${tokenLower}`));
+        const matchesCode = codeVal && (codeVal === tokenLower || codeVal === rawLower);
+        return Boolean(matchesRfid || matchesQr || matchesCode);
+      };
+
+      // Prioritize pending transactions
+      const matchedTxn =
+        currentTxns.find((t) => t.status === 'pending' && matchesInput(t.Beneficiary)) ||
+        currentTxns.find((t) => matchesInput(t.Beneficiary));
 
       if (!matchedTxn) {
         setAlertMsg({
           type: 'error',
-          text: `Walang kwalipikadong benepisyaryo sa event na ito para sa RFID/ID: "${code}".`,
+          text: `Walang kwalipikadong benepisyaryo sa event na ito para sa RFID / QR Pass: "${code}".`,
         });
-        setRfidInput('');
         return;
       }
 
@@ -123,7 +156,6 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
           type: 'error',
           text: `⚠️ Na-release na ang ayuda para kay ${matchedTxn.Beneficiary?.first_name} ${matchedTxn.Beneficiary?.last_name}.`,
         });
-        setRfidInput('');
         return;
       }
 
@@ -136,11 +168,10 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
         type: 'success',
         text: `✓ Na-verify si ${matchedTxn.Beneficiary?.first_name} ${matchedTxn.Beneficiary?.last_name}! Handa nang i-release ang ayuda.`,
       });
-      setRfidInput('');
     } catch (err) {
       setAlertMsg({
         type: 'error',
-        text: err?.response?.data?.message || err.message || 'Error sa pag-verify ng card.',
+        text: err?.response?.data?.message || err.message || 'Error sa pag-verify ng card o QR code.',
       });
     } finally {
       setProcessing(false);
