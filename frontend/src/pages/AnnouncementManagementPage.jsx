@@ -28,6 +28,9 @@ import {
   ArchiveRestore,
   Sparkles,
   Building2,
+  Eye,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { announcementApi, programApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -251,6 +254,9 @@ export default function AnnouncementManagementPage() {
   const [editingAnnouncement, setEditingAnnouncement] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [previewCount, setPreviewCount] = useState(0);
+  const [previewBeneficiaries, setPreviewBeneficiaries] = useState([]);
+  const [showPreviewBeneficiaries, setShowPreviewBeneficiaries] = useState(false);
+  const [previewSearchQuery, setPreviewSearchQuery] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
 
   // Recipient Stats / Audit Modal
@@ -347,11 +353,13 @@ export default function AnnouncementManagementPage() {
 
     if (activeBgrais.length === 0) {
       setPreviewCount(0);
+      setPreviewBeneficiaries([]);
       setAvailableSitios([]);
       return;
     }
     if (activeCats.length === 0) {
       setPreviewCount(0);
+      setPreviewBeneficiaries([]);
       return;
     }
     setPreviewLoading(true);
@@ -362,6 +370,7 @@ export default function AnnouncementManagementPage() {
         target_sitios: JSON.stringify(activeSitios),
       });
       setPreviewCount(res.data?.count || 0);
+      setPreviewBeneficiaries(Array.isArray(res.data?.beneficiaries) ? res.data.beneficiaries : []);
       if (Array.isArray(res.data?.available_sitios)) {
         setAvailableSitios(res.data.available_sitios);
       }
@@ -436,6 +445,9 @@ export default function AnnouncementManagementPage() {
     setSitioSelectionMode('all');
     setAvailableSitios([]);
     setCustomSitioInput('');
+    setPreviewBeneficiaries([]);
+    setShowPreviewBeneficiaries(false);
+    setPreviewSearchQuery('');
     setFormData({
       title: '',
       message: '',
@@ -459,6 +471,8 @@ export default function AnnouncementManagementPage() {
 
   const handleOpenEditModal = (ann) => {
     setEditingAnnouncement(ann);
+    setShowPreviewBeneficiaries(false);
+    setPreviewSearchQuery('');
     const existingVenue = ann.venue || '';
     let foundBarangay = '';
     let foundDetail = existingVenue;
@@ -1407,17 +1421,141 @@ export default function AnnouncementManagementPage() {
 
               {/* TARGET AUDIENCE SELECTION SECTION */}
               <div className="border-t border-slate-200 pt-3 space-y-3">
-                <div className="flex items-center justify-between bg-blue-50/70 border border-blue-200 rounded-lg p-2.5">
-                  <div className="flex items-center gap-2 text-blue-950 font-bold text-xs">
-                    <Users className="w-4 h-4 text-dswd-blue" />
-                    <span>Target Audience Selection</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[11px] text-blue-800 font-medium block">Matching Beneficiaries:</span>
-                    <span className="text-base font-black text-dswd-blue">
-                      {previewLoading ? 'Calculating...' : `${previewCount} Beneficiaries`}
-                    </span>
-                  </div>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPreviewBeneficiaries((prev) => !prev)}
+                    className={`w-full flex items-center justify-between border rounded-xl p-3 text-left transition cursor-pointer select-none ${
+                      showPreviewBeneficiaries
+                        ? 'bg-blue-100/90 border-blue-400 shadow-sm ring-2 ring-blue-500/20'
+                        : 'bg-blue-50/70 hover:bg-blue-100/60 border-blue-200 hover:border-blue-300'
+                    }`}
+                    title="I-click upang makita ang mga benepisyaryo na makakatanggap ng announcement"
+                  >
+                    <div className="flex items-center gap-2.5 text-blue-950 font-bold text-xs">
+                      <Users className="w-4 h-4 text-dswd-blue shrink-0" />
+                      <div>
+                        <span className="block text-xs font-extrabold text-blue-950">Target Audience Selection</span>
+                        <span className="text-[11px] font-semibold text-blue-700 flex items-center gap-1 mt-0.5">
+                          <Eye className="w-3 h-3" />
+                          <span>
+                            {showPreviewBeneficiaries
+                              ? 'Itago ang listahan ng mga makakatanggap'
+                              : 'I-click dito upang makita ang mga benepisyaryong makakatanggap'}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="text-right">
+                        <span className="text-[11px] text-blue-800 font-medium block">Matching Beneficiaries:</span>
+                        <span className="text-base font-black text-dswd-blue underline decoration-dotted underline-offset-2">
+                          {previewLoading ? 'Calculating...' : `${previewCount} Beneficiaries`}
+                        </span>
+                      </div>
+                      <div className="w-7 h-7 rounded-lg bg-white/80 border border-blue-200 flex items-center justify-center text-dswd-blue shrink-0">
+                        {showPreviewBeneficiaries ? (
+                          <ChevronUp className="w-4 h-4" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Collapsible Matching Beneficiaries List */}
+                  {showPreviewBeneficiaries && (
+                    <div className="bg-white border-2 border-blue-200 rounded-xl p-3 space-y-2.5 shadow-sm">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                        <div>
+                          <h5 className="text-xs font-black text-slate-900 uppercase flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-dswd-blue" />
+                            <span>Mga Benepisyaryong Makakatanggap ({previewBeneficiaries.length})</span>
+                          </h5>
+                          <p className="text-[11px] text-slate-500">
+                            Sila ang makakatanggap ng SMS at In-App Notification kapag na-publish ang anunsyo.
+                          </p>
+                        </div>
+                        {previewBeneficiaries.length > 3 && (
+                          <div className="relative w-full sm:w-52">
+                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              value={previewSearchQuery}
+                              onChange={(e) => setPreviewSearchQuery(e.target.value)}
+                              placeholder="Hanapin ang pangalan / sitio..."
+                              className="w-full pl-8 pr-2.5 py-1 text-xs border border-slate-300 rounded-lg outline-none focus:border-blue-500"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {previewLoading ? (
+                        <div className="py-6 text-center text-xs font-semibold text-slate-500">
+                          Kinakalkula ang mga tugmang benepisyaryo...
+                        </div>
+                      ) : previewBeneficiaries.length === 0 ? (
+                        <div className="py-5 text-center text-xs text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                          {formData.target_barangays.length === 0
+                            ? 'Pumili muna ng Target Barangay sa ibaba upang makita ang mga benepisyaryo.'
+                            : 'Walang tugmang Approved na benepisyaryo para sa napiling Category, Barangay, at Sitio.'}
+                        </div>
+                      ) : (
+                        <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                          {previewBeneficiaries
+                            .filter((b) => {
+                              if (!previewSearchQuery.trim()) return true;
+                              const q = previewSearchQuery.toLowerCase();
+                              return (
+                                (b.full_name || '').toLowerCase().includes(q) ||
+                                (b.beneficiary_id_code || '').toLowerCase().includes(q) ||
+                                (b.sitio || '').toLowerCase().includes(q) ||
+                                (b.barangay_name || '').toLowerCase().includes(q) ||
+                                (b.category || '').toLowerCase().includes(q)
+                              );
+                            })
+                            .map((b, idx) => (
+                              <div
+                                key={b.id || idx}
+                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-3 py-2 hover:bg-blue-50/40 transition text-xs"
+                              >
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-extrabold text-slate-900">
+                                      {idx + 1}. {b.full_name || `${b.first_name} ${b.last_name}`}
+                                    </span>
+                                    <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                                      {b.beneficiary_id_code}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[11px] text-slate-600 flex-wrap">
+                                    <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">
+                                      Brgy. {b.barangay_name}
+                                    </span>
+                                    {b.sitio ? (
+                                      <span className="inline-flex items-center gap-1 font-bold text-amber-900 bg-amber-50 border border-amber-300 px-1.5 py-0.2 rounded">
+                                        📍 Sitio: {b.sitio}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 italic">Walang naka-set na Sitio</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex sm:flex-col items-start sm:items-end justify-between gap-1 shrink-0">
+                                  <span className="inline-block bg-blue-50 text-blue-800 font-bold text-[10px] px-2 py-0.5 rounded border border-blue-200">
+                                    {b.category}
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                                    <Smartphone className="w-3 h-3 text-slate-400" />
+                                    {b.contact_number || 'No mobile'}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

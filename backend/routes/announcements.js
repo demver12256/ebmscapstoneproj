@@ -555,10 +555,26 @@ router.get('/preview-count', authorize('admin', 'staff', 'barangay'), async (req
     const availableSitios = Array.from(sitioMap.values()).sort((a, b) => a.sitio.localeCompare(b.sitio));
     const matches = allBarangayMatches.filter((b) => beneficiaryMatchesSitios(b, target_sitios));
 
+    const previewBeneficiaries = matches.map((b) => ({
+      id: b.id,
+      beneficiary_id_code: b.beneficiary_id_code || `BEN-${b.id}`,
+      first_name: b.first_name || b.User?.first_name || '',
+      middle_name: b.middle_name || '',
+      last_name: b.last_name || b.User?.last_name || '',
+      full_name: `${b.first_name || b.User?.first_name || ''} ${b.last_name || b.User?.last_name || ''}`.trim(),
+      category: b.category || 'N/A',
+      barangay_id: b.barangay_id,
+      barangay_name: b.Barangay?.barangay_name || 'N/A',
+      sitio: b.sitio || '',
+      contact_number: b.contact_number || b.User?.contact_number || '',
+      rfid_number: b.rfid_number || '',
+    }));
+
     res.json({
       success: true,
       count: matches.length,
       available_sitios: availableSitios,
+      beneficiaries: previewBeneficiaries,
     });
   } catch (error) {
     next(error);
