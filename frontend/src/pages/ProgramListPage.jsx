@@ -6,7 +6,7 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { programApi, barangayApi, beneficiaryApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Briefcase, Plus, X, Edit2, Trash2, ToggleLeft, ToggleRight, Filter, MapPin, Eye, Archive, ArchiveRestore, UserPlus, Users, Calendar, Search, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Briefcase, Plus, X, Edit2, ToggleLeft, ToggleRight, Filter, MapPin, Eye, Archive, ArchiveRestore, UserPlus, Users, Calendar, Search, CheckCircle2, AlertCircle } from 'lucide-react';
 import { getProgramAssistanceClassification } from '../utils/nonCashPrograms';
 
 const CATEGORIES = [
@@ -205,7 +205,7 @@ export default function ProgramListPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [archiveConfirm, setArchiveConfirm] = useState(null);
   const [isCustomProgramName, setIsCustomProgramName] = useState(false);
   
   // Program Details Modal
@@ -788,15 +788,14 @@ export default function ProgramListPage() {
   };
 
   const handleArchive = async (program) => {
-    if (!window.confirm(`Are you sure you want to archive "${program.name}"? This will change its status to archived.`)) {
-      return;
-    }
-    
     try {
       await programApi.update(program.id, { status: 'archived', eligibility_category: program.eligibility_category || program.category });
+      setArchiveConfirm(null);
       setError(null);
+      setSuccess(`Program "${program.name}" has been archived.`);
       await loadPrograms();
       await loadArchivedPrograms();
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to archive program'));
     }
@@ -849,16 +848,6 @@ export default function ProgramListPage() {
   const openArchivedModal = () => {
     setShowArchivedModal(true);
     loadArchivedPrograms();
-  };
-
-  const handleDelete = async (program) => {
-    try {
-      await programApi.remove(program.id);
-      setDeleteConfirm(null);
-      await loadPrograms();
-    } catch (err) {
-      setError(getErrorMessage(err, 'Failed to delete program'));
-    }
   };
 
   const columns = [
@@ -933,15 +922,6 @@ export default function ProgramListPage() {
             <Users className="w-4 h-4 text-blue-600" />
           </button>
 
-          {/* Archive Program — visible to ALL users (admin and staff) */}
-          <button
-            onClick={() => handleArchive(row)}
-            className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition"
-            title="Archive Program"
-          >
-            <Archive className="w-4 h-4 text-purple-600" />
-          </button>
-
           {/* Admin-only actions */}
           {isAdmin && (
             <>
@@ -963,15 +943,17 @@ export default function ProgramListPage() {
               >
                 {row.status === 'active' ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
               </button>
-              <button
-                onClick={() => setDeleteConfirm(row)}
-                className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition"
-                title="Delete Program"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
             </>
           )}
+
+          {/* Archive Program — replaces Delete button */}
+          <button
+            onClick={() => setArchiveConfirm(row)}
+            className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition"
+            title="Archive Program"
+          >
+            <Archive className="w-4 h-4 text-purple-600" />
+          </button>
         </div>
       ),
     },
@@ -1163,24 +1145,29 @@ export default function ProgramListPage() {
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
+      {/* Archive Confirmation Modal */}
+      {archiveConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-3">
           <div className="relative w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Delete Program</h3>
+            <div className="flex items-center gap-2.5 mb-2">
+              <div className="p-2 rounded-lg bg-purple-100 text-purple-600">
+                <Archive className="w-5 h-5" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900">Archive Program</h3>
+            </div>
             <p className="text-sm text-slate-600 mb-1">
-              Are you sure you want to delete <strong>{deleteConfirm.name}</strong>?
+              Are you sure you want to archive <strong>{archiveConfirm.name}</strong>?
             </p>
-            <p className="text-xs text-red-600 mb-4">
-              This will also remove all related enrollments, distribution events, and transactions. This action cannot be undone.
+            <p className="text-xs text-slate-500 mb-4">
+              This will move the program to the Archived Programs list. You can restore (unarchive) it anytime.
             </p>
             <div className="flex justify-end gap-2">
-              <Button variant="secondary" type="button" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+              <Button variant="secondary" type="button" onClick={() => setArchiveConfirm(null)}>Cancel</Button>
               <Button
-                className="bg-red-600 hover:bg-red-700 text-white"
-                onClick={() => handleDelete(deleteConfirm)}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+                onClick={() => handleArchive(archiveConfirm)}
               >
-                Delete
+                Archive
               </Button>
             </div>
           </div>
