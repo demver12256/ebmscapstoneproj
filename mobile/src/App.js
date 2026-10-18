@@ -1095,6 +1095,7 @@ const App = () => {
             <StaffAssistanceRequestsScreen
               onBack={() => handleNavSelect('dashboard')}
               onOpenDrawer={() => setSidebarOpen(true)}
+              onNavigate={handleNavSelect}
               user={user}
               darkMode={darkMode}
             />

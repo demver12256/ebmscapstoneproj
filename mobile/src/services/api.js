@@ -109,7 +109,7 @@ export const authApi = {
 };
 
 export const beneficiaryApi = {
-  list: () => apiClient.get('/beneficiaries'),
+  list: (params) => apiClient.get('/beneficiaries', { params }),
   getById: (id) => apiClient.get(`/beneficiaries/${id}`),
   getMe: () => apiClient.get('/beneficiaries/me'),
   uploadProfilePicture: (data) => apiClient.post('/beneficiaries/me/profile-picture', data, {
@@ -166,6 +166,9 @@ export const distributionApi = {
   verifyBeneficiary: (data) => apiClient.post('/distributions/verify-beneficiary', data),
   releaseBenefit: (eventId, txnId, data) => apiClient.post(`/distributions/events/${eventId}/transactions/${txnId}/release`, data),
   acknowledgePayout: (transactionId) => apiClient.post(`/distributions/transactions/${transactionId}/acknowledge`),
+  getDashboardStats: (params) => apiClient.get('/distributions/dashboard/stats', { params }),
+  getEligibleBeneficiaries: (id, params) => apiClient.get(`/distributions/events/${id}/eligible-beneficiaries`, { params }),
+  updateStatus: (id, data) => apiClient.patch(`/distributions/events/${id}/status`, data),
   list: () => apiClient.get('/distributions'),
 };
 
