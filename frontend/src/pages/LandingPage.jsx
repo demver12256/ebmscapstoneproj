@@ -1583,7 +1583,7 @@ export default function LandingPage() {
                     type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Username o Email (e.g. maria_santos o admin@ebms.local)"
+                    placeholder="Username o Email (e.g. maria_santos)"
                     className="w-full"
                     required
                   />
@@ -1693,10 +1693,6 @@ export default function LandingPage() {
                   >
                     Create Account
                   </button>
-                </p>
-
-                <p className="text-center text-xs text-slate-400 mt-2 pt-3 border-t border-slate-100">
-                  Demo: <span className="font-mono text-slate-600 font-semibold">admin@ebms.local / Admin@123</span>
                 </p>
               </form>
             )}
