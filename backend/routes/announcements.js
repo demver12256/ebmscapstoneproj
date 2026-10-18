@@ -293,11 +293,14 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
 
       const formattedTime = `${announcement.event_time || ''}${announcement.end_time ? ` - ${announcement.end_time}` : ''}`.trim();
       const schedText = announcement.event_date ? `Date: ${announcement.event_date}${formattedTime ? ` at ${formattedTime}` : ''}` : '';
+      const venueText = announcement.venue ? `Venue: ${announcement.venue}` : '';
+      const smsDetails = [schedText, venueText].filter(Boolean).join(' | ');
+      const fullAnnouncementMessage = String(announcement.message || '').trim();
 
       inAppNotifications.push({
         user_id: b.user_id,
         title: announcement.title,
-        message: `${announcement.message}${schedText ? `\n\n📅 ${schedText}` : ''}${announcement.venue ? `\n📍 Venue: ${announcement.venue}` : ''}`,
+        message: `${fullAnnouncementMessage}${schedText ? `\n\n📅 ${schedText}` : ''}${announcement.venue ? `\n📍 Venue: ${announcement.venue}` : ''}`,
         type: 'announcement',
         reference_id: announcement.id,
         reference_type: 'announcement',
@@ -313,7 +316,7 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
           notification_type: 'announcement',
           beneficiary_id: b.id,
           phone_number: contactNumber,
-          message: `[BeniAid DSWD Bongabong ANNOUNCEMENT] ${announcement.title}: ${announcement.message.substring(0, 90)}... ${schedText}`,
+          message: `[BeniAid DSWD Bongabong ANNOUNCEMENT] ${announcement.title}: ${fullAnnouncementMessage}${smsDetails ? `\n${smsDetails}` : ''}`,
           status: 'queued',
         });
       }
@@ -1706,12 +1709,16 @@ router.post('/:id/complete', authorize('admin', 'staff', 'barangay'), async (req
         attributes: ['id'],
       });
       if (contactNumber && !existingAbsenceSms) {
+        const timePart = announcement.event_time
+          ? ` (${announcement.event_time}${announcement.end_time ? ` - ${announcement.end_time}` : ''})`
+          : '';
+        const venuePart = announcement.venue ? ` sa ${announcement.venue}` : '';
         smsNotifications.push({
           announcement_id: announcement.id,
           notification_type: 'announcement_absence',
           beneficiary_id: b.id,
           phone_number: contactNumber,
-          message: `[BeniAid DSWD Bongabong] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad "${announcement.title}" noong ${announcement.event_date || 'N/A'}. Makipag-ugnayan sa DSWD/MSWDO para sa detalye.`,
+          message: `[BeniAid DSWD Bongabong] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad na "${announcement.title}" noong ${announcement.event_date || 'N/A'}${timePart}${venuePart}. Mangyaring makipag-ugnayan sa Tanggapan ng DSWD/MSWDO o sa inyong Barangay Staff kung may balidong dahilan.`,
           status: 'queued',
         });
       }

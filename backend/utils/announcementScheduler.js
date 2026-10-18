@@ -153,12 +153,16 @@ async function autoCompleteExpiredAnnouncements() {
             attributes: ['id'],
           });
           if (contactNumber && !existingAbsenceSms) {
+            const timePart = ann.event_time
+              ? ` (${ann.event_time}${ann.end_time ? ` - ${ann.end_time}` : ''})`
+              : '';
+            const venuePart = ann.venue ? ` sa ${ann.venue}` : '';
             smsNotifications.push({
               announcement_id: ann.id,
               notification_type: 'announcement_absence',
               beneficiary_id: b.id,
               phone_number: contactNumber,
-              message: `[BeniAid DSWD Bongabong] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad "${ann.title}" noong ${ann.event_date || 'N/A'}. Makipag-ugnayan sa DSWD/MSWDO para sa detalye.`,
+              message: `[BeniAid DSWD Bongabong] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad na "${ann.title}" noong ${ann.event_date || 'N/A'}${timePart}${venuePart}. Mangyaring makipag-ugnayan sa Tanggapan ng DSWD/MSWDO o sa inyong Barangay Staff kung may balidong dahilan.`,
               status: 'queued',
             });
           }

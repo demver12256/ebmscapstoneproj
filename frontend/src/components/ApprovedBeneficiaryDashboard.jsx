@@ -545,7 +545,7 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                       <span className="text-xs text-blue-200">• Published by {ann.CreatedBy?.first_name || 'Admin'}</span>
                     </div>
                     <h3 className="font-extrabold text-white text-base leading-snug">{ann.title}</h3>
-                    <p className="text-xs text-blue-100 line-clamp-2">{ann.message}</p>
+                    <p className="text-xs text-blue-100 whitespace-pre-wrap leading-relaxed">{ann.message}</p>
                     {(ann.event_date || ann.venue) && (
                       <div className="flex flex-wrap items-center gap-3 text-xs text-amber-200 font-semibold pt-1">
                         {ann.event_date && <span>📅 Date: {ann.event_date} {ann.event_time && `at ${ann.event_time}`}</span>}
