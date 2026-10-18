@@ -249,7 +249,7 @@ export default function RfidAnnouncementAttendanceModal({ announcement, onClose,
                   placeholder={isEnded ? "Sarado na ang attendance para sa tapos nang event..." : "Tap RFID Card or enter Beneficiary ID Code..."}
                   value={rfidInput}
                   onChange={(e) => setRfidInput(e.target.value)}
-                  disabled={scanLoading || isEnded}
+                  disabled={isEnded}
                   className={`w-full pl-4 pr-24 py-3.5 bg-slate-800/90 border-2 rounded-xl text-white font-mono text-base tracking-wider focus:outline-none transition ${
                     isEnded
                       ? 'border-red-500/50 cursor-not-allowed text-slate-400 placeholder:text-red-300/60'
@@ -324,7 +324,7 @@ export default function RfidAnnouncementAttendanceModal({ announcement, onClose,
                   <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-400 rounded-2xl p-5 shadow-lg animate-fade-in space-y-2">
                     <div className="flex items-center gap-2 text-amber-900 font-black text-sm">
                       <AlertTriangle className="w-5 h-5 text-amber-600" />
-                      <span>DUPLICATE SCAN PREVENTED</span>
+                      <span>⚠️ NAKA-RECORD NA SIYA SA ATTENDANCE!</span>
                     </div>
                     <p className="text-xs text-amber-800 font-bold">{lastScanResult.message}</p>
                   </div>

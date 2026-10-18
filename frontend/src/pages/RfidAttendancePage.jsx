@@ -205,6 +205,17 @@ export default function RfidAttendancePage() {
     } catch (e) {}
   };
 
+  const lastScanCodeRef = useRef('');
+  const lastScanBeneficiaryRef = useRef(null);
+
+  const focusScannerInput = () => {
+    setTimeout(() => {
+      if (rfidInputRef.current) {
+        rfidInputRef.current.focus();
+      }
+    }, 30);
+  };
+
   const executeScan = async (rawInput) => {
     const code = String(rawInput || '').trim();
     if (!code) {
@@ -222,13 +233,51 @@ export default function RfidAttendancePage() {
       return;
     }
 
-    if (isProcessingScanRef.current) return;
+    // Clear input immediately so rapid hardware RFID taps never concatenate or lose focus
+    setRfidInput('');
+    focusScannerInput();
+
+    // Check if this code is already in scannedRecords or is an immediate accidental double-tap of the same card
+    const codeLower = code.toLowerCase();
+    const existingLocalRecord = scannedRecords.find(
+      (r) =>
+        (r.rfid && r.rfid !== 'N/A (QR Pass)' && String(r.rfid).trim().toLowerCase() === codeLower) ||
+        (r.qr_code && String(r.qr_code).trim().toLowerCase() === codeLower) ||
+        (r.beneficiary_id_code && String(r.beneficiary_id_code).trim().toLowerCase() === codeLower)
+    );
+
+    if (isProcessingScanRef.current) {
+      // If user accidentally double-tapped the same card while first tap is processing, show "Naka-record na siya" right away
+      if (lastScanCodeRef.current.toLowerCase() === codeLower || existingLocalRecord) {
+        playDuplicateBeep();
+        const benName = existingLocalRecord?.name || (lastScanBeneficiaryRef.current ? `${lastScanBeneficiaryRef.current.first_name} ${lastScanBeneficiaryRef.current.last_name}` : 'Ang benepisyaryong ito');
+        const benCode = existingLocalRecord?.beneficiary_id_code || lastScanBeneficiaryRef.current?.beneficiary_id_code || code;
+        const benTime = existingLocalRecord?.time || 'ngayon lang';
+        setSuccess(null);
+        setDuplicateWarning(
+          `Naka-record na si ${benName} (${benCode}) sa attendance ng aktibidad na ito (Oras: ${benTime}). Hindi na kailangang i-tap o i-scan ulit.`
+        );
+      }
+      return;
+    }
+
     isProcessingScanRef.current = true;
+    lastScanCodeRef.current = code;
 
     setLoading(true);
     setError(null);
-    setSuccess(null);
-    setDuplicateWarning(null);
+
+    // If already in local scanned list, immediately show the Naka-record na warning while still verifying with server
+    if (existingLocalRecord) {
+      playDuplicateBeep();
+      setSuccess(null);
+      setDuplicateWarning(
+        `Naka-record na si ${existingLocalRecord.name} (${existingLocalRecord.beneficiary_id_code || 'N/A'}) sa attendance ng aktibidad na ito (Oras: ${existingLocalRecord.time}). Hindi na kailangang i-tap o i-scan ulit ang RFID o QR Code.`
+      );
+    } else {
+      setSuccess(null);
+      setDuplicateWarning(null);
+    }
 
     try {
       const now = new Date();
@@ -242,20 +291,27 @@ export default function RfidAttendancePage() {
       });
 
       const beneficiary = response.data.beneficiary;
-      const isDuplicate = Boolean(response.data.already_present || response.data.duplicate);
+      if (beneficiary) {
+        lastScanBeneficiaryRef.current = beneficiary;
+      }
+      const isDuplicate = Boolean(response.data.already_present || response.data.duplicate || existingLocalRecord);
 
       if (isDuplicate) {
-        playDuplicateBeep();
+        if (!existingLocalRecord) {
+          playDuplicateBeep();
+        }
         const scannedAtText = beneficiary?.scanned_at
           ? new Date(beneficiary.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-          : 'kanina';
+          : existingLocalRecord?.time || 'kanina';
+        setSuccess(null);
         setDuplicateWarning(
-          `Nakapag-attendance na si ${beneficiary?.first_name || ''} ${beneficiary?.last_name || ''} (${beneficiary?.beneficiary_id_code || 'N/A'}) sa aktibidad na ito (kaninang ${scannedAtText}). Hindi na kailangang i-scan ulit ang RFID o QR Code.`
+          `Naka-record na si ${beneficiary?.first_name || ''} ${beneficiary?.last_name || ''} (${beneficiary?.beneficiary_id_code || 'N/A'}) sa attendance ng aktibidad na ito (Oras: ${scannedAtText}). Hindi na kailangang i-tap o i-scan ulit ang RFID o QR Code.`
         );
-        setTimeout(() => setDuplicateWarning(null), 6000);
+        setTimeout(() => setDuplicateWarning(null), 7000);
       } else {
         playSuccessBeep();
-        setSuccess(`✓ ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code}) - Naitala ang Attendance!`);
+        setDuplicateWarning(null);
+        setSuccess(`✓ ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code}) - Matagumpay na Naitala sa Attendance!`);
         setTimeout(() => setSuccess(null), 4000);
       }
 
@@ -279,32 +335,28 @@ export default function RfidAttendancePage() {
           ])
         );
       }
-
-      setRfidInput('');
-      if (rfidInputRef.current) {
-        rfidInputRef.current.focus();
-      }
     } catch (err) {
       const status = err.response?.status;
       const message = err.response?.data?.message || err.message;
       if (status === 409) {
         playDuplicateBeep();
         setError(null);
-        setDuplicateWarning(message || 'Nakapag-attendance na ang benepisyaryo sa aktibidad na ito.');
-        setRfidInput('');
-        setTimeout(() => setDuplicateWarning(null), 6000);
+        setSuccess(null);
+        setDuplicateWarning(message || 'Naka-record na ang benepisyaryo sa attendance ng aktibidad na ito.');
+        setTimeout(() => setDuplicateWarning(null), 7000);
       } else if (status === 404) {
+        setDuplicateWarning(null);
         setError(`❌ Hindi rehistrado ang RFID o QR Pass: ${message}`);
         setTimeout(() => setError(null), 5000);
       } else {
+        setDuplicateWarning(null);
         setError(`Error: ${message}`);
         setTimeout(() => setError(null), 5000);
       }
     } finally {
       setLoading(false);
-      setTimeout(() => {
-        isProcessingScanRef.current = false;
-      }, 1500);
+      isProcessingScanRef.current = false;
+      focusScannerInput();
     }
   };
 
@@ -646,7 +698,7 @@ export default function RfidAttendancePage() {
                   ? 'Sarado na ang attendance para sa event na ito...'
                   : 'I-tap ang RFID card o i-scan ang QR code dito (o i-type ang code)...'
               }
-              disabled={!selectedAnnouncement || isSelectedEnded || loading}
+              disabled={!selectedAnnouncement || isSelectedEnded}
               className="w-full px-4 py-3.5 text-center text-base sm:text-lg font-mono font-bold border-2 border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-inner disabled:bg-slate-100 disabled:cursor-not-allowed transition"
             />
             <div className="absolute left-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 text-slate-400 pointer-events-none">
@@ -706,7 +758,7 @@ export default function RfidAttendancePage() {
         <div className="rounded-xl bg-amber-50 border-2 border-amber-400 p-4 flex items-start gap-3 shadow-sm">
           <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-amber-900">
-            <p className="font-black uppercase tracking-wide text-amber-800">⚠️ Nakapag-Attendance Na Siya!</p>
+            <p className="font-black uppercase tracking-wide text-amber-800">⚠️ Naka-Record Na Siya sa Attendance!</p>
             <p className="mt-1 font-semibold">{duplicateWarning}</p>
           </div>
         </div>
