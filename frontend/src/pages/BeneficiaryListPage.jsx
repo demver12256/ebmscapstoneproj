@@ -1101,44 +1101,48 @@ export default function BeneficiaryListPage() {
                     <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
                   ) : null}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setModalTab('distributions')}
-                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
-                    modalTab === 'distributions'
-                      ? 'border-emerald-600 text-emerald-700'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <Package className="w-4 h-4" />
-                  {user?.role === 'mswdo_admin' ? 'MSWDO Distributions' : 'DSWD Distributions'}
-                  {distributionsData?.stats ? (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      ₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH')} ({distributionsData.stats.released_count})
-                    </span>
-                  ) : distributionsLoading ? (
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModalTab('programs')}
-                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
-                    modalTab === 'programs'
-                      ? 'border-purple-600 text-purple-700'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <Layers className="w-4 h-4" />
-                  {user?.role === 'mswdo_admin' ? 'MSWDO Programs' : 'DSWD Programs'}
-                  {enrollmentsData?.stats ? (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
-                      {enrollmentsData.stats.active_count} Aktibo
-                    </span>
-                  ) : enrollmentsLoading ? (
-                    <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span>
-                  ) : null}
-                </button>
+                {user?.role !== 'mswdo_admin' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('distributions')}
+                      className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
+                        modalTab === 'distributions'
+                          ? 'border-emerald-600 text-emerald-700'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Package className="w-4 h-4" />
+                      DSWD Distributions
+                      {distributionsData?.stats ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          ₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH')} ({distributionsData.stats.released_count})
+                        </span>
+                      ) : distributionsLoading ? (
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                      ) : null}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('programs')}
+                      className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
+                        modalTab === 'programs'
+                          ? 'border-purple-600 text-purple-700'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Layers className="w-4 h-4" />
+                      DSWD Programs
+                      {enrollmentsData?.stats ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                          {enrollmentsData.stats.active_count} Aktibo
+                        </span>
+                      ) : enrollmentsLoading ? (
+                        <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span>
+                      ) : null}
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* Refresh Button */}
@@ -1213,104 +1217,100 @@ export default function BeneficiaryListPage() {
                     </button>
                   </div>
 
-                  {/* Claimed Distributions Quick KPI Banner inside Profile Tab */}
-                  <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-cyan-50 rounded-2xl p-4 border border-emerald-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs shrink-0">
-                        <Package className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h5 className="font-bold text-sm text-slate-900">
-                            {user?.role === 'mswdo_admin' ? 'Claimed MSWDO Ayuda & Distributions' : 'Claimed DSWD Ayuda & Distributions'}
-                          </h5>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                            user?.role === 'mswdo_admin'
-                              ? 'text-emerald-700 bg-emerald-100/70 border-emerald-200'
-                              : 'text-teal-700 bg-teal-100/70 border-teal-200'
-                          }`}>
-                            {user?.role === 'mswdo_admin' ? 'MSWDO Released Only' : 'DSWD Released Only'}
-                          </span>
-                          {distributionsData?.stats && (
-                            <span className="px-2 py-0.5 text-xs font-black rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              ₱{Number(distributionsData.stats.total_amount_claimed || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} Na-claim
-                            </span>
-                          )}
-                        </div>
-                        {distributionsLoading ? (
-                          <p className="text-xs text-emerald-600 font-medium flex items-center gap-1 mt-0.5">
-                            <RefreshCw className="w-3 h-3 animate-spin" /> Kinukuha ang mga talaan ng ayuda...
-                          </p>
-                        ) : distributionsData?.stats ? (
-                          <p className="text-xs text-slate-600 mt-0.5">
-                            Na-claim: <strong className="text-emerald-700">{distributionsData.stats.released_count}</strong> • 
-                            Pending: <strong className="text-amber-700">{distributionsData.stats.pending_count}</strong> • 
-                            Kabuuang Halaga: <strong className="text-emerald-700">₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
-                            {distributionsData.stats.last_claim_date && (
-                              <> (Huling Claim: <strong>{formatEventDate(distributionsData.stats.last_claim_date)}</strong>)</>
+                  {user?.role !== 'mswdo_admin' && (
+                    <>
+                      {/* Claimed Distributions Quick KPI Banner inside Profile Tab */}
+                      <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-cyan-50 rounded-2xl p-4 border border-emerald-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs shrink-0">
+                            <Package className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="font-bold text-sm text-slate-900">
+                                Claimed DSWD Ayuda & Distributions
+                              </h5>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-teal-700 bg-teal-100/70 border-teal-200">
+                                DSWD Released Only
+                              </span>
+                              {distributionsData?.stats && (
+                                <span className="px-2 py-0.5 text-xs font-black rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  ₱{Number(distributionsData.stats.total_amount_claimed || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} Na-claim
+                                </span>
+                              )}
+                            </div>
+                            {distributionsLoading ? (
+                              <p className="text-xs text-emerald-600 font-medium flex items-center gap-1 mt-0.5">
+                                <RefreshCw className="w-3 h-3 animate-spin" /> Kinukuha ang mga talaan ng ayuda...
+                              </p>
+                            ) : distributionsData?.stats ? (
+                              <p className="text-xs text-slate-600 mt-0.5">
+                                Na-claim: <strong className="text-emerald-700">{distributionsData.stats.released_count}</strong> • 
+                                Pending: <strong className="text-amber-700">{distributionsData.stats.pending_count}</strong> • 
+                                Kabuuang Halaga: <strong className="text-emerald-700">₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
+                                {distributionsData.stats.last_claim_date && (
+                                  <> (Huling Claim: <strong>{formatEventDate(distributionsData.stats.last_claim_date)}</strong>)</>
+                                )}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-slate-500 mt-0.5">Walang nakatalang distribution claims.</p>
                             )}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-slate-500 mt-0.5">Walang nakatalang distribution claims.</p>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setModalTab('distributions')}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
-                    >
-                      Tingnan Buong Ayuda →
-                    </button>
-                  </div>
-
-                  {/* Enrolled Programs Quick KPI Banner inside Profile Tab */}
-                  <div className="bg-gradient-to-r from-purple-50 via-indigo-50/60 to-blue-50 rounded-2xl p-4 border border-purple-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 bg-purple-600 text-white rounded-xl shadow-xs shrink-0">
-                        <Layers className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h5 className="font-bold text-sm text-slate-900">
-                            {user?.role === 'mswdo_admin' ? 'Mga Naka-enroll na Programang MSWDO' : 'Mga Naka-enroll na Programang DSWD'}
-                          </h5>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                            user?.role === 'mswdo_admin'
-                              ? 'text-purple-700 bg-purple-100/70 border-purple-200'
-                              : 'text-indigo-700 bg-indigo-100/70 border-indigo-200'
-                          }`}>
-                            {user?.role === 'mswdo_admin' ? 'MSWDO Programs Only' : 'DSWD Programs Only'}
-                          </span>
-                          {enrollmentsData?.stats && (
-                            <span className="px-2 py-0.5 text-xs font-black rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                              {enrollmentsData.stats.active_count} Aktibong Programa
-                            </span>
-                          )}
+                          </div>
                         </div>
-                        {enrollmentsLoading ? (
-                          <p className="text-xs text-purple-600 font-medium flex items-center gap-1 mt-0.5">
-                            <RefreshCw className="w-3 h-3 animate-spin" /> Kinukuha ang mga programa...
-                          </p>
-                        ) : enrollmentsData?.stats ? (
-                          <p className="text-xs text-slate-600 mt-0.5">
-                            Naka-enroll: <strong className="text-purple-700">{enrollmentsData.stats.total_enrolled}</strong> na programa • 
-                            Aktibo: <strong className="text-emerald-700">{enrollmentsData.stats.active_count}</strong> • 
-                            Kategorya: <strong className="text-slate-800">{viewingBeneficiary.category}</strong>
-                          </p>
-                        ) : (
-                          <p className="text-xs text-slate-500 mt-0.5">Walang nakatalang program enrollments.</p>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setModalTab('distributions')}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                        >
+                          Tingnan Buong Ayuda →
+                        </button>
                       </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setModalTab('programs')}
-                      className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
-                    >
-                      Tingnan mga Programa →
-                    </button>
-                  </div>
+
+                      {/* Enrolled Programs Quick KPI Banner inside Profile Tab */}
+                      <div className="bg-gradient-to-r from-purple-50 via-indigo-50/60 to-blue-50 rounded-2xl p-4 border border-purple-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-purple-600 text-white rounded-xl shadow-xs shrink-0">
+                            <Layers className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="font-bold text-sm text-slate-900">
+                                Mga Naka-enroll na Programang DSWD
+                              </h5>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-indigo-700 bg-indigo-100/70 border-indigo-200">
+                                DSWD Programs Only
+                              </span>
+                              {enrollmentsData?.stats && (
+                                <span className="px-2 py-0.5 text-xs font-black rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                                  {enrollmentsData.stats.active_count} Aktibong Programa
+                                </span>
+                              )}
+                            </div>
+                            {enrollmentsLoading ? (
+                              <p className="text-xs text-purple-600 font-medium flex items-center gap-1 mt-0.5">
+                                <RefreshCw className="w-3 h-3 animate-spin" /> Kinukuha ang mga programa...
+                              </p>
+                            ) : enrollmentsData?.stats ? (
+                              <p className="text-xs text-slate-600 mt-0.5">
+                                Naka-enroll: <strong className="text-purple-700">{enrollmentsData.stats.total_enrolled}</strong> na programa • 
+                                Aktibo: <strong className="text-emerald-700">{enrollmentsData.stats.active_count}</strong> • 
+                                Kategorya: <strong className="text-slate-800">{viewingBeneficiary.category}</strong>
+                              </p>
+                            ) : (
+                              <p className="text-xs text-slate-500 mt-0.5">Walang nakatalang program enrollments.</p>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setModalTab('programs')}
+                          className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                        >
+                          Tingnan mga Programa →
+                        </button>
+                      </div>
+                    </>
+                  )}
 
                   {/* RFID Card Management Card */}
                   <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
