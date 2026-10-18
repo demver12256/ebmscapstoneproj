@@ -1125,7 +1125,7 @@ router.get('/:id', async (req, res, next) => {
             {
               model: Beneficiary,
               as: 'Beneficiary',
-              attributes: ['id', 'first_name', 'last_name', 'contact_number', 'RFID_number', 'beneficiary_id_code', 'profile_photo', 'category'],
+              attributes: ['id', 'first_name', 'last_name', 'contact_number', 'RFID_number', 'beneficiary_id_code', 'profile_picture', 'category'],
               include: [
                 { model: Barangay, attributes: ['id', 'barangay_name'] },
                 { model: User, attributes: ['contact_number'] },
@@ -1562,7 +1562,7 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
           last_name: beneficiary.last_name,
           RFID_number: beneficiary.RFID_number,
           beneficiary_id_code: beneficiary.beneficiary_id_code,
-          profile_photo: beneficiary.profile_photo,
+          profile_photo: beneficiary.profile_picture || beneficiary.profile_photo,
           category: beneficiary.category,
           barangay_name: beneficiary.Barangay?.barangay_name,
           scanned_at: recordedScanTime,
@@ -1628,7 +1628,7 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
         last_name: beneficiary.last_name,
         RFID_number: beneficiary.RFID_number,
         beneficiary_id_code: beneficiary.beneficiary_id_code,
-        profile_photo: beneficiary.profile_photo,
+        profile_photo: beneficiary.profile_picture || beneficiary.profile_photo,
         category: beneficiary.category,
         barangay_name: beneficiary.Barangay?.barangay_name,
         scanned_at: now,
@@ -1669,7 +1669,7 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
         {
           model: Beneficiary,
           as: 'Beneficiary',
-          attributes: ['id', 'first_name', 'last_name', 'contact_number', 'RFID_number', 'beneficiary_id_code', 'category', 'profile_photo'],
+          attributes: ['id', 'first_name', 'last_name', 'contact_number', 'RFID_number', 'beneficiary_id_code', 'category', 'profile_picture'],
           include: [{ model: Barangay, attributes: ['id', 'barangay_name'] }],
         },
         {

@@ -277,7 +277,7 @@ router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'ba
         RFID_number: b.RFID_number,
         beneficiary_id_code: b.beneficiary_id_code,
         contact_number: b.contact_number,
-        profile_photo: b.profile_photo,
+        profile_photo: b.profile_picture || b.profile_photo,
         barangay: b.Barangay,
         status: b.status,
         // Qualification flags
@@ -1293,7 +1293,7 @@ router.get('/events/:id/transactions', authorize('admin', 'staff', 'barangay', '
       include: [
         {
           model: Beneficiary,
-          attributes: ['id', 'first_name', 'last_name', 'middle_name', 'category', 'RFID_number', 'beneficiary_id_code', 'qr_code_token', 'profile_photo', 'contact_number'],
+          attributes: ['id', 'first_name', 'last_name', 'middle_name', 'category', 'RFID_number', 'beneficiary_id_code', 'qr_token', 'profile_picture', 'contact_number'],
           include: [{ model: Barangay, attributes: ['id', 'barangay_name'] }],
         },
         { model: User, as: 'ReleasedByStaff', attributes: ['id', 'first_name', 'last_name'] },
@@ -1402,7 +1402,7 @@ router.post('/events/:id/transactions/:txnId/verify', authorize('admin', 'staff'
         beneficiary_id: txn.Beneficiary.id,
         beneficiary_name: `${txn.Beneficiary.first_name} ${txn.Beneficiary.middle_name || ''} ${txn.Beneficiary.last_name}`.trim(),
         beneficiary_id_code: txn.Beneficiary.beneficiary_id_code,
-        profile_photo: txn.Beneficiary.profile_photo,
+        profile_photo: txn.Beneficiary.profile_picture || txn.Beneficiary.profile_photo,
         program_name: txn.Event?.Program?.name,
         amount: parseFloat(txn.amount),
         formatted_amount: `₱${parseFloat(txn.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
@@ -2112,7 +2112,7 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
           beneficiary_id_code: b.beneficiary_id_code,
           qr_token: b.qr_token,
           qr_code: b.qr_token ? `EBMS-QR:${b.qr_token}` : null,
-          profile_photo: b.profile_photo,
+          profile_photo: b.profile_picture || b.profile_photo,
           contact_number: b.contact_number,
           barangay: b.Barangay?.barangay_name,
           status: b.status,
