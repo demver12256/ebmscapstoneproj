@@ -766,6 +766,10 @@ export default function AnnouncementManagementPage() {
 
   // Check if announcement is currently active (published and end time not passed)
   const isAnnouncementActive = (ann) => {
+    if (ann.status === 'completed' || ann.status === 'archived') return false;
+    const present = ann.present_count || 0;
+    const total = ann.recipient_count || (ann.Recipients ? ann.Recipients.length : 0);
+    if (total > 0 && present >= total) return false;
     if (ann.status !== 'published') return false;
     if (!ann.event_date) return true;
 
@@ -1213,7 +1217,11 @@ export default function AnnouncementManagementPage() {
                           </div>
 
                           <div>
-                            {ann.status === 'published' ? (
+                            {ann.status === 'completed' || (totalExpected > 0 && presentCount >= totalExpected) ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-purple-700 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-full">
+                                <CheckCircle2 className="w-3 h-3 text-purple-600" /> Completed
+                              </span>
+                            ) : ann.status === 'published' ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">
                                 <CheckCircle2 className="w-3 h-3" /> Published
                               </span>
@@ -1224,10 +1232,6 @@ export default function AnnouncementManagementPage() {
                             ) : ann.status === 'rejected' ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full">
                                 <X className="w-3 h-3" /> Rejected
-                              </span>
-                            ) : ann.status === 'completed' ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
-                                <CheckCircle2 className="w-3 h-3" /> Completed
                               </span>
                             ) : ann.status === 'scheduled' ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">

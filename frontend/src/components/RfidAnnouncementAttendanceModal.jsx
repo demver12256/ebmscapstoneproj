@@ -23,6 +23,9 @@ import { getAnnouncementEndDateTime } from '../utils/announcementSchedule';
 const isAnnouncementActiveForAttendance = (ann) => {
   if (!ann) return false;
   if (ann.status === 'completed' || ann.status === 'archived') return false;
+  const present = ann.present_count || 0;
+  const total = ann.recipient_count || 0;
+  if (total > 0 && present >= total) return false;
   if (ann.status !== 'published') return false;
 
   const now = new Date();

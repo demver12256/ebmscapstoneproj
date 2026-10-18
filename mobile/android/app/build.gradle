@@ -86,8 +86,8 @@ android {
         applicationId "com.mobiletemp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 12
-        versionName "2.1"
+        versionCode 13
+        versionName "2.2"
     }
     signingConfigs {
         debug {

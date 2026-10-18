@@ -1092,15 +1092,24 @@ router.get('/', async (req, res, next) => {
       });
     }
 
-    // Attach present_count summary
-    const formatted = announcements.map((a) => {
+    // Attach present_count summary and auto-complete if 100% attended
+    const formatted = await Promise.all(announcements.map(async (a) => {
       const plain = a.toJSON();
       const recipients = plain.Recipients || [];
+      const totalRecipients = plain.recipient_count || recipients.length;
+      plain.recipient_count = totalRecipients;
       plain.present_count = recipients.filter((r) => r.attendance_status === 'Present').length;
       plain.absent_count = recipients.filter((r) => r.attendance_status === 'Absent').length;
       plain.pending_count = recipients.filter((r) => r.attendance_status === 'Pending').length;
+
+      // Auto-complete if all expected recipients have attended (100% attendance)
+      if (a.status === 'published' && totalRecipients > 0 && plain.present_count >= totalRecipients) {
+        await a.update({ status: 'completed' });
+        plain.status = 'completed';
+      }
+
       return plain;
-    });
+    }));
 
     res.json({ success: true, data: formatted });
   } catch (error) {
@@ -1253,10 +1262,18 @@ router.get('/:id', async (req, res, next) => {
       };
     });
     plain.Recipients = recipients;
+    const totalExpectedRecipients = announcement.recipient_count || recipients.length;
+    plain.recipient_count = totalExpectedRecipients;
     plain.present_count = recipients.filter((r) => r.attendance_status === 'Present').length;
     plain.absent_count = recipients.filter((r) => r.attendance_status === 'Absent').length;
     plain.pending_count = recipients.filter((r) => r.attendance_status === 'Pending').length;
-    plain.attendance_percentage = recipients.length > 0 ? Math.round((plain.present_count / recipients.length) * 100) : 0;
+    plain.attendance_percentage = totalExpectedRecipients > 0 ? Math.round((plain.present_count / totalExpectedRecipients) * 100) : 0;
+
+    // Auto-complete if 100% of expected beneficiaries attended
+    if (announcement.status === 'published' && totalExpectedRecipients > 0 && plain.present_count >= totalExpectedRecipients) {
+      await announcement.update({ status: 'completed' });
+      plain.status = 'completed';
+    }
     plain.sms_summary = {
       queued: recipients.filter((recipient) => recipient.sms_status === 'queued').length,
       accepted: recipients.filter((recipient) => recipient.sms_status === 'sent').length,
@@ -1617,11 +1634,28 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
       col: 'beneficiary_id',
     });
 
+    const isAllAttended = totalRecipients > 0 && presentCount >= totalRecipients;
+    let currentStatus = announcement.status;
+    if (isAllAttended && announcement.status === 'published') {
+      currentStatus = 'completed';
+      await announcement.update({ status: 'completed' });
+      await AuditLog.create({
+        user_id: req.user.id,
+        action: `AUTO_COMPLETED_ANNOUNCEMENT: "${announcement.title}" - Lahat ng ${presentCount}/${totalRecipients} benepisyaryo ay nakapag-attend na.`,
+        module: 'Attendance',
+        timestamp: now,
+      });
+    }
+
     res.json({
       success: true,
       already_present: false,
       duplicate: false,
-      message: `SUCCESS: Attendance recorded for ${beneficiary.first_name} ${beneficiary.last_name}!`,
+      message: isAllAttended
+        ? `SUCCESS: Attendance recorded for ${beneficiary.first_name} ${beneficiary.last_name}! Kumpleto na ang lahat ng dadalo (100%), awtomatikong naging Completed ang aktibidad.`
+        : `SUCCESS: Attendance recorded for ${beneficiary.first_name} ${beneficiary.last_name}!`,
+      announcement_status: currentStatus,
+      is_completed: isAllAttended || currentStatus === 'completed',
       beneficiary: {
         id: beneficiary.id,
         first_name: beneficiary.first_name,
@@ -1711,6 +1745,12 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
     const totalAbsent = absentList.length;
     const percentage = totalExpected > 0 ? Math.round((totalPresent / totalExpected) * 100) : 0;
 
+    let currentStatus = announcement.status;
+    if (announcement.status === 'published' && totalExpected > 0 && totalPresent >= totalExpected) {
+      currentStatus = 'completed';
+      await announcement.update({ status: 'completed' });
+    }
+
     res.json({
       success: true,
       data: {
@@ -1718,6 +1758,7 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
         title: announcement.title,
         event_date: announcement.event_date,
         venue: announcement.venue,
+        status: currentStatus,
         stats: {
           total_expected: totalExpected,
           total_present: totalPresent,

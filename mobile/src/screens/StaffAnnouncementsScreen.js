@@ -576,14 +576,18 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
           }
           renderItem={({ item }) => {
             const priorityStyle = getPriorityStyle(item.priority);
+            const presentCount = item.present_count || 0;
+            const totalExpected = item.recipient_count || (item.Recipients ? item.Recipients.length : 0);
+            const isAllAttended = totalExpected > 0 && presentCount >= totalExpected;
+            const isCompleted = item.status === 'completed' || isAllAttended;
             const timing = getAnnouncementTiming(item);
-            const isEnded = timing === 'ended';
-            const isCurrent = timing === 'current';
+            const isEnded = timing === 'ended' || isCompleted;
+            const isCurrent = timing === 'current' && !isCompleted;
             const isPendingApproval = item.status === 'pending_approval';
 
             return (
               <TouchableOpacity
-                style={[styles.annCard, darkMode && styles.darkCard, isEnded && { opacity: 0.65 }]}
+                style={[styles.annCard, darkMode && styles.darkCard, isEnded && { opacity: 0.75 }]}
                 onPress={() => handleSelectAnnouncement(item)}
                 activeOpacity={isEnded ? 0.9 : 0.8}
               >
@@ -602,7 +606,11 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
                         {(item.priority || 'Normal').toUpperCase()}
                       </Text>
                     </View>
-                    {isPendingApproval ? (
+                    {isCompleted ? (
+                      <View style={[styles.timingBadge, { backgroundColor: '#f3e8ff', borderColor: '#e9d5ff' }]}>
+                        <Text style={[styles.timingBadgeText, { color: '#7e22ce' }]}>COMPLETED</Text>
+                      </View>
+                    ) : isPendingApproval ? (
                       <View style={[styles.timingBadge, { backgroundColor: '#fef3c7', borderColor: '#fcd34d' }]}>
                         <Text style={[styles.timingBadgeText, { color: '#b45309' }]}>FOR DSWD APPROVAL</Text>
                       </View>
@@ -634,9 +642,13 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
 
                 <View style={styles.cardFooter}>
                   {item.has_attendance ? (
-                    <View style={[styles.attendancePill, isEnded && { backgroundColor: '#f1f5f9' }]}>
-                      <Text style={[styles.attendancePillText, isEnded && { color: '#64748b' }]}>
-                        {isEnded ? 'Attendance Closed' : '📲 Attendance Required'}
+                    <View style={[styles.attendancePill, isCompleted ? { backgroundColor: '#f3e8ff' } : isEnded ? { backgroundColor: '#f1f5f9' } : null]}>
+                      <Text style={[styles.attendancePillText, isCompleted ? { color: '#7e22ce', fontWeight: '800' } : isEnded ? { color: '#64748b' } : null]}>
+                        {isCompleted
+                          ? `✓ Completed (${presentCount}/${totalExpected} Present)`
+                          : isEnded
+                          ? 'Attendance Closed'
+                          : `📲 Attendance Required (${presentCount}/${totalExpected || '?'})`}
                       </Text>
                     </View>
                   ) : (
