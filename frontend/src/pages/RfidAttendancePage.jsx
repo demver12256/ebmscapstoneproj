@@ -28,6 +28,27 @@ const isAnnouncementActiveForAttendance = (ann) => {
   return true;
 };
 
+// Deduplicate scanned attendance records so each beneficiary only ever appears once
+const deduplicateAttendanceRecords = (records) => {
+  const seen = new Set();
+  const result = [];
+  for (const r of records) {
+    const keys = [
+      r.beneficiary_id ? `id:${r.beneficiary_id}` : null,
+      r.beneficiary_id_code ? `code:${String(r.beneficiary_id_code).trim().toLowerCase()}` : null,
+      r.rfid && r.rfid !== 'N/A (QR Pass)' ? `rfid:${String(r.rfid).trim().toLowerCase()}` : null,
+      r.name ? `name:${String(r.name).trim().toLowerCase()}` : null,
+    ].filter(Boolean);
+
+    if (keys.some((k) => seen.has(k))) {
+      continue;
+    }
+    keys.forEach((k) => seen.add(k));
+    result.push(r);
+  }
+  return result;
+};
+
 export default function RfidAttendancePage() {
   const [announcements, setAnnouncements] = useState([]);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState('');
@@ -37,6 +58,7 @@ export default function RfidAttendancePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
   const rfidInputRef = useRef(null);
   const recordPagination = usePagination(scannedRecords, 10);
 
@@ -93,7 +115,7 @@ export default function RfidAttendancePage() {
             status: 'present',
           };
         });
-        setScannedRecords(existingRecords);
+        setScannedRecords(deduplicateAttendanceRecords(existingRecords));
       } catch (err) {
         console.error('Failed to load announcement details:', err);
       }
@@ -168,6 +190,21 @@ export default function RfidAttendancePage() {
     } catch (e) {}
   };
 
+  const playDuplicateBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.25);
+    } catch (e) {}
+  };
+
   const executeScan = async (rawInput) => {
     const code = String(rawInput || '').trim();
     if (!code) {
@@ -191,6 +228,7 @@ export default function RfidAttendancePage() {
     setLoading(true);
     setError(null);
     setSuccess(null);
+    setDuplicateWarning(null);
 
     try {
       const now = new Date();
@@ -206,59 +244,62 @@ export default function RfidAttendancePage() {
       const beneficiary = response.data.beneficiary;
       const isDuplicate = Boolean(response.data.already_present || response.data.duplicate);
 
-      playSuccessBeep();
       if (isDuplicate) {
-        setSuccess(`✓ ${response.data.message || `${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code}) - Naitala na ang Attendance!`}`);
+        playDuplicateBeep();
+        const scannedAtText = beneficiary?.scanned_at
+          ? new Date(beneficiary.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          : 'kanina';
+        setDuplicateWarning(
+          `Nakapag-attendance na si ${beneficiary?.first_name || ''} ${beneficiary?.last_name || ''} (${beneficiary?.beneficiary_id_code || 'N/A'}) sa aktibidad na ito (kaninang ${scannedAtText}). Hindi na kailangang i-scan ulit ang RFID o QR Code.`
+        );
+        setTimeout(() => setDuplicateWarning(null), 6000);
       } else {
+        playSuccessBeep();
         setSuccess(`✓ ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code}) - Naitala ang Attendance!`);
+        setTimeout(() => setSuccess(null), 4000);
       }
 
       if (beneficiary) {
         const scannedAtObj = beneficiary.scanned_at ? new Date(beneficiary.scanned_at) : now;
-        setScannedRecords((prev) => {
-          const alreadyInList = prev.some(
-            (r) =>
-              (beneficiary.id && Number(r.beneficiary_id) === Number(beneficiary.id)) ||
-              (beneficiary.beneficiary_id_code && r.beneficiary_id_code === beneficiary.beneficiary_id_code)
-          );
-          if (alreadyInList) return prev;
-          return [
+        setScannedRecords((prev) =>
+          deduplicateAttendanceRecords([
+            ...prev,
             {
-              id: Date.now(),
+              id: beneficiary.id || Date.now(),
               beneficiary_id: beneficiary.id,
               rfid: beneficiary.RFID_number || 'N/A (QR Pass)',
               qr_code: code.startsWith('EBMS-QR:') ? code : null,
-              name: `${beneficiary.first_name} ${beneficiary.last_name}`,
+              name: `${beneficiary.first_name} ${beneficiary.last_name}`.trim(),
               beneficiary_id_code: beneficiary.beneficiary_id_code,
               category: beneficiary.category,
               time: scannedAtObj.toTimeString().split(' ')[0] || scanTime,
               date: scannedAtObj.toISOString().split('T')[0] || scanDate,
               status: 'present',
             },
-            ...prev,
-          ];
-        });
+          ])
+        );
       }
 
       setRfidInput('');
       if (rfidInputRef.current) {
         rfidInputRef.current.focus();
       }
-
-      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       const status = err.response?.status;
       const message = err.response?.data?.message || err.message;
       if (status === 409) {
+        playDuplicateBeep();
         setError(null);
-        setSuccess(`✓ ${message}`);
+        setDuplicateWarning(message || 'Nakapag-attendance na ang benepisyaryo sa aktibidad na ito.');
         setRfidInput('');
+        setTimeout(() => setDuplicateWarning(null), 6000);
       } else if (status === 404) {
         setError(`❌ Hindi rehistrado ang RFID o QR Pass: ${message}`);
+        setTimeout(() => setError(null), 5000);
       } else {
         setError(`Error: ${message}`);
+        setTimeout(() => setError(null), 5000);
       }
-      setTimeout(() => setError(null), 5000);
     } finally {
       setLoading(false);
       setTimeout(() => {
@@ -660,7 +701,17 @@ export default function RfidAttendancePage() {
         )}
       </div>
 
-      {/* Success/Error Messages */}
+      {/* Success / Duplicate Warning Messages */}
+      {duplicateWarning && (
+        <div className="rounded-xl bg-amber-50 border-2 border-amber-400 p-4 flex items-start gap-3 shadow-sm">
+          <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-900">
+            <p className="font-black uppercase tracking-wide text-amber-800">⚠️ Nakapag-Attendance Na Siya!</p>
+            <p className="mt-1 font-semibold">{duplicateWarning}</p>
+          </div>
+        </div>
+      )}
+
       {success && (
         <div className="rounded-lg bg-green-50 border-2 border-green-300 p-4 flex items-start gap-3 animate-pulse">
           <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />

@@ -1471,15 +1471,19 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
       });
     }
 
-    // Verify if beneficiary is on the announcement recipient list
-    const recipient = await AnnouncementRecipient.findOne({
+    // Verify if beneficiary is on the announcement recipient list (fetch all matching rows to deduplicate if needed)
+    const recipientRows = await AnnouncementRecipient.findAll({
       where: {
         announcement_id: announcement.id,
         beneficiary_id: beneficiary.id,
       },
+      order: [
+        ['scanned_at', 'ASC'],
+        ['id', 'ASC'],
+      ],
     });
 
-    if (!recipient) {
+    if (!recipientRows || recipientRows.length === 0) {
       return res.status(400).json({
         success: false,
         message: `REJECTED: Beneficiary ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.Barangay?.barangay_name || 'N/A'}) is not included in this selected announcement activity.`,
@@ -1492,16 +1496,66 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
       });
     }
 
-    // Check if already marked present (Prevent duplicate scan without throwing HTTP 409 console error)
-    if (recipient.attendance_status === 'Present') {
-      const totalRecipients = await AnnouncementRecipient.count({ where: { announcement_id: announcement.id } });
-      const presentCount = await AnnouncementRecipient.count({ where: { announcement_id: announcement.id, attendance_status: 'Present' } });
+    // Prefer any row already marked Present, otherwise the primary row
+    const recipient = recipientRows.find((r) => r.attendance_status === 'Present') || recipientRows[0];
+
+    // Remove any accidental duplicate AnnouncementRecipient rows for the same beneficiary in this announcement
+    if (recipientRows.length > 1) {
+      const duplicateRecipientIds = recipientRows
+        .filter((r) => r.id !== recipient.id)
+        .map((r) => r.id);
+      if (duplicateRecipientIds.length > 0) {
+        await AnnouncementRecipient.destroy({ where: { id: duplicateRecipientIds } });
+      }
+    }
+
+    // Also check if an Attendance log already exists for this beneficiary + announcement
+    const existingAttendances = await Attendance.findAll({
+      where: {
+        announcement_id: announcement.id,
+        beneficiary_id: beneficiary.id,
+      },
+      order: [['id', 'ASC']],
+    });
+
+    if (existingAttendances.length > 1) {
+      const extraAttIds = existingAttendances.slice(1).map((a) => a.id);
+      await Attendance.destroy({ where: { id: extraAttIds } });
+    }
+
+    const existingAttendance = existingAttendances[0] || null;
+    const isAlreadyPresent = recipient.attendance_status === 'Present' || Boolean(existingAttendance);
+
+    // Check if already marked present (whether first scanned via RFID or QR Code)
+    if (isAlreadyPresent) {
+      const recordedScanTime = recipient.scanned_at || existingAttendance?.createdAt || new Date();
+      if (recipient.attendance_status !== 'Present') {
+        await recipient.update({
+          attendance_status: 'Present',
+          scanned_at: recordedScanTime,
+        });
+      }
+
+      const totalRecipients = await AnnouncementRecipient.count({
+        where: { announcement_id: announcement.id },
+        distinct: true,
+        col: 'beneficiary_id',
+      });
+      const presentCount = await AnnouncementRecipient.count({
+        where: { announcement_id: announcement.id, attendance_status: 'Present' },
+        distinct: true,
+        col: 'beneficiary_id',
+      });
+
+      const formattedScanTime = recordedScanTime
+        ? new Date(recordedScanTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : 'kanina';
 
       return res.status(200).json({
         success: true,
         already_present: true,
         duplicate: true,
-        message: `DUPLICATE SCAN: Si ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code || 'N/A'}) ay NAITALA NA bilang Present kaninang ${recipient.scanned_at ? new Date(recipient.scanned_at).toLocaleTimeString() : 'mas maaga'}.`,
+        message: `NAKAPAG-ATTENDANCE NA: Si ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code || 'N/A'}) ay nakapag-attendance na sa aktibidad na ito kaninang ${formattedScanTime}. Hindi na kailangang i-scan ulit ang RFID o QR Code.`,
         beneficiary: {
           id: beneficiary.id,
           first_name: beneficiary.first_name,
@@ -1511,18 +1565,18 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
           profile_photo: beneficiary.profile_photo,
           category: beneficiary.category,
           barangay_name: beneficiary.Barangay?.barangay_name,
-          scanned_at: recipient.scanned_at,
+          scanned_at: recordedScanTime,
         },
         stats: {
           total_expected: totalRecipients,
           total_present: presentCount,
-          total_absent: totalRecipients - presentCount,
+          total_absent: Math.max(0, totalRecipients - presentCount),
           percentage: totalRecipients > 0 ? Math.round((presentCount / totalRecipients) * 100) : 0,
         },
       });
     }
 
-    // Record attendance
+    // Record attendance (first time for this beneficiary in this announcement)
     const now = new Date();
     await recipient.update({
       attendance_status: 'Present',
@@ -1530,7 +1584,7 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
       scanned_by_staff_id: req.user.id,
     });
 
-    // Create log in Attendance table
+    // Create single log in Attendance table
     await Attendance.create({
       beneficiary_id: beneficiary.id,
       RFID_number: beneficiary.RFID_number || RFID_number,
@@ -1552,11 +1606,21 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
     });
 
     // Fetch updated attendance stats
-    const totalRecipients = await AnnouncementRecipient.count({ where: { announcement_id: announcement.id } });
-    const presentCount = await AnnouncementRecipient.count({ where: { announcement_id: announcement.id, attendance_status: 'Present' } });
+    const totalRecipients = await AnnouncementRecipient.count({
+      where: { announcement_id: announcement.id },
+      distinct: true,
+      col: 'beneficiary_id',
+    });
+    const presentCount = await AnnouncementRecipient.count({
+      where: { announcement_id: announcement.id, attendance_status: 'Present' },
+      distinct: true,
+      col: 'beneficiary_id',
+    });
 
     res.json({
       success: true,
+      already_present: false,
+      duplicate: false,
       message: `SUCCESS: Attendance recorded for ${beneficiary.first_name} ${beneficiary.last_name}!`,
       beneficiary: {
         id: beneficiary.id,
@@ -1572,7 +1636,7 @@ router.post('/:id/scan-rfid', authorize('admin', 'staff', 'barangay'), async (re
       stats: {
         total_expected: totalRecipients,
         total_present: presentCount,
-        total_absent: totalRecipients - presentCount,
+        total_absent: Math.max(0, totalRecipients - presentCount),
         percentage: totalRecipients > 0 ? Math.round((presentCount / totalRecipients) * 100) : 0,
       },
     });
@@ -1599,7 +1663,7 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
       }
     }
 
-    const recipients = await AnnouncementRecipient.findAll({
+    const rawRecipients = await AnnouncementRecipient.findAll({
       where: { announcement_id: announcement.id },
       include: [
         {
@@ -1614,9 +1678,31 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
           attributes: ['id', 'first_name', 'last_name'],
         },
       ],
-      order: [['scanned_at', 'DESC']],
+      order: [['scanned_at', 'DESC'], ['id', 'ASC']],
     });
 
+    // Deduplicate recipients per beneficiary_id (prefer 'Present' record if duplicates exist)
+    const seenBeneficiaries = new Map();
+    const duplicateIdsToDelete = [];
+    for (const rec of rawRecipients) {
+      const bKey = Number(rec.beneficiary_id);
+      if (!seenBeneficiaries.has(bKey)) {
+        seenBeneficiaries.set(bKey, rec);
+      } else {
+        const existing = seenBeneficiaries.get(bKey);
+        if (existing.attendance_status !== 'Present' && rec.attendance_status === 'Present') {
+          duplicateIdsToDelete.push(existing.id);
+          seenBeneficiaries.set(bKey, rec);
+        } else {
+          duplicateIdsToDelete.push(rec.id);
+        }
+      }
+    }
+    if (duplicateIdsToDelete.length > 0) {
+      await AnnouncementRecipient.destroy({ where: { id: duplicateIdsToDelete } });
+    }
+
+    const recipients = Array.from(seenBeneficiaries.values());
     const presentList = recipients.filter((r) => r.attendance_status === 'Present');
     const absentList = recipients.filter((r) => r.attendance_status !== 'Present');
 

@@ -240,25 +240,31 @@ export default function RfidAnnouncementScannerPage() {
 
       const data = res.data;
       const isDuplicate = Boolean(data.already_present || data.duplicate);
-      setSuccess(
-        isDuplicate
-          ? `✓ ${data.message}`
-          : `✓ ${data.beneficiary?.first_name} ${data.beneficiary?.last_name} - Attendance recorded!`
-      );
+      if (isDuplicate) {
+        setError(`⚠️ ${data.message}`);
+        setTimeout(() => setError(null), 5000);
+      } else {
+        setSuccess(`✓ ${data.beneficiary?.first_name} ${data.beneficiary?.last_name} - Attendance recorded!`);
+        setTimeout(() => setSuccess(null), 3000);
+      }
 
-      // Prepend to scanned records if not already present
+      // Prepend to scanned records only if not already present (by ID, ID code, RFID, or name)
+      const fullName = `${data.beneficiary?.first_name || ''} ${data.beneficiary?.last_name || ''}`.trim();
       setScannedRecords((prev) => {
         const alreadyInList = prev.some(
           (r) =>
+            (data.beneficiary?.id && Number(r.beneficiary_id) === Number(data.beneficiary.id)) ||
             (data.beneficiary?.beneficiary_id_code && r.beneficiary_id_code === data.beneficiary.beneficiary_id_code) ||
-            r.rfid === scannedCode
+            (data.beneficiary?.RFID_number && r.rfid === data.beneficiary.RFID_number) ||
+            (fullName && String(r.name || '').trim().toLowerCase() === fullName.toLowerCase())
         );
         if (alreadyInList) return prev;
         return [
           {
-            id: Date.now(),
-            rfid: scannedCode,
-            name: `${data.beneficiary?.first_name || ''} ${data.beneficiary?.last_name || ''}`.trim(),
+            id: data.beneficiary?.id || Date.now(),
+            beneficiary_id: data.beneficiary?.id,
+            rfid: data.beneficiary?.RFID_number || scannedCode,
+            name: fullName,
             beneficiary_id_code: data.beneficiary?.beneficiary_id_code,
             category: data.beneficiary?.category,
             barangay: data.beneficiary?.barangay_name || 'N/A',
@@ -278,8 +284,6 @@ export default function RfidAnnouncementScannerPage() {
       if (rfidInputRef.current) {
         rfidInputRef.current.focus();
       }
-
-      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       const errorMsg = err.response?.data?.message || err.message || 'Failed to record attendance';
       setError(errorMsg);
