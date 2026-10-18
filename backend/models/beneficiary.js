@@ -198,5 +198,17 @@ module.exports = (sequelize, DataTypes) => {
     return /^[A-F0-9]{32}$/i.test(value) ? value.toUpperCase() : null;
   };
 
+  const defaultToJson = Beneficiary.prototype.toJSON;
+  Beneficiary.prototype.toJSON = function toJSON() {
+    const values = defaultToJson ? defaultToJson.call(this) : { ...this.get() };
+    if (values.qr_token !== undefined && values.qr_code_token === undefined) {
+      values.qr_code_token = values.qr_token;
+    }
+    if (values.profile_picture !== undefined && values.profile_photo === undefined) {
+      values.profile_photo = values.profile_picture;
+    }
+    return values;
+  };
+
   return Beneficiary;
 };
