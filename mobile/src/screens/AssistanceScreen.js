@@ -116,16 +116,19 @@ export default function AssistanceScreen({ onBack, onRequestNew, user, profile }
   const releasedAssistance = assistanceApplications.filter((a) => a.status === 'Released');
   const approvedAssistance = assistanceApplications.filter((a) => a.status === 'Approved');
   const approvedPortalRequests = portalRequests.filter((r) => r.status === 'Approved');
+  const completedPortalRequests = portalRequests.filter((r) => r.status === 'Completed');
 
-  // Real total received = distributions released + assistance released
+  // Real total received = distributions released + assistance released + completed portal assistance requests
   const totalReceivedReal =
     totalReceived +
-    releasedAssistance.reduce((sum, a) => sum + parseFloat(a.approved_amount || a.total_amount_requested || 0), 0);
+    releasedAssistance.reduce((sum, a) => sum + parseFloat(a.approved_amount || a.total_amount_requested || 0), 0) +
+    completedPortalRequests.reduce((sum, r) => sum + parseFloat(r.approved_amount || 0), 0);
 
-  // Real pending/approved = pending distributions + approved assistance not yet released
+  // Real pending/approved = pending distributions + approved assistance not yet released + approved portal requests
   const totalPendingReal =
     totalPending +
-    approvedAssistance.reduce((sum, a) => sum + parseFloat(a.approved_amount || a.total_amount_requested || 0), 0);
+    approvedAssistance.reduce((sum, a) => sum + parseFloat(a.approved_amount || a.total_amount_requested || 0), 0) +
+    approvedPortalRequests.reduce((sum, r) => sum + parseFloat(r.approved_amount || r.amount_requested || 0), 0);
 
   // Enrollments (active program enrollments)
   const enrollments = activeBen?.Enrollments || [];
@@ -142,7 +145,7 @@ export default function AssistanceScreen({ onBack, onRequestNew, user, profile }
   const totalDisbursements =
     releasedDistributions.length +
     releasedAssistance.length +
-    portalRequests.filter((r) => r.status === 'Completed').length;
+    completedPortalRequests.length;
 
   // Approved grant count for subtext
   const approvedGrantsCount = approvedAssistance.length + approvedPortalRequests.length;
@@ -164,7 +167,7 @@ export default function AssistanceScreen({ onBack, onRequestNew, user, profile }
       title: r.subject || r.type || 'Assistance Request',
       date: r.created_at,
       status: r.status || 'Pending',
-      amount: r.amount_requested,
+      amount: r.approved_amount || r.amount_requested,
       agency: r.agency || 'MSWDO',
     })),
     ...dedupedMedical.map((a) => ({
@@ -240,7 +243,7 @@ export default function AssistanceScreen({ onBack, onRequestNew, user, profile }
             <Text style={styles.coloredStatTitle}>💰 Total Received</Text>
             <Text style={styles.coloredStatValue}>{formatMoney(totalReceivedReal)}</Text>
             <Text style={styles.coloredStatSub}>
-              {releasedDistributions.length} dist. • {releasedAssistance.length} grant(s) released
+              {releasedDistributions.length} dist. • {releasedAssistance.length + completedPortalRequests.length} grant(s) released
             </Text>
           </View>
 

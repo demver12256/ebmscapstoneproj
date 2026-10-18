@@ -37,7 +37,8 @@ const upload = multer({
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
       'image/jpeg', 
       'image/jpg', 
-      'image/png'
+      'image/png',
+      'image/webp'
     ];
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
@@ -321,6 +322,83 @@ router.put('/me', authorize('beneficiary'), async (req, res, next) => {
     await beneficiary.update(updates);
 
     res.json({ success: true, data: beneficiary });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Beneficiary self-service contact information update (allowed at any status, unlike PUT /me)
+router.put('/me/contact', authorize('beneficiary'), async (req, res, next) => {
+  try {
+    const beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id } });
+    if (!beneficiary) {
+      return res.status(404).json({ success: false, message: 'Beneficiary profile not found' });
+    }
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User account not found' });
+    }
+
+    const { contact_number, email, address, sitio } = req.body || {};
+    const beneficiaryUpdates = {};
+    const userUpdates = {};
+
+    if (contact_number !== undefined) {
+      const cleaned = String(contact_number || '').replace(/[\s-]/g, '');
+      if (!cleaned) {
+        return res.status(400).json({ success: false, message: 'Contact number is required.' });
+      }
+      if (!/^(09\d{9}|\+639\d{9}|639\d{9})$/.test(cleaned)) {
+        return res.status(400).json({ success: false, message: 'Enter a valid Philippine mobile number (e.g. 09123456789).' });
+      }
+      const normalized = '0' + cleaned.replace(/^(\+?63)/, '').replace(/^0/, '');
+      beneficiaryUpdates.contact_number = normalized;
+      userUpdates.contact_number = normalized;
+    }
+
+    if (email !== undefined) {
+      const cleanedEmail = String(email || '').trim().toLowerCase();
+      if (cleanedEmail) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedEmail)) {
+          return res.status(400).json({ success: false, message: 'Enter a valid email address.' });
+        }
+        const emailTaken = await User.findOne({ where: { email: cleanedEmail, id: { [Op.ne]: user.id } } });
+        if (emailTaken) {
+          return res.status(409).json({ success: false, message: 'That email address is already used by another account.' });
+        }
+        userUpdates.email = cleanedEmail;
+      } else {
+        userUpdates.email = null;
+      }
+    }
+
+    if (address !== undefined) {
+      const cleanedAddress = String(address || '').trim();
+      beneficiaryUpdates.address = cleanedAddress || null;
+      userUpdates.address = cleanedAddress || null;
+    }
+    if (sitio !== undefined) {
+      beneficiaryUpdates.sitio = String(sitio || '').trim() || null;
+    }
+
+    if (Object.keys(beneficiaryUpdates).length > 0) await beneficiary.update(beneficiaryUpdates);
+    if (Object.keys(userUpdates).length > 0) await user.update(userUpdates);
+
+    try {
+      await AuditLog.create({
+        user_id: req.user.id,
+        action: `Beneficiary ${beneficiary.first_name} ${beneficiary.last_name} (${beneficiary.beneficiary_id_code || beneficiary.id}) updated own contact information (${Object.keys({ ...beneficiaryUpdates, ...userUpdates }).join(', ')}).`,
+        module: 'Beneficiary Management',
+      });
+    } catch (auditErr) {
+      console.warn('[PUT /me/contact] audit log skipped:', auditErr.message);
+    }
+
+    const fresh = await Beneficiary.findOne({
+      where: { user_id: req.user.id },
+      include: [{ model: Barangay, required: false }, { model: User, required: false }],
+    });
+    res.json({ success: true, message: 'Contact information updated.', data: fresh });
   } catch (error) {
     next(error);
   }
@@ -613,10 +691,30 @@ router.post('/me/profile-picture', authorize('beneficiary'), upload.single('prof
 
     const relativePath = `uploads/documents/${req.file.filename}`;
     const { saveUploadedFileToDb } = require('../utils/fileStorage');
-    await saveUploadedFileToDb(`/${relativePath}`, req.file.path, req.file.mimetype);
+    const persisted = await saveUploadedFileToDb(`/${relativePath}`, req.file.path, req.file.mimetype);
+    if (!persisted) {
+      try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+      return res.status(500).json({ success: false, message: 'Hindi na-save ang larawan sa server. Pakisubukan muli.' });
+    }
+
+    const oldPicture = beneficiary.profile_picture;
     await beneficiary.update({ profile_picture: relativePath });
 
-    res.json({ success: true, message: 'Profile picture updated', data: { profile_picture: relativePath } });
+    if (oldPicture && oldPicture !== relativePath) {
+      try {
+        const { sequelize } = require('../db');
+        const normalizedOld = `/${String(oldPicture).replace(/\\/g, '/').replace(/^\/+/, '')}`;
+        await sequelize.query('DELETE FROM uploaded_files WHERE file_path = :p', { replacements: { p: normalizedOld } });
+      } catch (e) {
+        console.warn('Could not remove old profile picture from DB storage:', e.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Profile picture updated',
+      data: { profile_picture: relativePath, profile_photo: relativePath },
+    });
   } catch (error) {
     next(error);
   }

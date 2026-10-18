@@ -44,9 +44,21 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
   const [passwordVisibility, setPasswordVisibility] = useState({ current: false, next: false, confirm: false });
   const [savingPassword, setSavingPassword] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [photoVersion, setPhotoVersion] = useState(Date.now());
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrPassData, setQrPassData] = useState(null);
+
+  // Contact Information Edit Modal State
+  const [contactModalVisible, setContactModalVisible] = useState(false);
+  const [savingContact, setSavingContact] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    contact_number: '',
+    email: '',
+    sitio: '',
+    address: '',
+  });
 
   const fullName = `${profile?.first_name || user?.first_name || ''} ${profile?.middle_name || ''} ${profile?.last_name || user?.last_name || ''}`
     .replace(/\s+/g, ' ').trim() || 'Beneficiary';
@@ -54,8 +66,9 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
   const profileImageUri = useMemo(() => {
     const path = profile?.profile_picture || profile?.User?.profile_picture || user?.profile_picture;
     if (!path) return null;
-    return path.startsWith('http') ? path : `${FILES_BASE_URL}/${path.replace(/^\/+/, '')}`;
-  }, [profile?.profile_picture, profile?.User?.profile_picture, user?.profile_picture]);
+    const base = path.startsWith('http') ? path : `${FILES_BASE_URL}/${path.replace(/^\/+/, '')}`;
+    return `${base}${base.includes('?') ? '&' : '?'}v=${photoVersion}`;
+  }, [profile?.profile_picture, profile?.User?.profile_picture, user?.profile_picture, photoVersion]);
   const barangayName = profile?.Barangay?.barangay_name || profile?.barangay_name || '';
   const address = profile?.address || [profile?.sitio, barangayName].filter(Boolean).join(', ');
   const accountUser = profile?.User || user || {};
@@ -140,19 +153,40 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
         return;
       }
 
+      const fileExtension = (file.name || '').split('.').pop()?.toLowerCase();
+      const detectedMime =
+        file.type ||
+        (fileExtension === 'png'
+          ? 'image/png'
+          : fileExtension === 'webp'
+          ? 'image/webp'
+          : 'image/jpeg');
+
       const formData = new FormData();
       formData.append('profile_picture', {
         uri: file.fileCopyUri || file.uri,
-        type: file.type || 'image/jpeg',
-        name: file.name || `profile-${Date.now()}.jpg`,
+        type: detectedMime,
+        name: file.name || `profile-${Date.now()}.${fileExtension || 'jpg'}`,
       });
 
       setUploadingPhoto(true);
+      setImageError(false);
       const response = await beneficiaryApi.uploadProfilePicture(formData);
       const savedPath = response.data?.data?.profile_picture;
       if (savedPath) {
-        onProfileUpdated?.((previous) => ({ ...previous, profile_picture: savedPath }));
+        setPhotoVersion(Date.now());
+        onProfileUpdated?.((previous) => ({
+          ...previous,
+          profile_picture: savedPath,
+          profile_photo: savedPath,
+        }));
       }
+      // Re-fetch profile to sync all fields with backend
+      beneficiaryApi.getMe().then((res) => {
+        if (res.data?.data) {
+          onProfileUpdated?.(res.data.data);
+        }
+      }).catch(() => {});
       Alert.alert('Na-update ang larawan', 'Matagumpay na napalitan ang iyong profile photo.');
     } catch (error) {
       if (!DocumentPicker.isCancel(error)) {
@@ -160,6 +194,54 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
       }
     } finally {
       setUploadingPhoto(false);
+    }
+  };
+
+  const handleOpenContactModal = () => {
+    setContactForm({
+      contact_number: profile?.contact_number || accountUser.contact_number || accountUser.phone || '',
+      email: accountUser.email || profile?.email || '',
+      sitio: profile?.sitio || '',
+      address: profile?.address || '',
+    });
+    setContactModalVisible(true);
+  };
+
+  const handleCloseContactModal = () => {
+    setContactModalVisible(false);
+  };
+
+  const handleSaveContact = async () => {
+    if (!contactForm.contact_number.trim()) {
+      Alert.alert('Kulang ang impormasyon', 'Pakilagay ang iyong Contact Number (Cellphone Number).');
+      return;
+    }
+
+    try {
+      setSavingContact(true);
+      const res = await beneficiaryApi.updateContact(contactForm);
+      if (res.data?.success && res.data?.data) {
+        onProfileUpdated?.(res.data.data);
+      } else {
+        onProfileUpdated?.((prev) => ({
+          ...prev,
+          contact_number: contactForm.contact_number,
+          sitio: contactForm.sitio,
+          address: contactForm.address,
+          User: {
+            ...(prev?.User || {}),
+            contact_number: contactForm.contact_number,
+            email: contactForm.email,
+            address: contactForm.address,
+          },
+        }));
+      }
+      Alert.alert('Matagumpay', 'Na-update na ang iyong Contact Information!');
+      handleCloseContactModal();
+    } catch (err) {
+      Alert.alert('Hindi na-update', err?.response?.data?.message || err.message || 'Subukan muli mamaya.');
+    } finally {
+      setSavingContact(false);
     }
   };
 
@@ -204,8 +286,12 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
           <View style={styles.avatarWrap}>
-            {profileImageUri ? (
-              <Image source={{ uri: profileImageUri }} style={styles.avatarImage} />
+            {profileImageUri && !imageError ? (
+              <Image
+                source={{ uri: profileImageUri }}
+                style={styles.avatarImage}
+                onError={() => setImageError(true)}
+              />
             ) : (
               <View style={styles.avatarFallback}><Text style={styles.avatarInitials}>{initials || 'B'}</Text></View>
             )}
@@ -215,7 +301,7 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
               style={styles.uploadButton}
               accessibilityLabel="Upload profile photo"
             >
-              {uploadingPhoto ? <ActivityIndicator size="small" color="#0b3b9b" /> : <Text style={styles.uploadButtonText}>↑</Text>}
+              {uploadingPhoto ? <ActivityIndicator size="small" color="#0b3b9b" /> : <Text style={styles.uploadButtonText}>📷</Text>}
             </TouchableOpacity>
           </View>
           <View style={styles.nameBlock}>
@@ -271,10 +357,20 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
         </View>
 
         <View style={styles.infoCard}>
-          <Text style={styles.sectionTitle}>Contact Information</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Contact Information</Text>
+            <TouchableOpacity
+              style={styles.editContactBtn}
+              onPress={handleOpenContactModal}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.editContactBtnText}>✏️ I-update</Text>
+            </TouchableOpacity>
+          </View>
           <ProfileField label="Username" value={accountUser.username} icon="♙" />
           <ProfileField label="Contact Number" value={profile?.contact_number || accountUser.contact_number || accountUser.phone} icon="☎" />
-          <ProfileField label="Email Address" value={accountUser.email || 'None (Optional)'} icon="✉" />
+          <ProfileField label="Email Address" value={accountUser.email || profile?.email || 'None (Optional)'} icon="✉" />
+          <ProfileField label="Sitio" value={profile?.sitio || 'Not specified'} icon="⌂" />
           <ProfileField label="Address" value={address} icon="⌖" />
         </View>
 
@@ -288,6 +384,80 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* EDIT CONTACT INFORMATION MODAL */}
+      <Modal visible={contactModalVisible} transparent animationType="fade" onRequestClose={handleCloseContactModal}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleGroup}>
+                <Text style={styles.modalKeyIcon}>☎</Text>
+                <Text style={styles.modalTitle}>Update Contact Info</Text>
+              </View>
+              <TouchableOpacity onPress={handleCloseContactModal} style={styles.modalCloseButton} accessibilityLabel="Close">
+                <Text style={styles.modalCloseText}>×</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+              <Text style={styles.passwordLabel}>Contact Number (Mobile / Cellphone) *</Text>
+              <View style={styles.passwordInputWrap}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={contactForm.contact_number}
+                  onChangeText={(val) => setContactForm((prev) => ({ ...prev, contact_number: val }))}
+                  placeholder="Hal. 09123456789"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              <Text style={styles.passwordLabel}>Email Address (Optional)</Text>
+              <View style={styles.passwordInputWrap}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={contactForm.email}
+                  onChangeText={(val) => setContactForm((prev) => ({ ...prev, email: val }))}
+                  placeholder="Hal. demver@example.com"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <Text style={styles.passwordLabel}>Sitio / Purok</Text>
+              <View style={styles.passwordInputWrap}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={contactForm.sitio}
+                  onChangeText={(val) => setContactForm((prev) => ({ ...prev, sitio: val }))}
+                  placeholder="Hal. Sitio Centro / Purok 1"
+                  placeholderTextColor="#94a3b8"
+                />
+              </View>
+
+              <Text style={styles.passwordLabel}>Tirahan / Address</Text>
+              <View style={styles.passwordInputWrap}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={contactForm.address}
+                  onChangeText={(val) => setContactForm((prev) => ({ ...prev, address: val }))}
+                  placeholder="Hal. Block 3 Lot 2, Aplaya, Bongabong"
+                  placeholderTextColor="#94a3b8"
+                />
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelButton} onPress={handleCloseContactModal} disabled={savingContact}>
+                  <Text style={styles.cancelButtonText}>Kanselahin</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.saveButton} onPress={handleSaveContact} disabled={savingContact}>
+                  {savingContact ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>I-save ang Impormasyon</Text>}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal visible={passwordModalVisible} transparent animationType="fade" onRequestClose={closePasswordModal}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -435,7 +605,7 @@ const styles = StyleSheet.create({
   avatarFallback: { width: 94, height: 94, borderRadius: 47, backgroundColor: '#0b3b9b', alignItems: 'center', justifyContent: 'center', borderWidth: 4, borderColor: '#eaf1ff' },
   avatarInitials: { color: '#fff', fontSize: 30, fontWeight: '900' },
   uploadButton: { position: 'absolute', right: -2, bottom: 0, width: 34, height: 34, borderRadius: 17, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', alignItems: 'center', justifyContent: 'center', elevation: 3 },
-  uploadButtonText: { color: '#0b3b9b', fontSize: 23, lineHeight: 27, fontWeight: '800' },
+  uploadButtonText: { fontSize: 16 },
   nameBlock: { flex: 1, minWidth: 0 },
   nameText: { color: '#0f172a', fontSize: 22, fontWeight: '900' },
   categoryText: { color: '#475569', fontSize: 14, marginTop: 3 },
@@ -445,7 +615,10 @@ const styles = StyleSheet.create({
   idBadge: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 15, paddingHorizontal: 10, paddingVertical: 5 },
   idBadgeText: { color: '#1d4ed8', fontSize: 10, fontWeight: '800' },
   infoCard: { backgroundColor: '#fff', borderRadius: 18, paddingHorizontal: 17, paddingVertical: 16, borderWidth: 1, borderColor: '#dbe4f0' },
-  sectionTitle: { color: '#0f172a', fontSize: 17, fontWeight: '900', marginBottom: 7 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 },
+  sectionTitle: { color: '#0f172a', fontSize: 17, fontWeight: '900' },
+  editContactBtn: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 9, paddingHorizontal: 11, paddingVertical: 5 },
+  editContactBtnText: { color: '#1d4ed8', fontSize: 12, fontWeight: '800' },
   fieldRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
   fieldIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginRight: 11 },
   fieldIconText: { color: '#1d4ed8', fontSize: 17, fontWeight: '800' },

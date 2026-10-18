@@ -54,6 +54,7 @@ export default function AssistanceRequestsManagementPage() {
   // Status Action Modal
   const [actionModal, setActionModal] = useState(null);
   const [actionNotes, setActionNotes] = useState('');
+  const [actionAmount, setActionAmount] = useState('');
   const [actionStatus, setActionStatus] = useState('');
   const [processing, setProcessing] = useState(false);
 
@@ -207,6 +208,7 @@ export default function AssistanceRequestsManagementPage() {
   // Open Status Update Modal
   const openActionModal = (req) => {
     setActionModal(req);
+    setActionAmount(req.approved_amount ? String(req.approved_amount) : '');
     const initialStatus = req.status === 'Completed' ? 'Approved' : (req.status === 'Under Review' ? 'Approved' : (req.status || 'Under Review'));
     setActionStatus(initialStatus);
     if (initialStatus === 'Approved') {
@@ -223,9 +225,14 @@ export default function AssistanceRequestsManagementPage() {
       await assistanceRequestApi.updateStatus(actionModal.id, {
         status: actionStatus,
         admin_notes: actionNotes.trim() || undefined,
+        approved_amount:
+          (actionStatus === 'Approved' || actionStatus === 'Completed') && String(actionAmount).trim() !== ''
+            ? actionAmount
+            : undefined,
       });
       setActionModal(null);
       setActionNotes('');
+      setActionAmount('');
       setActionStatus('');
       await loadRequestsData();
       setNotificationMsg({ type: 'success', text: `Request marked as ${actionStatus}.` });
@@ -1197,6 +1204,27 @@ export default function AssistanceRequestsManagementPage() {
                   💡 Kapag pinili ang <strong>Approved & Completed</strong>, mamarkahan itong completed at maaari na itong i-claim ng benepisyaryo.
                 </p>
               </div>
+
+              {(actionStatus === 'Approved' || actionStatus === 'Completed') && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Halaga ng Ayuda / Cash Amount Granted (₱)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={actionAmount}
+                    onChange={(e) => setActionAmount(e.target.value)}
+                    placeholder="e.g. 3000.00 (leave blank kung hindi cash)"
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-emerald-400 transition bg-white"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    💡 Ang halagang ito ay madadagdag sa <strong>Total Received</strong> ng benepisyaryo sa web at mobile app.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">Notes / Remarks (optional)</label>

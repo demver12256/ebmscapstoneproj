@@ -121,6 +121,23 @@ const serveUploadedFileFallback = async (req, res, next) => {
       return res.status(200).send(buffer);
     }
 
+    // Missing profile pictures must 404 so clients can fall back to initials
+    // (the SVG placeholder below cannot be rendered by React Native <Image>).
+    try {
+      const picRows = await sequelize.query(
+        `SELECT id FROM beneficiaries WHERE profile_picture IN (:p1, :p2, :p3) LIMIT 1`,
+        {
+          replacements: { p1: requestedRel, p2: altRel, p3: requestedRel.replace(/^\/+/, '') },
+          type: QueryTypes.SELECT,
+        }
+      );
+      if (picRows && picRows.length > 0) {
+        return res.status(404).json({ success: false, message: 'Profile picture file not found.' });
+      }
+    } catch (picErr) {
+      // continue to legacy fallback
+    }
+
     // Fallback for legacy demo/seed attachments that predated DB persistence
     const fileName = path.basename(requestedRel);
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="560" viewBox="0 0 800 560">
@@ -147,3 +164,4 @@ module.exports = {
   initFileStorageTable,
   serveUploadedFileFallback,
 };
+

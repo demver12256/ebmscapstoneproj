@@ -287,7 +287,10 @@ export default function MyBenefitsPage() {
   };
 
   // Unified Overview Statistics
-  const totalReceived = totalDistributionsReceived + assistanceReceivedAmount;
+  const portalAssistanceReceivedAmount = portalAssistanceRequests
+    .filter((r) => r.status === 'Completed')
+    .reduce((sum, r) => sum + parseFloat(r.approved_amount || 0), 0);
+  const totalReceived = totalDistributionsReceived + assistanceReceivedAmount + portalAssistanceReceivedAmount;
   const totalPending = totalDistributionsPending + assistanceApprovedPendingRelease;
   const enrolledPrograms = beneficiary?.Enrollments || [];
   const totalProgramsCount = enrolledPrograms.length + allAssistanceItems.length;

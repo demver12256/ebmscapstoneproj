@@ -86,6 +86,7 @@ export const barangayApi = {
 export const beneficiaryApi = {
   list: () => apiClient.get('/beneficiaries'),
   getMe: () => apiClient.get('/beneficiaries/me'),
+  getById: (id) => apiClient.get(`/beneficiaries/${id}`),
   updateMe: (data) => apiClient.put('/beneficiaries/me', data),
   update: (id, data) => apiClient.put(`/beneficiaries/${id}`, data),
   uploadDocument: (formData) => apiClient.post('/beneficiaries/me/documents', formData, {

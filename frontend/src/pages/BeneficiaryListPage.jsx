@@ -32,6 +32,7 @@ export default function BeneficiaryListPage() {
 
   // Viewing Beneficiary Details State
   const [viewingBeneficiary, setViewingBeneficiary] = useState(null);
+  const [brokenPhotos, setBrokenPhotos] = useState({});
   const [rfidInput, setRfidInput] = useState('');
   const [rfidSaving, setRfidSaving] = useState(false);
   const [rfidMsg, setRfidMsg] = useState(null);
@@ -282,6 +283,15 @@ export default function BeneficiaryListPage() {
     fetchBeneficiaryAttendance(beneficiary.id);
     fetchBeneficiaryDistributions(beneficiary.id);
     fetchBeneficiaryEnrollments(beneficiary.id);
+
+    // Pull the freshest copy (profile picture, contact info, payout status may have
+    // been changed by the beneficiary from the mobile app after the list was loaded).
+    beneficiaryApi.getById(beneficiary.id).then((res) => {
+      const fresh = res.data?.data;
+      if (!fresh) return;
+      setViewingBeneficiary((prev) => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
+      setBeneficiaries((prev) => prev.map((b) => (b.id === fresh.id ? { ...b, ...fresh } : b)));
+    }).catch(() => {});
   };
 
   const handleSaveRfidDirect = async (e) => {
@@ -1022,11 +1032,12 @@ export default function BeneficiaryListPage() {
             <div className="bg-gradient-to-r from-dswd-blue via-blue-800 to-indigo-900 text-white px-6 py-5 flex justify-between items-center relative overflow-hidden">
               <div className="flex items-center gap-4 z-10">
                 <div className="w-16 h-16 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center text-white text-2xl font-black shadow-md overflow-hidden shrink-0">
-                  {viewingBeneficiary.profile_picture ? (
+                  {viewingBeneficiary.profile_picture && !brokenPhotos[viewingBeneficiary.profile_picture] ? (
                     <img 
                       src={`${backendUrl}/${viewingBeneficiary.profile_picture.replace(/\\/g, '/').replace(/^\/+/, '')}`} 
                       alt="Profile" 
                       className="w-full h-full object-cover"
+                      onError={() => setBrokenPhotos((prev) => ({ ...prev, [viewingBeneficiary.profile_picture]: true }))}
                     />
                   ) : (
                     <span>{viewingBeneficiary.first_name?.[0]}{viewingBeneficiary.last_name?.[0]}</span>

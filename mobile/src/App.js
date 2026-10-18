@@ -208,6 +208,7 @@ const App = () => {
     description: '',
   });
   const [submittingAssistance, setSubmittingAssistance] = useState(false);
+  const [heroAvatarError, setHeroAvatarError] = useState(false);
 
   useEffect(() => {
     let isActive = true;
@@ -608,6 +609,7 @@ const App = () => {
       notes: request.admin_notes,
       createdAt: request.created_at || request.createdAt,
       attachmentUrl: request.attachment_url,
+      amount: request.approved_amount || request.amount_requested || null,
     })),
     ...assistanceApplications
       .filter((application) => !portalAssistanceRequests.some((request) => request.id === application.id || request.subject?.includes(application.application_number)))
@@ -650,6 +652,7 @@ const App = () => {
       if (!data) return;
 
       setProfile(data);
+      setHeroAvatarError(false);
       setPayoutForm({
         payout_preference: data.payout_preference || 'digital',
         payout_provider: data.payout_provider || 'GCash',
@@ -686,16 +689,19 @@ const App = () => {
   const _approvedAssistance = assistanceApplications.filter((a) => a.status === 'Approved');
   // Approved or completed portal requests
   const _approvedPortal = portalAssistanceRequests.filter((r) => ['Approved', 'Completed'].includes(r.status));
+  const _completedPortal = portalAssistanceRequests.filter((r) => r.status === 'Completed');
 
-  // Total received = released distributions + released medical assistance
+  // Total received = released distributions + released medical assistance + completed portal assistance
   const _totalReceived =
     _releasedTxns.reduce((sum, t) => sum + parseFloat(t.amount || 0) + parseFloat(t.retro_amount || 0), 0) +
-    _releasedAssistance.reduce((sum, a) => sum + parseFloat(a.approved_amount || a.total_amount_requested || 0), 0);
+    _releasedAssistance.reduce((sum, a) => sum + parseFloat(a.approved_amount || a.total_amount_requested || 0), 0) +
+    _completedPortal.reduce((sum, r) => sum + parseFloat(r.approved_amount || 0), 0);
 
-  // Pending / approved = pending distributions + approved medical (not yet released)
+  // Pending / approved = pending distributions + approved medical (not yet released) + approved portal requests
   const _totalPending =
     _pendingTxns.reduce((sum, t) => sum + parseFloat(t.amount || 0) + parseFloat(t.retro_amount || 0), 0) +
-    _approvedAssistance.reduce((sum, a) => sum + parseFloat(a.approved_amount || a.total_amount_requested || 0), 0);
+    _approvedAssistance.reduce((sum, a) => sum + parseFloat(a.approved_amount || a.total_amount_requested || 0), 0) +
+    _approvedPortal.filter((r) => r.status === 'Approved').reduce((sum, r) => sum + parseFloat(r.approved_amount || r.amount_requested || 0), 0);
 
   // Enrollments from profile
   const _enrollments = profile?.Enrollments || [];
@@ -705,11 +711,11 @@ const App = () => {
   ).length;
   const _totalProgramsGrants = _enrollments.length + _allAssistanceCount;
 
-  // Disbursements = released distributions + released assistance
+  // Disbursements = released distributions + released assistance + completed portal requests
   const _totalDisbursements =
     _releasedTxns.length +
     _releasedAssistance.length +
-    portalAssistanceRequests.filter((r) => r.status === 'Completed').length;
+    _completedPortal.length;
 
   // Pending distributions + approved portal requests subtext
   const _pendingDistCount = _pendingTxns.length;
@@ -719,7 +725,7 @@ const App = () => {
     {
       label: 'Total Received',
       value: formatMoney(_totalReceived),
-      meta: `${_releasedTxns.length} dist. • ${_releasedAssistance.length} grant(s) released`,
+      meta: `${_releasedTxns.length} dist. • ${_releasedAssistance.length + _completedPortal.length} grant(s) released`,
       tone: 'green',
     },
     {
@@ -1154,19 +1160,29 @@ const App = () => {
         <ScrollView contentContainerStyle={styles.dashboardContent}>
           {/* Hero Header Card (Image 4) */}
           <View style={styles.heroCard}>
-            {!dashboardProfilePicture && (
-            <View style={styles.heroIconWrap}><Text style={styles.heroIcon}>👤</Text></View>
-            )}
-            {dashboardProfilePicture ? (
+            {dashboardProfilePicture && !heroAvatarError ? (
               <TouchableOpacity
                 style={styles.heroIconWrap}
                 onPress={() => user.role === 'beneficiary' && handleNavSelect('profile')}
                 disabled={user.role !== 'beneficiary'}
                 accessibilityLabel="Open My Profile"
               >
-                <Image source={{ uri: dashboardProfilePicture }} style={styles.dashboardProfileImage} />
+                <Image
+                  source={{ uri: `${dashboardProfilePicture}${dashboardProfilePicture.includes('?') ? '&' : '?'}v=${profile?.updatedAt || profile?.updated_at || '1'}` }}
+                  style={styles.dashboardProfileImage}
+                  onError={() => setHeroAvatarError(true)}
+                />
               </TouchableOpacity>
-            ) : null}
+            ) : (
+              <TouchableOpacity
+                style={styles.heroIconWrap}
+                onPress={() => user.role === 'beneficiary' && handleNavSelect('profile')}
+                disabled={user.role !== 'beneficiary'}
+                accessibilityLabel="Open My Profile"
+              >
+                <Text style={styles.heroIcon}>👤</Text>
+              </TouchableOpacity>
+            )}
             <View style={styles.heroTextWrap}>
               <Text style={styles.heroTitle}>Beneficiary Portal</Text>
               <Text style={styles.heroSubtitle}>Welcome back, {displayName}! Here is your official application, RFID card, and assistance payout overview.</Text>
@@ -1226,9 +1242,14 @@ const App = () => {
                 </View> : null}
               </View>
               <Text style={styles.cardSubHead}>{beneficiaryCode}</Text>
-              <TouchableOpacity onPress={() => Alert.alert('Copied', 'Beneficiary ID copied to clipboard.')}>
-                <Text style={styles.copyLink}>📋 Copy</Text>
-              </TouchableOpacity>
+              <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: darkMode ? '#334155' : '#f1f5f9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
+                <Text style={{ fontSize: 11, color: darkMode ? '#94a3b8' : '#64748b', fontWeight: '600' }}>
+                  💳 RFID: {profile?.RFID_number || 'Walang RFID Card (QR Pass Active)'}
+                </Text>
+                <TouchableOpacity onPress={() => Alert.alert('Copied', `Beneficiary ID: ${beneficiaryCode}${profile?.RFID_number ? `\nRFID: ${profile.RFID_number}` : ''}`)}>
+                  <Text style={styles.copyLink}>📋 Copy</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Card 3: Enrolled Program */}
@@ -1261,14 +1282,30 @@ const App = () => {
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   <Text style={styles.digitalAyudaTitle}>
-                    {payoutForm.payout_preference === 'cash_otc' ? 'Cash OTC Account' : 'Digital Ayuda Account'}
+                    {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? 'Cash OTC Account' : 'Digital Ayuda Account'}
                   </Text>
-                  <View style={styles.verifiedTag}>
-                    <Text style={styles.verifiedTagText}>✓ Verified</Text>
-                  </View>
+                  {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? (
+                    <View style={{ backgroundColor: '#f1f5f9', borderColor: '#cbd5e1', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569' }}>🏢 Cash / OTC</Text>
+                    </View>
+                  ) : (profile?.account_verification_status || 'unverified') === 'verified' ? (
+                    <View style={{ backgroundColor: '#dcfce7', borderColor: '#86efac', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803d' }}>✓ Verified</Text>
+                    </View>
+                  ) : (profile?.account_verification_status || 'unverified') === 'rejected' ? (
+                    <View style={{ backgroundColor: '#fee2e2', borderColor: '#fca5a5', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#b91c1c' }}>✕ Rejected</Text>
+                    </View>
+                  ) : (
+                    <View style={{ backgroundColor: '#fef3c7', borderColor: '#fcd34d', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#b45309' }}>⏳ For Verification</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.digitalAyudaSub}>
-                  Tumatanggap ng ayuda sa pamamagitan ng GCash, Maya, o Bank Account nang walang pila.
+                  {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc'
+                    ? 'Tumatanggap ng ayuda sa pamamagitan ng personal claiming / over-the-counter gamit ang QR Pass o RFID.'
+                    : 'Tumatanggap ng ayuda sa pamamagitan ng GCash, Maya, o Bank Account nang walang pila.'}
                 </Text>
               </View>
               <TouchableOpacity
@@ -1286,12 +1323,12 @@ const App = () => {
               <View style={styles.ayudaDetailCol}>
                 <Text style={styles.ayudaDetailLabel}>PAYOUT METHOD</Text>
                 <Text style={styles.ayudaDetailVal}>
-                  {payoutForm.payout_preference === 'cash_otc' ? '🏢 Cash OTC / RFID' : `⚡ ${profile?.payout_provider || payoutForm.payout_provider || 'GCash'}`}
+                  {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? '🏢 Cash OTC / RFID' : `⚡ ${profile?.payout_provider || payoutForm.payout_provider || 'GCash'}`}
                 </Text>
               </View>
               <View style={styles.ayudaDetailCol}>
                 <Text style={styles.ayudaDetailLabel}>ACCOUNT NUMBER</Text>
-                <Text style={styles.ayudaDetailVal}>{payoutForm.payout_preference === 'cash_otc' ? 'Physical claiming' : profile?.payout_account_number || payoutForm.payout_account_number || '09534519448'}</Text>
+                <Text style={styles.ayudaDetailVal}>{(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? 'Physical claiming' : profile?.payout_account_number || payoutForm.payout_account_number || 'N/A'}</Text>
               </View>
               <View style={styles.ayudaDetailCol}>
                 <Text style={styles.ayudaDetailLabel}>ACCOUNT NAME</Text>
@@ -1299,11 +1336,31 @@ const App = () => {
               </View>
             </View>
 
-            <View style={styles.verifiedInfoBanner}>
-              <Text style={styles.verifiedInfoText}>
-                ✓ Beripikado na ang iyong primary account! Handa ka nang makatanggap ng digital grants at ayuda direkta sa iyong e-wallet.
-              </Text>
-            </View>
+            {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? (
+              <View style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1', borderWidth: 1, padding: 10, borderRadius: 8 }}>
+                <Text style={{ color: '#334155', fontSize: 11.5, fontWeight: '600' }}>
+                  🏢 Naka-set sa Cash Over-the-Counter ang iyong payout preference. Maaari mong i-claim ang ayuda gamit ang iyong QR Pass o RFID Card sa itinakdang distribution site.
+                </Text>
+              </View>
+            ) : (profile?.account_verification_status || 'unverified') === 'verified' ? (
+              <View style={styles.verifiedInfoBanner}>
+                <Text style={styles.verifiedInfoText}>
+                  ✓ Beripikado na ang iyong primary account! Handa ka nang makatanggap ng digital grants at ayuda direkta sa iyong e-wallet.
+                </Text>
+              </View>
+            ) : (profile?.account_verification_status || 'unverified') === 'rejected' ? (
+              <View style={{ backgroundColor: '#fef2f2', borderColor: '#fecaca', borderWidth: 1, padding: 10, borderRadius: 8 }}>
+                <Text style={{ color: '#991b1b', fontSize: 11.5, fontWeight: '600' }}>
+                  ⚠️ Hindi na-verify ang iyong account. Posibleng hindi nagtutugma ang pangalan sa iyong account laban sa iyong opisyal na DSWD record. Pindutin ang "I-update ang Account" upang itama.
+                </Text>
+              </View>
+            ) : (
+              <View style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, padding: 10, borderRadius: 8 }}>
+                <Text style={{ color: '#92400e', fontSize: 11.5, fontWeight: '600' }}>
+                  ⏳ For Verification: Kasalukuyang sinusuri ng admin/MSWDO ang iyong payout account information upang masigurong ligtas at tugma ang iyong mga detalye bago mag-disburse ng ayuda.
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Intervention / Other Assistance Card */}

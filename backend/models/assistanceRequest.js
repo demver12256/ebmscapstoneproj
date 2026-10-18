@@ -73,6 +73,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.BOOLEAN,
         defaultValue: false,
       },
+      approved_amount: {
+        type: DataTypes.DECIMAL(12, 2),
+        allowNull: true,
+        comment: 'Cash amount granted to the beneficiary when the request is approved/completed',
+      },
     },
     {
       tableName: 'assistance_requests',

@@ -354,7 +354,7 @@ router.patch('/:id/status', async (req, res, next) => {
       }
     }
 
-    const { status, admin_notes } = req.body;
+    const { status, admin_notes, approved_amount } = req.body;
 
     if (!status) {
       return res.status(400).json({ success: false, message: 'Status is required.' });
@@ -365,12 +365,23 @@ router.patch('/:id/status', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid status value.' });
     }
 
+    let parsedApprovedAmount;
+    if (approved_amount !== undefined && approved_amount !== null && String(approved_amount).trim() !== '') {
+      parsedApprovedAmount = Number(String(approved_amount).replace(/[₱,\s]/g, ''));
+      if (!Number.isFinite(parsedApprovedAmount) || parsedApprovedAmount < 0) {
+        return res.status(400).json({ success: false, message: 'Invalid approved amount.' });
+      }
+    }
+
     // Kapag in-approve ng Admin, gawing Completed (Ready to Claim) na ito
     const finalStatus = status === 'Approved' ? 'Completed' : status;
 
     request.status = finalStatus;
     if (admin_notes !== undefined) {
       request.admin_notes = admin_notes;
+    }
+    if (parsedApprovedAmount !== undefined) {
+      request.approved_amount = parsedApprovedAmount;
     }
     request.reviewed_by = currentUser.id;
     request.reviewed_at = new Date();
@@ -417,9 +428,14 @@ router.patch('/:id/status', async (req, res, next) => {
         statusDesc = `Ipinapaalam na ang iyong kahilingan para sa ${request.type} sa ${request.agency} (#${request.id}) ay hindi naaprubahan.`;
       }
 
+      const grantedAmountNum = Number(updated.approved_amount);
+      const grantedAmountText = finalStatus === 'Completed' && Number.isFinite(grantedAmountNum) && grantedAmountNum > 0
+        ? ` Halaga ng ayuda: PHP ${grantedAmountNum.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
+        : '';
+
       const fullMessage = admin_notes
-        ? `${statusDesc} Paalala mula sa tanggapan: "${admin_notes}". Subaybayan sa My Benefits.`
-        : `${statusDesc} Maaari mo itong subaybayan sa My Benefits page.`;
+        ? `${statusDesc}${grantedAmountText} Paalala mula sa tanggapan: "${admin_notes}". Subaybayan sa My Benefits.`
+        : `${statusDesc}${grantedAmountText} Maaari mo itong subaybayan sa My Benefits page.`;
 
       if (recipientUserId) {
         await Notification.create({
@@ -438,7 +454,7 @@ router.patch('/:id/status', async (req, res, next) => {
       if (contactNo && updated.beneficiary_id) {
         await SMSNotification.create({
           beneficiary_id: updated.beneficiary_id,
-          message: `BeniAid DSWD Bongabong Ayuda Alert: Ang iyong ${request.type} sa ${request.agency} (#${request.id}) ay "${status}". ${admin_notes ? `Paalala: ${admin_notes}` : ''}`.trim(),
+          message: `BeniAid DSWD Bongabong Ayuda Alert: Ang iyong ${request.type} sa ${request.agency} (#${request.id}) ay "${status}".${grantedAmountText} ${admin_notes ? `Paalala: ${admin_notes}` : ''}`.trim(),
           status: 'queued',
         });
       }

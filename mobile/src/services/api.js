@@ -114,8 +114,10 @@ export const beneficiaryApi = {
   getMe: () => apiClient.get('/beneficiaries/me'),
   uploadProfilePicture: (data) => apiClient.post('/beneficiaries/me/profile-picture', data, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    transformRequest: (d) => d,
   }),
   updateMe: (data) => apiClient.put('/beneficiaries/me', data),
+  updateContact: (data) => apiClient.put('/beneficiaries/me/contact', data),
   uploadMyDocument: (data) => apiClient.post('/beneficiaries/me/documents', data, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
