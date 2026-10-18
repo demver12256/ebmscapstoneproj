@@ -163,18 +163,60 @@ Intervention.belongsTo(User, { as: 'Verifier', foreignKey: 'verified_by' });
 
 const connectDatabase = async () => {
   await sequelize.authenticate();
+
+  const ensureColumn = async (table, column, definition) => {
+    try {
+      const [cols] = await sequelize.query(`SHOW COLUMNS FROM \`${table}\` LIKE '${column}'`);
+      if (cols.length === 0) {
+        await sequelize.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+        console.log(`[DB Migration] Added column ${column} to ${table}`);
+      }
+    } catch (err) {
+      console.warn(`[DB Migration] ensureColumn ${table}.${column} skipped:`, err.message);
+    }
+  };
+
   try {
     // Ensure email column allows NULL for users without email
     await sequelize.query('ALTER TABLE users MODIFY COLUMN email VARCHAR(255) NULL');
   } catch (err) {
     // Ignore error if table does not exist yet or already nullable
   }
+
+  // Ensure tables exist non-destructively
   try {
-    // Ensure target_sitios column exists on announcements table for per-sitio targeting
-    await sequelize.query('ALTER TABLE announcements ADD COLUMN target_sitios JSON NULL');
+    await AssistanceRequest.sync();
+    await MedicalAssistanceApplication.sync();
+    await MedicalAssistanceDocument.sync();
+    await Intervention.sync();
   } catch (err) {
-    // Ignore error if column already exists
+    console.warn('[DB Migration] Model.sync skipped:', err.message);
   }
+
+  // Ensure recent columns exist on assistance_requests
+  await ensureColumn('assistance_requests', 'agency', "ENUM('DSWD', 'MSWDO') NOT NULL DEFAULT 'DSWD'");
+  await ensureColumn('assistance_requests', 'attachment_url', 'TEXT NULL');
+  await ensureColumn('assistance_requests', 'claimed_at', 'DATETIME NULL');
+  await ensureColumn('assistance_requests', 'claimed_by', 'INT NULL');
+  await ensureColumn('assistance_requests', 'rfid_scanned', 'VARCHAR(255) NULL');
+  await ensureColumn('assistance_requests', 'valid_id_verified', 'TINYINT(1) DEFAULT 0');
+  await ensureColumn('assistance_requests', 'approved_amount', 'DECIMAL(12, 2) NULL');
+
+  // Ensure recent columns exist on announcements
+  await ensureColumn('announcements', 'target_sitios', 'JSON NULL');
+
+  // Ensure recent columns exist on beneficiaries
+  await ensureColumn('beneficiaries', 'qr_token', 'VARCHAR(64) NULL');
+  await ensureColumn('beneficiaries', 'qr_generated_at', 'DATETIME NULL');
+  await ensureColumn('beneficiaries', 'rfid_assigned_at', 'DATETIME NULL');
+  await ensureColumn('beneficiaries', 'payout_preference', "VARCHAR(50) DEFAULT 'cash_otc'");
+  await ensureColumn('beneficiaries', 'payout_provider', 'VARCHAR(100) NULL');
+  await ensureColumn('beneficiaries', 'payout_account_number', 'VARCHAR(100) NULL');
+  await ensureColumn('beneficiaries', 'payout_account_name', 'VARCHAR(150) NULL');
+  await ensureColumn('beneficiaries', 'account_verification_status', "VARCHAR(50) NOT NULL DEFAULT 'unverified'");
+  await ensureColumn('beneficiaries', 'account_verified_at', 'DATETIME NULL');
+  await ensureColumn('beneficiaries', 'extra_payout_accounts', 'TEXT NULL');
+
   try {
     // Ensure announcements.status ENUM supports staff approval workflow (pending_approval, rejected)
     await sequelize.query(

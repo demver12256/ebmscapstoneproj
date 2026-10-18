@@ -67,7 +67,15 @@ router.get('/stats', async (req, res, next) => {
       // MSWDO Admin strictly accesses requests directed to MSWDO
       whereClause.agency = 'MSWDO';
     } else if (currentUser.role === 'admin') {
-      whereClause.agency = 'DSWD';
+      if (req.query.agency && req.query.agency !== 'all') {
+        whereClause.agency = req.query.agency;
+      } else if (!req.query.agency) {
+        whereClause.agency = 'DSWD';
+      }
+    }
+
+    if ((currentUser.role === 'staff' || currentUser.role === 'barangay') && req.query.agency && req.query.agency !== 'all') {
+      whereClause.agency = req.query.agency;
     }
 
     const statuses = ['Pending', 'Under Review', 'Approved', 'Rejected', 'Completed'];
@@ -105,11 +113,18 @@ router.get('/', async (req, res, next) => {
       } else {
         return res.json({ success: true, data: [] });
       }
+      if (req.query.agency && req.query.agency !== 'all') {
+        whereClause.agency = req.query.agency;
+      }
     } else if (currentUser.role === 'mswdo_admin') {
       // MSWDO Admin strictly accesses requests directed to MSWDO
       whereClause.agency = 'MSWDO';
     } else if (currentUser.role === 'admin') {
-      whereClause.agency = 'DSWD';
+      if (req.query.agency && req.query.agency !== 'all') {
+        whereClause.agency = req.query.agency;
+      } else if (!req.query.agency) {
+        whereClause.agency = 'DSWD';
+      }
     }
 
     // Apply filters from query params
