@@ -40,42 +40,87 @@ export default function NotificationPopupModal({
   if (!currentItem) return null;
 
   const isAnnouncement = currentItem?.popupType === 'announcement';
+  const titleLc = String(currentItem?.title || '').toLowerCase();
   const isAbsence =
     !isAnnouncement &&
     (currentItem?.reference_type === 'announcement_absence' ||
       currentItem?.type === 'announcement_absence' ||
-      currentItem?.title?.toLowerCase().includes('absent') ||
-      currentItem?.title?.toLowerCase().includes('hindi naka-attend'));
+      titleLc.includes('absent') ||
+      titleLc.includes('hindi naka-attend'));
+
+  // Assistance request updates (admin/staff actions: review, approve, reject, claim)
+  const isAssistance =
+    !isAnnouncement &&
+    !isAbsence &&
+    (currentItem?.reference_type === 'assistance_request' ||
+      titleLc.startsWith('update sa ayuda') ||
+      titleLc.startsWith('kahilingan sa ayuda'));
+  const assistanceRejected =
+    isAssistance && (titleLc.includes('rejected') || titleLc.includes('hindi naaprubahan'));
+  const assistanceClaimed = isAssistance && !assistanceRejected && titleLc.includes('claimed');
+  const assistanceApproved =
+    isAssistance &&
+    !assistanceRejected &&
+    !assistanceClaimed &&
+    (titleLc.includes('completed') ||
+      titleLc.includes('approved') ||
+      titleLc.includes('na-aprubahan'));
+  const assistanceReview =
+    isAssistance &&
+    !assistanceRejected &&
+    !assistanceClaimed &&
+    !assistanceApproved &&
+    (titleLc.includes('under review') || titleLc.includes('sinusuri'));
 
   const isProgram =
     !isAnnouncement &&
     !isAbsence &&
+    !isAssistance &&
     (currentItem?.type === 'program' ||
       currentItem?.reference_type === 'BenefitProgram');
 
   const isDistribution =
     !isAnnouncement &&
     !isAbsence &&
+    !isAssistance &&
     (currentItem?.type === 'distribution' ||
       currentItem?.reference_type === 'DistributionEvent');
 
   const isUnclaimed =
-    !isAbsence && currentItem?.title?.toLowerCase().includes('unclaimed');
+    !isAbsence && !isAssistance && titleLc.includes('unclaimed');
 
   const isPayoutVerified =
     !isAnnouncement &&
+    !isAssistance &&
     (currentItem?.reference_type === 'payout_verified' ||
-      currentItem?.title?.toLowerCase().includes('na-aprubahan ang iyong digital payout'));
+      titleLc.includes('na-aprubahan ang iyong digital payout'));
 
   const isPayoutRejected =
     !isAnnouncement &&
+    !isAssistance &&
     (currentItem?.reference_type === 'payout_rejected' ||
-      currentItem?.title?.toLowerCase().includes('may puna sa iyong payout') ||
-      currentItem?.title?.toLowerCase().includes('hindi na-aprubahan'));
+      titleLc.includes('may puna sa iyong payout') ||
+      titleLc.includes('hindi na-aprubahan'));
+
+  // Plain notifications (not announcements) outside the special categories are
+  // shown as a neutral "notification" instead of an announcement.
+  const isGenericNotification =
+    !isAnnouncement &&
+    !isAbsence &&
+    !isAssistance &&
+    !isProgram &&
+    !isDistribution &&
+    !isUnclaimed &&
+    !isPayoutVerified &&
+    !isPayoutRejected;
 
   // Header background colors
   const headerBgColor = isAbsence
     ? '#881337'
+    : assistanceRejected
+    ? '#881337'
+    : assistanceApproved || assistanceClaimed
+    ? '#064e3b'
     : isPayoutVerified
     ? '#064e3b'
     : isPayoutRejected
@@ -86,6 +131,14 @@ export default function NotificationPopupModal({
 
   const iconBgColor = isAbsence
     ? '#f43f5e'
+    : assistanceRejected
+    ? '#fb7185'
+    : assistanceApproved || assistanceClaimed
+    ? '#34d399'
+    : assistanceReview
+    ? '#60a5fa'
+    : isAssistance
+    ? '#fbbf24'
     : isPayoutVerified
     ? '#34d399'
     : isPayoutRejected
@@ -96,10 +149,20 @@ export default function NotificationPopupModal({
     ? '#c084fc'
     : isDistribution
     ? '#34d399'
+    : isGenericNotification
+    ? '#93c5fd'
     : '#facc15';
 
   const iconEmoji = isAbsence
     ? '⚠️'
+    : assistanceRejected
+    ? '❌'
+    : assistanceApproved || assistanceClaimed
+    ? '✅'
+    : assistanceReview
+    ? '🔎'
+    : isAssistance
+    ? '📝'
     : isPayoutVerified
     ? '🛡️'
     : isPayoutRejected
@@ -110,10 +173,16 @@ export default function NotificationPopupModal({
     ? '🎓'
     : isDistribution
     ? '🎁'
+    : isGenericNotification
+    ? '🔔'
     : '📢';
 
   const kickerText = isAbsence
     ? '⚠️ PAUNAWA SA HINDI PAGDALO / NOTICE OF ABSENCE'
+    : assistanceClaimed
+    ? 'ASSISTANCE CLAIMED'
+    : isAssistance
+    ? 'ASSISTANCE REQUEST UPDATE'
     : isPayoutVerified
     ? '✅ DIGITAL PAYOUT VERIFIED & ACTIVE'
     : isPayoutRejected
@@ -124,6 +193,8 @@ export default function NotificationPopupModal({
     ? 'PROGRAM ENROLLMENT NOTIFICATION'
     : isDistribution
     ? 'NEW BENEFIT DISTRIBUTION'
+    : isGenericNotification
+    ? 'NEW NOTIFICATION'
     : 'IMPORTANT ANNOUNCEMENT';
 
   const dateStr = formatDate(
@@ -170,6 +241,44 @@ export default function NotificationPopupModal({
                 <View style={[styles.pillBadge, { backgroundColor: '#fee2e2', borderColor: '#fca5a5' }]}>
                   <Text style={[styles.pillBadgeText, { color: '#991b1b' }]}>❌ ABSENT / HINDI NAKADALO</Text>
                 </View>
+              ) : isAssistance ? (
+                <View
+                  style={[
+                    styles.pillBadge,
+                    assistanceRejected
+                      ? { backgroundColor: '#fee2e2', borderColor: '#fca5a5' }
+                      : assistanceApproved || assistanceClaimed
+                      ? { backgroundColor: '#d1fae5', borderColor: '#6ee7b7' }
+                      : assistanceReview
+                      ? { backgroundColor: '#dbeafe', borderColor: '#93c5fd' }
+                      : { backgroundColor: '#fef3c7', borderColor: '#fcd34d' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.pillBadgeText,
+                      {
+                        color: assistanceRejected
+                          ? '#991b1b'
+                          : assistanceApproved || assistanceClaimed
+                          ? '#065f46'
+                          : assistanceReview
+                          ? '#1e40af'
+                          : '#92400e',
+                      },
+                    ]}
+                  >
+                    {assistanceRejected
+                      ? '❌ REQUEST REJECTED'
+                      : assistanceClaimed
+                      ? '✅ ASSISTANCE CLAIMED'
+                      : assistanceApproved
+                      ? '✅ REQUEST APPROVED'
+                      : assistanceReview
+                      ? '🔎 UNDER REVIEW'
+                      : '📝 ASSISTANCE REQUEST'}
+                  </Text>
+                </View>
               ) : isPayoutVerified ? (
                 <View style={[styles.pillBadge, { backgroundColor: '#d1fae5', borderColor: '#6ee7b7' }]}>
                   <Text style={[styles.pillBadgeText, { color: '#065f46' }]}>✅ PAYOUT APPROVED & VERIFIED</Text>
@@ -197,6 +306,10 @@ export default function NotificationPopupModal({
               ) : currentItem?.priority === 'High' ? (
                 <View style={[styles.pillBadge, { backgroundColor: '#ffedd5', borderColor: '#fed7aa' }]}>
                   <Text style={[styles.pillBadgeText, { color: '#9a3412' }]}>🟠 HIGH PRIORITY</Text>
+                </View>
+              ) : isGenericNotification ? (
+                <View style={[styles.pillBadge, { backgroundColor: '#dbeafe', borderColor: '#93c5fd' }]}>
+                  <Text style={[styles.pillBadgeText, { color: '#1e40af' }]}>🔔 NOTIFICATION</Text>
                 </View>
               ) : (
                 <View style={[styles.pillBadge, { backgroundColor: '#e0e7ff', borderColor: '#c7d2fe' }]}>
