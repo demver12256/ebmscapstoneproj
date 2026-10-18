@@ -2,8 +2,9 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
-const { BenefitProgram, Enrollment, Beneficiary, Barangay, DistributionEvent, DistributionTransaction, AuditLog, Notification } = require('../db');
+const { BenefitProgram, Enrollment, Beneficiary, Barangay, DistributionEvent, DistributionTransaction, AuditLog, Notification, SMSNotification, User } = require('../db');
 const { isMswdoRole, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory, isMswdoEligibility } = require('../utils/roles');
+const { processQueuedSms } = require('../utils/smsDispatcher');
 
 const router = express.Router();
 router.use(authenticate);
@@ -14,6 +15,113 @@ const mapProgramPayload = (body) => {
     ...rest,
     eligibility_category: body.eligibility_category || category || null,
   };
+};
+
+// Helper: Send In-App Notification + complete PhilSMS Notification to enrolled beneficiaries
+const notifyProgramEnrolledBeneficiaries = async (program, beneficiaryIds = []) => {
+  try {
+    const uniqueIds = [...new Set((beneficiaryIds || []).map(Number).filter(Boolean))];
+    if (!program || uniqueIds.length === 0) {
+      return { sms_queued: 0, notifications_created: 0 };
+    }
+
+    const beneficiaries = await Beneficiary.findAll({
+      where: { id: uniqueIds },
+      include: [
+        { model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] },
+        { model: User, attributes: ['id', 'contact_number'] },
+      ],
+    });
+
+    if (beneficiaries.length === 0) {
+      return { sms_queued: 0, notifications_created: 0 };
+    }
+
+    const smsNotifType = `program_${program.id}`;
+
+    // Check existing SMS notifications for this program so we don't duplicate
+    const existingSms = await SMSNotification.findAll({
+      where: {
+        beneficiary_id: uniqueIds,
+        notification_type: smsNotifType,
+        status: { [Op.in]: ['queued', 'sent'] },
+      },
+      attributes: ['beneficiary_id'],
+    });
+    const alreadySmsSentIds = new Set(existingSms.map((s) => Number(s.beneficiary_id)));
+
+    // Check existing In-App notifications for this program
+    const userIds = beneficiaries.map((b) => b.user_id).filter(Boolean);
+    let alreadyInAppUserIds = new Set();
+    if (userIds.length > 0) {
+      const existingInApp = await Notification.findAll({
+        where: {
+          user_id: userIds,
+          type: 'program',
+          reference_id: program.id,
+          reference_type: 'BenefitProgram',
+        },
+        attributes: ['user_id'],
+      });
+      alreadyInAppUserIds = new Set(existingInApp.map((n) => Number(n.user_id)));
+    }
+
+    const inAppPayloads = [];
+    const smsPayloads = [];
+
+    for (const b of beneficiaries) {
+      const fullName = [b.first_name, b.middle_name, b.last_name].filter(Boolean).join(' ') || 'Beneficiary';
+      const bgyName = program.Barangay?.barangay_name || b.Barangay?.barangay_name || 'Calauan';
+      const dateInfo = program.start_date
+        ? ` Panahon ng Programa: ${program.start_date}${program.end_date ? ` hanggang ${program.end_date}` : ''}.`
+        : '';
+      const descInfo = program.description ? ` Detalye: ${String(program.description).trim()}` : '';
+
+      if (b.user_id && !alreadyInAppUserIds.has(Number(b.user_id))) {
+        inAppPayloads.push({
+          user_id: b.user_id,
+          title: 'Program Enrollment Confirmation',
+          message: `You have been officially enrolled in the program "${program.name}". Category: ${program.eligibility_category || 'General'}.${dateInfo}${descInfo} Check your benefits dashboard for upcoming distributions and details.`,
+          type: 'program',
+          reference_id: program.id,
+          reference_type: 'BenefitProgram',
+          is_read: false,
+        });
+      }
+
+      const phoneNumber = b.contact_number || b.User?.contact_number || null;
+      if (phoneNumber && !alreadySmsSentIds.has(Number(b.id))) {
+        const smsMessage = `EBMS [${program.agency || 'DSWD'} - Brgy. ${bgyName}]: Magandang araw ${fullName}! Kayo po ay opisyal nang naka-enroll sa programang "${program.name}" (${program.eligibility_category || 'General'}).${dateInfo}${descInfo} Hintayin ang susunod na abiso para sa schedule ng pamamahagi.`;
+        smsPayloads.push({
+          beneficiary_id: b.id,
+          announcement_id: null,
+          notification_type: smsNotifType,
+          phone_number: phoneNumber,
+          message: smsMessage,
+          status: 'queued',
+        });
+      }
+    }
+
+    if (inAppPayloads.length > 0) {
+      await Notification.bulkCreate(inAppPayloads);
+    }
+
+    if (smsPayloads.length > 0) {
+      await SMSNotification.bulkCreate(smsPayloads);
+      processQueuedSms().catch((err) => {
+        console.error('[PROGRAM SMS] Error dispatching queued SMS:', err.message);
+      });
+    }
+
+    return {
+      sms_queued: smsPayloads.length,
+      notifications_created: inAppPayloads.length,
+    };
+  } catch (err) {
+    console.error('[PROGRAM SMS] Failed to notify program enrolled beneficiaries:', err.message);
+    return { sms_queued: 0, notifications_created: 0 };
+  }
 };
 
 // ── GET / ── List programs (barangay-scoped)
@@ -237,7 +345,9 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async
 // ── GET /:id/beneficiaries ── View enrolled beneficiaries for a program
 router.get('/:id/beneficiaries', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const program = await BenefitProgram.findByPk(req.params.id);
+    const program = await BenefitProgram.findByPk(req.params.id, {
+      include: [{ model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] }],
+    });
     if (!program) {
       return res.status(404).json({ success: false, message: 'Program not found' });
     }
@@ -264,6 +374,18 @@ router.get('/:id/beneficiaries', authorize('admin', 'staff', 'barangay'), async 
         include: [{ model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] }],
       }],
     });
+
+    // Ensure recently created active programs (within last 7 days) that auto-enrolled before SMS was wired up
+    // automatically send their missing enrollment SMS to enrolled beneficiaries
+    const createdTimestamp = program.createdAt || program.created_at;
+    const isRecentlyCreated = createdTimestamp && (Date.now() - new Date(createdTimestamp).getTime() <= 7 * 24 * 60 * 60 * 1000);
+    if (program.status === 'active' && enrollments.length > 0 && isRecentlyCreated) {
+      notifyProgramEnrolledBeneficiaries(
+        program,
+        enrollments.map((e) => e.beneficiary_id)
+      ).catch((err) => console.error('[PROGRAM SMS] Backfill check error:', err.message));
+    }
+
     const beneficiaries = enrollments.map(e => ({
       enrollment_id: e.id,
       enrollment_date: e.enrollment_date,
@@ -279,7 +401,9 @@ router.get('/:id/beneficiaries', authorize('admin', 'staff', 'barangay'), async 
 // ── POST /:id/auto-enroll ── Auto-enroll eligible beneficiaries for existing program
 router.post('/:id/auto-enroll', authorize('admin', 'staff'), async (req, res, next) => {
   try {
-    const program = await BenefitProgram.findByPk(req.params.id);
+    const program = await BenefitProgram.findByPk(req.params.id, {
+      include: [{ model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] }],
+    });
     if (!program) {
       return res.status(404).json({ success: false, message: 'Program not found' });
     }
@@ -346,12 +470,20 @@ router.post('/:id/auto-enroll', authorize('admin', 'staff'), async (req, res, ne
     });
 
     if (eligibleBeneficiaries.length === 0) {
+      // Ensure any already-enrolled beneficiaries who haven't received their enrollment SMS yet get notified
+      let notifyResult = { sms_queued: 0 };
+      if (alreadyEnrolledIds.length > 0) {
+        notifyResult = await notifyProgramEnrolledBeneficiaries(program, alreadyEnrolledIds);
+      }
       return res.json({ 
         success: true, 
-        message: 'No new eligible beneficiaries to enroll. All qualified beneficiaries are already enrolled.',
+        message: notifyResult.sms_queued > 0
+          ? `All qualified beneficiaries are enrolled. Sent ${notifyResult.sms_queued} pending SMS notification(s).`
+          : 'No new eligible beneficiaries to enroll. All qualified beneficiaries are already enrolled.',
         data: {
           newly_enrolled: 0,
-          already_enrolled: alreadyEnrolledIds.length
+          already_enrolled: alreadyEnrolledIds.length,
+          sms_queued: notifyResult.sms_queued,
         }
       });
     }
@@ -380,25 +512,9 @@ router.post('/:id/auto-enroll', authorize('admin', 'staff'), async (req, res, ne
       );
     }
 
-    // Create notifications for enrolled beneficiaries who have a user account
-    const beneficiariesWithUsers = await Beneficiary.findAll({
-      where: { id: eligibleBeneficiaries.map(b => b.id) },
-      attributes: ['id', 'user_id']
-    });
-
-    const notificationPromises = beneficiariesWithUsers
-      .filter(b => b.user_id)
-      .map(b => Notification.create({
-        user_id: b.user_id,
-        title: 'Program Enrollment Confirmation',
-        message: `You have been officially enrolled in the program "${program.name}". Category: ${program.eligibility_category || 'General'}. Check your benefits dashboard for upcoming distributions and details.`,
-        type: 'program',
-        reference_id: program.id,
-        reference_type: 'BenefitProgram',
-        is_read: false,
-      }));
-
-    await Promise.all(notificationPromises);
+    // Send In-App + PhilSMS notifications to newly enrolled (and any previously unnotified) beneficiaries
+    const allEnrolledIds = [...new Set([...alreadyEnrolledIds, ...eligibleBeneficiaries.map(b => b.id)])];
+    const notifyResult = await notifyProgramEnrolledBeneficiaries(program, allEnrolledIds);
 
     // Log auto-enrollment action
     await AuditLog.create({
@@ -413,7 +529,8 @@ router.post('/:id/auto-enroll', authorize('admin', 'staff'), async (req, res, ne
       data: {
         newly_enrolled: enrollments.length,
         already_enrolled: alreadyEnrolledIds.length,
-        total_enrolled: alreadyEnrolledIds.length + enrollments.length
+        total_enrolled: alreadyEnrolledIds.length + enrollments.length,
+        sms_queued: notifyResult.sms_queued,
       }
     });
   } catch (error) {
@@ -443,7 +560,9 @@ router.post('/:id/enroll', authorize('admin', 'staff'), async (req, res, next) =
     }
 
     // Get program details
-    const program = await BenefitProgram.findByPk(req.params.id);
+    const program = await BenefitProgram.findByPk(req.params.id, {
+      include: [{ model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] }],
+    });
     if (!program) {
       return res.status(404).json({ success: false, message: 'Program not found' });
     }
@@ -566,20 +685,8 @@ router.post('/:id/enroll', authorize('admin', 'staff'), async (req, res, next) =
       );
     }
 
-    // Create notifications for enrolled beneficiaries who have a user account
-    const notificationPromises = beneficiaries
-      .filter(b => b.user_id)
-      .map(b => Notification.create({
-        user_id: b.user_id,
-        title: 'Program Enrollment Confirmation',
-        message: `You have been officially enrolled in the program "${program.name}". Category: ${program.eligibility_category || 'General'}. Check your benefits dashboard for upcoming distributions and details.`,
-        type: 'program',
-        reference_id: program.id,
-        reference_type: 'BenefitProgram',
-        is_read: false,
-      }));
-
-    await Promise.all(notificationPromises);
+    // Send In-App + PhilSMS notifications to newly enrolled beneficiaries
+    const notifyResult = await notifyProgramEnrolledBeneficiaries(program, newBeneficiaryIds);
 
     // Log the action
     await AuditLog.create({
@@ -593,7 +700,8 @@ router.post('/:id/enroll', authorize('admin', 'staff'), async (req, res, next) =
       message: `Successfully enrolled ${createdEnrollments.length} beneficiary(ies)`,
       data: {
         enrolled_count: createdEnrollments.length,
-        already_enrolled_count: alreadyEnrolled.length
+        already_enrolled_count: alreadyEnrolled.length,
+        sms_queued: notifyResult.sms_queued,
       }
     });
   } catch (error) {
@@ -621,8 +729,9 @@ router.post('/', authorize('admin'), async (req, res, next) => {
       include: [{ model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] }],
     });
 
-    // AUTO-ENROLLMENT: Automatically enroll eligible beneficiaries
+    // AUTO-ENROLLMENT: Automatically enroll eligible beneficiaries & send SMS + In-App notifications
     let autoEnrolledCount = 0;
+    let smsQueuedCount = 0;
     try {
       // Build where clause for eligible beneficiaries
       const whereClause = {
@@ -673,10 +782,17 @@ router.post('/', authorize('admin'), async (req, res, next) => {
         const enrollments = await Enrollment.bulkCreate(enrollmentData);
         autoEnrolledCount = enrollments.length;
 
+        // Send In-App Notification + PhilSMS to all auto-enrolled beneficiaries
+        const notifyResult = await notifyProgramEnrolledBeneficiaries(
+          created || program,
+          eligibleBeneficiaries.map(b => b.id)
+        );
+        smsQueuedCount = notifyResult.sms_queued;
+
         // Log auto-enrollment action
         await AuditLog.create({
           user_id: req.user.id,
-          action: `Auto-enrolled ${autoEnrolledCount} eligible beneficiary(ies) into program: ${program.name}`,
+          action: `Auto-enrolled ${autoEnrolledCount} eligible beneficiary(ies) into program: ${program.name} (SMS queued: ${smsQueuedCount})`,
           module: 'programs',
         });
       }
@@ -694,7 +810,8 @@ router.post('/', authorize('admin'), async (req, res, next) => {
     res.status(201).json({ 
       success: true, 
       data: created,
-      auto_enrolled_count: autoEnrolledCount 
+      auto_enrolled_count: autoEnrolledCount,
+      sms_queued_count: smsQueuedCount,
     });
   } catch (error) {
     next(error);

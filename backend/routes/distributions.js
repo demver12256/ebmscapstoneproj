@@ -11,12 +11,14 @@ const {
   Enrollment,
   User,
   Notification,
+  SMSNotification,
   AuditLog,
   sequelize,
 } = require('../db');
 const { isMswdoRole } = require('../utils/roles');
 const { calculateRetroForBeneficiary, calculateRetroPreview } = require('../utils/retroCalculator');
 const { isNonCashProgram, getNonCashDetails } = require('../utils/nonCashPrograms');
+const { processQueuedSms } = require('../utils/smsDispatcher');
 
 const router = express.Router();
 router.use(authenticate);
@@ -757,24 +759,40 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       }, { transaction });
     }
 
-    // ── Notify all eligible beneficiaries ──
+    // ── Notify all eligible beneficiaries (In-App + PhilSMS) ──
+    const smsPayloads = [];
     const notificationPromises = enrollments.map(async (enrollment, idx) => {
-      if (enrollment.Beneficiary.user_id) {
-        const txn = transactions[idx];
-        const regularAmt = parseFloat(event.amount_per_beneficiary);
-        const retroAmt = txn ? parseFloat(txn.retro_amount || 0) : 0;
-        const totalPayout = regularAmt + retroAmt;
-        const retroMsg = (txn && txn.retro_periods > 0)
-          ? ` (Includes ₱${retroAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} retroactive pay for ${txn.retro_periods} missed period(s))`
-          : '';
+      const b = enrollment.Beneficiary;
+      const txn = transactions[idx];
+      const regularAmt = parseFloat(event.amount_per_beneficiary);
+      const retroAmt = txn ? parseFloat(txn.retro_amount || 0) : 0;
+      const totalPayout = regularAmt + retroAmt;
+      const retroMsg = (txn && txn.retro_periods > 0)
+        ? ` (Includes ₱${retroAmt.toLocaleString('en-PH', { minimumFractionDigits: 2 })} retroactive pay for ${txn.retro_periods} missed period(s))`
+        : '';
 
-        const notifTitle = isNonCash ? 'Upcoming In-Kind Distribution / Service' : 'Upcoming Benefit Distribution';
-        const notifMessage = isNonCash
-          ? `You are scheduled to receive ${itemDisplayName} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`
-          : `You are scheduled to receive ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`;
+      const notifTitle = isNonCash ? 'Upcoming In-Kind Distribution / Service' : 'Upcoming Benefit Distribution';
+      const notifMessage = isNonCash
+        ? `You are scheduled to receive ${itemDisplayName} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`
+        : `You are scheduled to receive ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`;
 
+      const fullName = [b.first_name, b.middle_name, b.last_name].filter(Boolean).join(' ') || 'Beneficiary';
+      const smsMessage = isNonCash
+        ? `EBMS [${event.agency || program.agency || 'DSWD'}]: Magandang araw ${fullName}! Kayo po ay naka-schedule na tumanggap ng ${itemDisplayName} mula sa programang "${program.name}" (${event.title}) sa ${event.distribution_date} sa ${event.venue || 'Barangay Hall'}. Magdala po ng valid ID at EBMS ID/QR.`
+        : `EBMS [${event.agency || program.agency || 'DSWD'}]: Magandang araw ${fullName}! Kayo po ay naka-schedule na tumanggap ng ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} mula sa programang "${program.name}" (${event.title}) sa ${event.distribution_date} sa ${event.venue || 'Barangay Hall'}. Magdala po ng valid ID at EBMS ID/QR.`;
+
+      smsPayloads.push({
+        beneficiary_id: b.id,
+        announcement_id: null,
+        notification_type: `dist_event_${event.id}`,
+        phone_number: b.contact_number || null,
+        message: smsMessage,
+        status: 'queued',
+      });
+
+      if (b.user_id) {
         return Notification.create({
-          user_id: enrollment.Beneficiary.user_id,
+          user_id: b.user_id,
           title: notifTitle,
           message: notifMessage,
           type: 'distribution',
@@ -786,6 +804,10 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     });
 
     await Promise.all(notificationPromises);
+
+    if (smsPayloads.length > 0) {
+      await SMSNotification.bulkCreate(smsPayloads, { transaction });
+    }
 
     // Create audit log
     await AuditLog.create({
@@ -806,6 +828,12 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     }, { transaction });
 
     await transaction.commit();
+
+    if (smsPayloads.length > 0) {
+      processQueuedSms().catch((err) => {
+        console.error('[PUBLISH EVENT SMS] Error dispatching queued SMS:', err.message);
+      });
+    }
 
     console.log('[PUBLISH EVENT] Transaction committed successfully');
 
