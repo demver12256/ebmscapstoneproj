@@ -1039,7 +1039,7 @@ router.get('/', async (req, res, next) => {
         {
           model: User,
           as: 'CreatedBy',
-          attributes: ['id', 'first_name', 'last_name', 'email'],
+          attributes: ['id', 'first_name', 'last_name', 'email', 'role', 'barangay_id'],
         },
         {
           model: AnnouncementRecipient,
@@ -1303,12 +1303,32 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       return res.status(400).json({ success: false, message: 'At least one target category must be selected' });
     }
 
-    const parsedBarangays = parseTargetBarangayIds(target_barangays);
+    const isBarangayStaff = req.user.role === 'staff' || req.user.role === 'barangay';
+    let parsedBarangays = parseTargetBarangayIds(target_barangays);
+
+    if (isBarangayStaff) {
+      if (!req.user.barangay_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Walang naka-assign na Barangay sa iyong Staff account. Makipag-ugnayan sa DSWD Admin.',
+        });
+      }
+      // Strictly lock Barangay Staff announcement to their own assigned barangay
+      parsedBarangays = [Number(req.user.barangay_id)];
+    }
+
     if (parsedBarangays.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one target barangay must be selected' });
     }
 
     const parsedSitios = parseTargetSitios(target_sitios);
+
+    // Barangay Staff announcements require DSWD Admin approval before being published
+    const finalStatus = isBarangayStaff
+      ? (status === 'draft' ? 'draft' : 'pending_approval')
+      : status;
+
+    const previewMatches = await getMatchingBeneficiaries(targetCatsOrProgs, parsedBarangays, parsedSitios);
 
     const announcement = await Announcement.create({
       title,
@@ -1318,20 +1338,47 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       end_time: end_time || null,
       venue: venue || null,
       priority,
-      status,
-      publish_date: status === 'published' ? new Date() : null,
+      status: finalStatus,
+      publish_date: finalStatus === 'published' ? new Date() : null,
       expiration_date: expiration_date || null,
       target_programs: targetCatsOrProgs,
       target_barangays: parsedBarangays,
       target_sitios: parsedSitios,
       notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : false,
       created_by_user_id: req.user.id,
-      recipient_count: 0,
+      recipient_count: previewMatches.length,
       view_count: 0,
     });
 
-    if (status === 'published') {
+    if (finalStatus === 'published') {
       await dispatchAnnouncementNotifications(announcement, req.user.id);
+    } else if (finalStatus === 'pending_approval') {
+      const staffBrgy = await Barangay.findByPk(req.user.barangay_id);
+      const brgyLabel = staffBrgy?.barangay_name ? `Barangay ${staffBrgy.barangay_name}` : 'Barangay';
+      const dswdAdmins = await User.findAll({
+        where: { role: 'admin', is_active: true },
+        attributes: ['id'],
+      });
+      if (dswdAdmins.length > 0) {
+        await Notification.bulkCreate(
+          dswdAdmins.map((adminUser) => ({
+            user_id: adminUser.id,
+            title: `⏳ For Approval (${brgyLabel}): ${announcement.title}`,
+            message: `[BARANGAY STAFF REQUEST] Si ${req.user.first_name || 'Staff'} ${req.user.last_name || ''} ng ${brgyLabel} ay gumawa ng announcement na "${announcement.title}" (${previewMatches.length} target beneficiaries). Mangyaring i-review at i-approve sa Announcements page upang ma-publish.`,
+            type: 'announcement',
+            reference_id: announcement.id,
+            reference_type: 'announcement_staff',
+            is_read: false,
+          }))
+        );
+      }
+
+      await AuditLog.create({
+        user_id: req.user.id,
+        action: `SUBMITTED_ANNOUNCEMENT_FOR_APPROVAL: "${announcement.title}" (${brgyLabel})`,
+        module: 'Announcements',
+        timestamp: new Date(),
+      });
     } else {
       await AuditLog.create({
         user_id: req.user.id,
@@ -1346,7 +1393,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
         {
           model: User,
           as: 'CreatedBy',
-          attributes: ['id', 'first_name', 'last_name', 'email'],
+          attributes: ['id', 'first_name', 'last_name', 'email', 'role', 'barangay_id'],
         },
       ],
     });
@@ -1812,7 +1859,7 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
 });
 
 // ── PUT /:id ── Edit/Update announcement (Admin/Staff/Barangay)
-router.put('/:id', authorize('admin'), async (req, res, next) => {
+router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const announcement = await Announcement.findByPk(req.params.id);
     if (!announcement) {
@@ -1836,6 +1883,26 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       notify_mswdo,
     } = req.body;
 
+    const isBarangayStaff = req.user.role === 'staff' || req.user.role === 'barangay';
+    if (isBarangayStaff) {
+      const userBarangayId = req.user.barangay_id ? Number(req.user.barangay_id) : null;
+      const existingBarangays = parseTargetBarangayIds(announcement.target_barangays);
+      if (!userBarangayId || !existingBarangays.includes(userBarangayId)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: Maaari mo lamang i-update ang announcement na para sa iyong Barangay.',
+        });
+      }
+      // If staff is editing content (not archiving), they must be the creator and cannot self-publish
+      const isOnlyStatusArchive = status === 'archived' && title === undefined && message === undefined;
+      if (!isOnlyStatusArchive && Number(announcement.created_by_user_id) !== Number(req.user.id)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: Ang DSWD Admin lamang ang maaaring mag-edit ng announcement na ito.',
+        });
+      }
+    }
+
     const previousStatus = announcement.status;
     const targetCatsOrProgs = target_categories || target_programs || announcement.target_programs;
 
@@ -1847,13 +1914,31 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       }
     }
 
-    const updatedBarangays = target_barangays !== undefined 
+    let updatedBarangays = target_barangays !== undefined 
       ? parseTargetBarangayIds(target_barangays) 
       : parseTargetBarangayIds(announcement.target_barangays);
+
+    if (isBarangayStaff && req.user.barangay_id) {
+      updatedBarangays = [Number(req.user.barangay_id)];
+    }
 
     const updatedSitios = target_sitios !== undefined
       ? parseTargetSitios(target_sitios)
       : parseTargetSitios(announcement.target_sitios);
+
+    let nextStatus = status ?? announcement.status;
+    if (isBarangayStaff) {
+      if (status === 'archived') {
+        nextStatus = 'archived';
+      } else if (status === 'draft') {
+        nextStatus = 'draft';
+      } else {
+        // Staff edits require DSWD Admin approval
+        nextStatus = 'pending_approval';
+      }
+    }
+
+    const previewMatches = await getMatchingBeneficiaries(targetCatsOrProgs, updatedBarangays, updatedSitios);
 
     await announcement.update({
       title: title ?? announcement.title,
@@ -1863,11 +1948,12 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
       end_time: end_time !== undefined ? end_time : announcement.end_time,
       venue: venue !== undefined ? venue : announcement.venue,
       priority: priority ?? announcement.priority,
-      status: status ?? announcement.status,
+      status: nextStatus,
       expiration_date: expiration_date !== undefined ? expiration_date : announcement.expiration_date,
       target_programs: targetCatsOrProgs,
       target_barangays: updatedBarangays,
       target_sitios: updatedSitios,
+      recipient_count: nextStatus === 'pending_approval' ? previewMatches.length : announcement.recipient_count,
       beneficiary_visibility_at: new Date(),
       notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : announcement.notify_mswdo,
     });
@@ -1889,10 +1975,108 @@ router.put('/:id', authorize('admin'), async (req, res, next) => {
     }
 
     const updated = await Announcement.findByPk(announcement.id, {
-      include: [{ model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name'] }],
+      include: [{ model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email', 'role', 'barangay_id'] }],
     });
 
     res.json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── PATCH /:id/approve ── DSWD Admin approves & publishes a Barangay Staff announcement
+router.patch('/:id/approve', authorize('admin'), async (req, res, next) => {
+  try {
+    const announcement = await Announcement.findByPk(req.params.id, {
+      include: [{ model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'role', 'barangay_id'] }],
+    });
+    if (!announcement) {
+      return res.status(404).json({ success: false, message: 'Announcement not found' });
+    }
+
+    await announcement.update({
+      status: 'published',
+      publish_date: new Date(),
+      beneficiary_visibility_at: new Date(),
+    });
+
+    const recipientCount = await dispatchAnnouncementNotifications(announcement, req.user.id);
+
+    // Notify the Barangay Staff creator that their announcement was approved
+    if (announcement.created_by_user_id && Number(announcement.created_by_user_id) !== Number(req.user.id)) {
+      await Notification.create({
+        user_id: announcement.created_by_user_id,
+        title: `✅ Approved & Published: ${announcement.title}`,
+        message: `Inaprubahan na ng DSWD Admin ang iyong announcement na "${announcement.title}". Naipadala na ang abiso at SMS sa ${recipientCount} na benepisyaryo ng iyong barangay.`,
+        type: 'announcement',
+        reference_id: announcement.id,
+        reference_type: 'announcement_staff',
+        is_read: false,
+      });
+    }
+
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: `APPROVED_STAFF_ANNOUNCEMENT: "${announcement.title}" (${recipientCount} beneficiaries notified)`,
+      module: 'Announcements',
+      timestamp: new Date(),
+    });
+
+    const updated = await Announcement.findByPk(announcement.id, {
+      include: [{ model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email', 'role', 'barangay_id'] }],
+    });
+
+    res.json({
+      success: true,
+      message: `Announcement approved and published! (${recipientCount} beneficiaries notified)`,
+      data: updated,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── PATCH /:id/reject ── DSWD Admin rejects a Barangay Staff announcement
+router.patch('/:id/reject', authorize('admin'), async (req, res, next) => {
+  try {
+    const announcement = await Announcement.findByPk(req.params.id);
+    if (!announcement) {
+      return res.status(404).json({ success: false, message: 'Announcement not found' });
+    }
+
+    const reason = String(req.body?.reason || '').trim();
+    await announcement.update({
+      status: 'rejected',
+    });
+
+    if (announcement.created_by_user_id && Number(announcement.created_by_user_id) !== Number(req.user.id)) {
+      await Notification.create({
+        user_id: announcement.created_by_user_id,
+        title: `❌ Disapproved Announcement: ${announcement.title}`,
+        message: `Hindi inaprubahan ng DSWD Admin ang iyong announcement na "${announcement.title}".${reason ? ` Dahilan: ${reason}` : ' Maaari mo itong i-edit at i-submit muli.'}`,
+        type: 'announcement',
+        reference_id: announcement.id,
+        reference_type: 'announcement_staff',
+        is_read: false,
+      });
+    }
+
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: `REJECTED_STAFF_ANNOUNCEMENT: "${announcement.title}"${reason ? ` (${reason})` : ''}`,
+      module: 'Announcements',
+      timestamp: new Date(),
+    });
+
+    const updated = await Announcement.findByPk(announcement.id, {
+      include: [{ model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email', 'role', 'barangay_id'] }],
+    });
+
+    res.json({
+      success: true,
+      message: 'Announcement marked as Rejected and Barangay Staff notified.',
+      data: updated,
+    });
   } catch (error) {
     next(error);
   }

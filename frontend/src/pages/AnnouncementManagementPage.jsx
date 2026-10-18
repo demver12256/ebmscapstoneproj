@@ -199,12 +199,18 @@ const getAnnouncementStatusDisplay = (status) => {
   const styles = {
     published: 'bg-emerald-100 text-emerald-800',
     completed: 'bg-purple-100 text-purple-800',
+    pending_approval: 'bg-amber-100 text-amber-800',
+    rejected: 'bg-rose-100 text-rose-800',
     draft: 'bg-slate-100 text-slate-700',
     scheduled: 'bg-blue-100 text-blue-800',
     archived: 'bg-amber-100 text-amber-800',
   };
+  const labels = {
+    pending_approval: 'Pending Approval',
+    rejected: 'Rejected',
+  };
   return {
-    label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
+    label: labels[normalized] || normalized.charAt(0).toUpperCase() + normalized.slice(1),
     className: styles[normalized] || 'bg-slate-100 text-slate-700',
   };
 };
@@ -234,6 +240,7 @@ const getSmsStatusDisplay = (status) => {
 export default function AnnouncementManagementPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const isBarangayStaff = user?.role === 'staff' || user?.role === 'barangay';
   const [announcements, setAnnouncements] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [barangays, setBarangays] = useState([]);
@@ -448,6 +455,7 @@ export default function AnnouncementManagementPage() {
     setPreviewBeneficiaries([]);
     setShowPreviewBeneficiaries(false);
     setPreviewSearchQuery('');
+    const staffBarangayTarget = isBarangayStaff && user?.barangay_id ? [Number(user.barangay_id)] : [];
     setFormData({
       title: '',
       message: '',
@@ -458,11 +466,11 @@ export default function AnnouncementManagementPage() {
       venue_barangay: '',
       venue_detail: '',
       priority: 'Medium',
-      status: 'published',
+      status: isBarangayStaff ? 'pending_approval' : 'published',
       expiration_date: '',
       target_categories: [...activeAllowedCategories],
       target_programs: mapCategoriesToProgramIds(activeAllowedCategories, programs),
-      target_barangays: [], // Default to empty so admin MUST explicitly pick the target barangay
+      target_barangays: staffBarangayTarget,
       target_sitios: [],
       notify_mswdo: false,
     });
@@ -493,7 +501,9 @@ export default function AnnouncementManagementPage() {
       return catProgIds.some((id) => annPrograms.includes(id));
     });
 
-    const parsedTargetBarangays = parseBarangayIds(ann.target_barangays);
+    const parsedTargetBarangays = isBarangayStaff && user?.barangay_id
+      ? [Number(user.barangay_id)]
+      : parseBarangayIds(ann.target_barangays);
     const parsedTargetSitios = parseSitios(ann.target_sitios);
     setBgySelectionMode(parsedTargetBarangays.length === 1 ? 'single' : 'multiple');
     setBgySearchFilter('');
@@ -510,7 +520,9 @@ export default function AnnouncementManagementPage() {
       venue_barangay: foundBarangay,
       venue_detail: foundDetail,
       priority: ann.priority || 'Medium',
-      status: ann.status || 'published',
+      status: isBarangayStaff
+        ? (ann.status === 'draft' ? 'draft' : 'pending_approval')
+        : (ann.status || 'published'),
       expiration_date: ann.expiration_date || '',
       target_categories: matchedCategories.length > 0 ? matchedCategories : [...activeAllowedCategories],
       target_programs: annPrograms.length > 0 ? annPrograms : programs.map((p) => p.id),
@@ -557,6 +569,7 @@ export default function AnnouncementManagementPage() {
 
   // Toggle Barangay Selection
   const toggleBarangayTarget = (bId) => {
+    if (isBarangayStaff) return;
     const numId = Number(bId);
     setFormData((prev) => {
       const currentBarangays = parseBarangayIds(prev.target_barangays);
@@ -569,6 +582,7 @@ export default function AnnouncementManagementPage() {
   };
 
   const toggleAllBarangays = () => {
+    if (isBarangayStaff) return;
     setFormData((prev) => {
       const currentBarangays = parseBarangayIds(prev.target_barangays);
       const allSelected = currentBarangays.length === barangays.length;
@@ -617,7 +631,10 @@ export default function AnnouncementManagementPage() {
       alert('Please select at least one target category');
       return;
     }
-    if (formData.target_barangays.length === 0) {
+    const effectiveBarangays = isBarangayStaff && user?.barangay_id
+      ? [Number(user.barangay_id)]
+      : formData.target_barangays;
+    if (effectiveBarangays.length === 0) {
       alert('Please select at least one target barangay');
       return;
     }
@@ -629,8 +646,12 @@ export default function AnnouncementManagementPage() {
 
     const payload = {
       ...formData,
+      status: isBarangayStaff
+        ? (formData.status === 'draft' ? 'draft' : 'pending_approval')
+        : formData.status,
       target_categories: activeCats,
       target_programs: activeCats,
+      target_barangays: effectiveBarangays,
       target_sitios: activeSitios,
     };
 
@@ -638,20 +659,57 @@ export default function AnnouncementManagementPage() {
     try {
       if (editingAnnouncement) {
         await announcementApi.update(editingAnnouncement.id, payload);
-        setSuccessMessage('Announcement updated successfully!');
+        setSuccessMessage(
+          isBarangayStaff
+            ? 'Announcement updated and submitted for DSWD Admin approval!'
+            : 'Announcement updated successfully!'
+        );
       } else {
         await announcementApi.create(payload);
-        setSuccessMessage(payload.status === 'published'
-          ? 'Announcement published. SMS messages are queued for PhilSMS dispatch.'
-          : 'Announcement draft saved. SMS messages will be queued when it is published.');
+        setSuccessMessage(
+          isBarangayStaff
+            ? 'Announcement submitted! Naghihintay na ito ng Approval mula sa DSWD Admin bago ma-publish at ma-text sa mga benepisyaryo.'
+            : (payload.status === 'published'
+                ? 'Announcement published. SMS messages are queued for PhilSMS dispatch.'
+                : 'Announcement draft saved. SMS messages will be queued when it is published.')
+        );
       }
       setIsModalOpen(false);
       fetchAnnouncements();
-      setTimeout(() => setSuccessMessage(''), 4000);
+      setTimeout(() => setSuccessMessage(''), 5000);
     } catch (err) {
       alert(err.message || 'Error saving announcement');
     } finally {
       setModalLoading(false);
+    }
+  };
+
+  // Approve Barangay Staff Announcement (DSWD Admin)
+  const handleApprove = async (ann) => {
+    if (!window.confirm(`Aprubahan at i-publish ang announcement na "${ann.title}"? Agad na ipapadala ang SMS at Notification sa mga benepisyaryo.`)) {
+      return;
+    }
+    try {
+      const res = await announcementApi.approve(ann.id);
+      setSuccessMessage(res.data?.message || 'Announcement approved and published successfully!');
+      fetchAnnouncements();
+      setTimeout(() => setSuccessMessage(''), 5000);
+    } catch (err) {
+      alert(err.message || 'Failed to approve announcement');
+    }
+  };
+
+  // Reject Barangay Staff Announcement (DSWD Admin)
+  const handleReject = async (ann) => {
+    const reason = window.prompt(`Ilagay ang dahilan kung bakit hindi na-approve ang "${ann.title}" (Opsyonal):`, '');
+    if (reason === null) return; // Cancelled prompt
+    try {
+      const res = await announcementApi.reject(ann.id, { reason });
+      setSuccessMessage(res.data?.message || 'Announcement rejected and Barangay Staff notified.');
+      fetchAnnouncements();
+      setTimeout(() => setSuccessMessage(''), 5000);
+    } catch (err) {
+      alert(err.message || 'Failed to reject announcement');
     }
   };
 
@@ -835,18 +893,46 @@ export default function AnnouncementManagementPage() {
             <span>Archived ({announcements.filter((a) => a.status === 'archived').length})</span>
           </button>
 
-          {['admin','mswdo_admin'].includes(user?.role) && (
+          {['admin', 'mswdo_admin', 'staff', 'barangay'].includes(user?.role) && (
             <button
               type="button"
               onClick={handleOpenCreateModal}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>New Announcement</span>
+              <span>{isBarangayStaff ? 'Create Barangay Announcement' : 'New Announcement'}</span>
             </button>
           )}
         </div>
       </div>
+
+      {/* Pending Approval Banner for DSWD Admin or Barangay Staff */}
+      {announcements.some((a) => a.status === 'pending_approval') && (
+        <div className="bg-amber-50 border-2 border-amber-300 text-amber-950 px-4 py-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <p className="font-extrabold text-xs uppercase tracking-wide text-amber-900">
+                {user?.role === 'admin'
+                  ? `⏳ May ${announcements.filter((a) => a.status === 'pending_approval').length} na Barangay Staff Announcement na Naghihintay ng Iyong Approval`
+                  : `⏳ May ${announcements.filter((a) => a.status === 'pending_approval').length} na Announcement na Naghihintay ng Approval ng DSWD Admin`}
+              </p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                {user?.role === 'admin'
+                  ? 'I-click ang "Approve" button sa listahan sa ibaba upang ma-publish ang anunsyo at maipadala ang SMS sa mga benepisyaryo.'
+                  : 'Ma-papublish at ma-tetext ito sa mga benepisyaryo ng iyong barangay sa oras na ma-approve ng DSWD Admin.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFilterStatus(filterStatus === 'pending_approval' ? '' : 'pending_approval')}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition shrink-0 self-start sm:self-auto"
+          >
+            {filterStatus === 'pending_approval' ? 'Ipakita Lahat' : 'Tingnan ang Pending'}
+          </button>
+        </div>
+      )}
 
       {/* Success Notification Alert */}
       {successMessage && (
@@ -970,10 +1056,12 @@ export default function AnnouncementManagementPage() {
               className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             >
               <option value="">All Statuses</option>
+              <option value="pending_approval">Pending DSWD Approval</option>
               <option value="published">Published</option>
               <option value="completed">Completed</option>
               <option value="scheduled">Scheduled</option>
               <option value="draft">Draft</option>
+              <option value="rejected">Rejected</option>
               <option value="archived">Archived</option>
             </select>
           </div>
@@ -1023,11 +1111,16 @@ export default function AnnouncementManagementPage() {
                         <div className="space-y-1">
                           <p className="font-extrabold text-slate-900 leading-snug">{ann.title}</p>
                           <p className="text-xs text-slate-600 line-clamp-2">{ann.message}</p>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-1">
+                          <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-1 flex-wrap">
                             <User className="w-3 h-3 text-slate-400" />
                             <span>
                               Created by: <strong className="text-slate-600">{ann.CreatedBy?.first_name || 'Admin'} {ann.CreatedBy?.last_name || ''}</strong>
                             </span>
+                            {(ann.CreatedBy?.role === 'staff' || ann.CreatedBy?.role === 'barangay') && (
+                              <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded text-[10px] font-bold">
+                                Barangay Staff
+                              </span>
+                            )}
                             <span>•</span>
                             <span>{new Date(ann.created_at || ann.createdAt).toLocaleDateString()}</span>
                           </div>
@@ -1124,6 +1217,14 @@ export default function AnnouncementManagementPage() {
                               <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">
                                 <CheckCircle2 className="w-3 h-3" /> Published
                               </span>
+                            ) : ann.status === 'pending_approval' ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                                <Clock className="w-3 h-3 text-amber-600" /> Pending Approval
+                              </span>
+                            ) : ann.status === 'rejected' ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full">
+                                <X className="w-3 h-3" /> Rejected
+                              </span>
                             ) : ann.status === 'completed' ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
                                 <CheckCircle2 className="w-3 h-3" /> Completed
@@ -1180,7 +1281,27 @@ export default function AnnouncementManagementPage() {
 
                       {/* Action buttons */}
                       <td className="py-4 px-5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {user?.role === 'admin' && ann.status === 'pending_approval' && (
+                            <>
+                              <button
+                                onClick={() => handleApprove(ann)}
+                                title="Approve & Publish Announcement"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-lg shadow-xs transition"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Approve</span>
+                              </button>
+                              <button
+                                onClick={() => handleReject(ann)}
+                                title="Reject Announcement"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg transition"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Reject</span>
+                              </button>
+                            </>
+                          )}
                           <button
                             onClick={() => handleExportReport(ann)}
                             title="Export Attendance Report (CSV/Excel)"
@@ -1188,7 +1309,7 @@ export default function AnnouncementManagementPage() {
                           >
                             <Download className="w-4 h-4" />
                           </button>
-                          {ann.status === 'published' && (
+                          {ann.status === 'published' && ['admin', 'mswdo_admin'].includes(user?.role) && (
                             <button
                               onClick={() => handleResend(ann.id)}
                               title="Resend notifications"
@@ -1197,7 +1318,10 @@ export default function AnnouncementManagementPage() {
                               <Send className="w-4 h-4" />
                             </button>
                           )}
-                          {['admin','mswdo_admin'].includes(user?.role) && (
+                          {(['admin', 'mswdo_admin'].includes(user?.role) ||
+                            (isBarangayStaff &&
+                              Number(ann.created_by_user_id) === Number(user?.id) &&
+                              ['pending_approval', 'rejected', 'draft'].includes(ann.status))) && (
                             <button
                               onClick={() => handleOpenEditModal(ann)}
                               title="Edit announcement"
@@ -1284,7 +1408,9 @@ export default function AnnouncementManagementPage() {
                           end_time: preset.end_time,
                           target_categories: preset.target_categories,
                           target_programs: mapCategoriesToProgramIds(preset.target_categories, programs),
-                          target_barangays: prev.target_barangays.length > 0 ? prev.target_barangays : barangays.map((b) => b.id),
+                          target_barangays: isBarangayStaff && user?.barangay_id
+                            ? [Number(user.barangay_id)]
+                            : (prev.target_barangays.length > 0 ? prev.target_barangays : barangays.map((b) => b.id)),
                         };
                       });
                     }
@@ -1605,39 +1731,54 @@ export default function AnnouncementManagementPage() {
                         <MapPin className="w-3.5 h-3.5 text-emerald-600" />
                         <span>Target Barangay <span className="text-red-500">*</span></span>
                       </label>
-                      <div className="flex items-center gap-1 bg-slate-200 p-0.5 rounded-lg text-[10px] font-bold">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setBgySelectionMode('single');
-                            if (formData.target_barangays.length > 1) {
-                              setFormData(prev => ({ ...prev, target_barangays: [prev.target_barangays[0]] }));
-                            }
-                          }}
-                          className={`px-2 py-0.5 rounded-md transition ${
-                            bgySelectionMode === 'single'
-                              ? 'bg-emerald-600 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          Isang Barangay
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setBgySelectionMode('multiple')}
-                          className={`px-2 py-0.5 rounded-md transition ${
-                            bgySelectionMode === 'multiple'
-                              ? 'bg-emerald-600 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          Maramihan / Lahat
-                        </button>
-                      </div>
+                      {isBarangayStaff ? (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-extrabold">
+                          🔒 Sariling Barangay Lamang
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1 bg-slate-200 p-0.5 rounded-lg text-[10px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBgySelectionMode('single');
+                              if (formData.target_barangays.length > 1) {
+                                setFormData(prev => ({ ...prev, target_barangays: [prev.target_barangays[0]] }));
+                              }
+                            }}
+                            className={`px-2 py-0.5 rounded-md transition ${
+                              bgySelectionMode === 'single'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Isang Barangay
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBgySelectionMode('multiple')}
+                            className={`px-2 py-0.5 rounded-md transition ${
+                              bgySelectionMode === 'multiple'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Maramihan / Lahat
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Single Barangay Mode (Instant 1-click selection) */}
-                    {bgySelectionMode === 'single' ? (
+                    {isBarangayStaff ? (
+                      <div className="w-full px-3 py-2.5 bg-emerald-50 border-2 border-emerald-400 rounded-xl font-extrabold text-sm text-emerald-950 flex items-center justify-between shadow-2xs">
+                        <span>
+                          Barangay {barangays.find((b) => Number(b.id) === Number(user?.barangay_id))?.barangay_name || user?.barangay || 'Assigned Barangay'}
+                        </span>
+                        <span className="text-[10px] font-bold bg-white text-emerald-800 px-2 py-0.5 rounded border border-emerald-200">
+                          Assigned Barangay
+                        </span>
+                      </div>
+                    ) : bgySelectionMode === 'single' ? (
+                      /* Single Barangay Mode (Instant 1-click selection) */
                       <div className="space-y-2">
                         <select
                           value={formData.target_barangays.length === 1 ? formData.target_barangays[0] : ''}
@@ -1898,6 +2039,21 @@ export default function AnnouncementManagementPage() {
                 </div>
               </div>
 
+              {/* Barangay Staff Approval Notice */}
+              {isBarangayStaff && (
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-950">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-extrabold uppercase tracking-wide text-amber-900">
+                      ⏳ Kinakailangan ng Approval ng DSWD Admin
+                    </p>
+                    <p className="text-[11px] font-medium text-amber-800 mt-0.5">
+                      Ang gagawin mong announcement para sa iyong Barangay ay ipapadala muna sa DSWD Admin para sa review at approval bago ito ma-publish at ma-text sa mga benepisyaryo.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* DSWD Publish Notification Options (Direct to Barangay/Beneficiary vs Include MSWDO) */}
               {user?.role === 'admin' && formData.status === 'published' && (
                 <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-purple-50/80 border-2 border-blue-200 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
@@ -1981,17 +2137,31 @@ export default function AnnouncementManagementPage() {
               <div className="flex items-center justify-between pt-3 border-t border-slate-200">
                 <div className="flex items-center gap-4">
                   <label className="text-xs font-bold text-slate-700">Action Status:</label>
-                  <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
-                    <input
-                      type="radio"
-                      name="status"
-                      value="published"
-                      checked={formData.status === 'published'}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="text-dswd-blue focus:ring-blue-500"
-                    />
-                    Publish & Notify
-                  </label>
+                  {isBarangayStaff ? (
+                    <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                      <input
+                        type="radio"
+                        name="status"
+                        value="pending_approval"
+                        checked={formData.status !== 'draft'}
+                        onChange={() => setFormData({ ...formData, status: 'pending_approval' })}
+                        className="text-amber-600 focus:ring-amber-500"
+                      />
+                      For DSWD Approval
+                    </label>
+                  ) : (
+                    <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                      <input
+                        type="radio"
+                        name="status"
+                        value="published"
+                        checked={formData.status === 'published'}
+                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                        className="text-dswd-blue focus:ring-blue-500"
+                      />
+                      Publish & Notify
+                    </label>
+                  )}
                   <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
                     <input
                       type="radio"
@@ -2023,11 +2193,13 @@ export default function AnnouncementManagementPage() {
                     ) : (
                       <Send className="w-4 h-4" />
                     )}
-                    {editingAnnouncement
-                      ? 'Update Announcement'
-                      : (formData.status === 'published'
-                          ? (formData.notify_mswdo ? 'Publish & Notify (+ MSWDO)' : 'Publish & Notify Direct')
-                          : 'Save Draft')}
+                    {isBarangayStaff
+                      ? (formData.status === 'draft' ? 'Save Draft' : 'Submit for DSWD Approval')
+                      : editingAnnouncement
+                        ? 'Update Announcement'
+                        : (formData.status === 'published'
+                            ? (formData.notify_mswdo ? 'Publish & Notify (+ MSWDO)' : 'Publish & Notify Direct')
+                            : 'Save Draft')}
                   </button>
                 </div>
               </div>

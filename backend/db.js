@@ -175,6 +175,14 @@ const connectDatabase = async () => {
   } catch (err) {
     // Ignore error if column already exists
   }
+  try {
+    // Ensure announcements.status ENUM supports staff approval workflow (pending_approval, rejected)
+    await sequelize.query(
+      "ALTER TABLE announcements MODIFY COLUMN status ENUM('draft', 'pending_approval', 'scheduled', 'published', 'completed', 'rejected', 'archived') NOT NULL DEFAULT 'published'"
+    );
+  } catch (err) {
+    // Ignore error if table does not exist yet
+  }
   // alter:{drop:false} adds new columns/tables but skips re-creating existing indexes,
   // preventing the duplicate _2, _3... index buildup that hits MySQL's 64-key limit.
   if (process.env.NODE_ENV === 'production') {

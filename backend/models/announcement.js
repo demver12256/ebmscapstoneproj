@@ -32,7 +32,7 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 'Medium',
       },
       status: {
-        type: DataTypes.ENUM('draft', 'scheduled', 'published', 'completed', 'archived'),
+        type: DataTypes.ENUM('draft', 'pending_approval', 'scheduled', 'published', 'completed', 'rejected', 'archived'),
         allowNull: false,
         defaultValue: 'published',
       },
