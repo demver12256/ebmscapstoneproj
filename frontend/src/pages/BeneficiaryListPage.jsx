@@ -24,7 +24,13 @@ export default function BeneficiaryListPage() {
   const [pendingApplications, setPendingApplications] = useState([]);
   const pendingPagination = usePagination(pendingApplications, 10);
   const [selectedBarangayId, setSelectedBarangayId] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(
+    user?.role === 'senior_citizen_admin' 
+      ? 'Senior Citizens (Social Pension)' 
+      : user?.role === 'pwd_admin' 
+        ? 'Persons with Disabilities (PWD)' 
+        : ''
+  );
   const [selectedIpClassification, setSelectedIpClassification] = useState('');
   const [selectedPayoutStatus, setSelectedPayoutStatus] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,7 +91,11 @@ export default function BeneficiaryListPage() {
     return `${backendUrl}/${clean}`;
   };
 
-  const isMswdoAdmin = user?.role === 'mswdo_admin';
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin';
+  const isPwdAdmin = user?.role === 'pwd_admin';
+  const isMswdoAdmin = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
+  const isSectorAdmin = isMswdoAdmin || isSeniorAdmin || isPwdAdmin;
+  const isAdminOrSector = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(user?.role);
   const CATEGORIES = [
     '4Ps Household Beneficiary',
     'Senior Citizens (Social Pension)',
@@ -114,19 +124,25 @@ export default function BeneficiaryListPage() {
         beneficiaryApi.list(),
         barangayApi.list()
       ];
-      if (['admin','mswdo_admin'].includes(user?.role)) {
+      if (isAdminOrSector) {
         promises.push(beneficiaryApi.listApplications());
       }
       const results = await Promise.all(promises);
       setBeneficiaries(results[0].data?.data || []);
       setBarangays(results[1].data?.data || []);
       
-      if (['admin','mswdo_admin'].includes(user?.role) && results[2]) {
+      if (isAdminOrSector && results[2]) {
         const apps = results[2].data?.data || [];
         // Filter non-approved applications for the pending queue
-        // MSWDO only approves Senior Citizens & PWD; DSWD approves 4Ps, Senior Citizens, and PWD
         const pendingList = apps.filter(a => {
           if (a.status === 'Approved') return false;
+          if (isSeniorAdmin) {
+            return String(a.category || '').toLowerCase().includes('senior');
+          }
+          if (isPwdAdmin) {
+            const c = String(a.category || '').toLowerCase();
+            return c.includes('pwd') || c.includes('disabilit');
+          }
           if (isMswdoAdmin && is4PsCategory(a.category)) return false;
           return true;
         });
@@ -150,18 +166,18 @@ export default function BeneficiaryListPage() {
   }, [user]);
 
   useEffect(() => {
-    if (['admin','mswdo_admin'].includes(user?.role) && (location.state?.openPending || new URLSearchParams(location.search).get('pending') === 'true')) {
+    if (isAdminOrSector && (location.state?.openPending || new URLSearchParams(location.search).get('pending') === 'true')) {
       openPendingModal();
     }
     const params = new URLSearchParams(location.search);
     const payoutParam = params.get('payout_status') || location.state?.payout_status;
-    if (payoutParam && !isMswdoAdmin) {
+    if (payoutParam && !isSectorAdmin) {
       setSelectedPayoutStatus(payoutParam);
     }
-  }, [location, user, isMswdoAdmin]);
+  }, [location, user, isMswdoAdmin, isSeniorAdmin, isPwdAdmin]);
 
   const openPendingModal = async () => {
-    if (!['admin','mswdo_admin'].includes(user?.role)) return;
+    if (!isAdminOrSector) return;
     setShowPendingModal(true);
     setLoadingPending(true);
     try {
@@ -169,6 +185,13 @@ export default function BeneficiaryListPage() {
       const apps = appsRes.data.data || [];
       const pendingList = apps.filter(a => {
         if (a.status === 'Approved') return false;
+        if (isSeniorAdmin) {
+          return String(a.category || '').toLowerCase().includes('senior');
+        }
+        if (isPwdAdmin) {
+          const c = String(a.category || '').toLowerCase();
+          return c.includes('pwd') || c.includes('disabilit');
+        }
         if (isMswdoAdmin && is4PsCategory(a.category)) return false;
         return true;
       });
@@ -296,7 +319,7 @@ export default function BeneficiaryListPage() {
 
   const handleSaveRfidDirect = async (e) => {
     if (e) e.preventDefault();
-    if (!['admin','mswdo_admin'].includes(user?.role)) return;
+    if (!isAdminOrSector) return;
     setRfidSaving(true);
     setRfidMsg(null);
     try {
@@ -315,7 +338,7 @@ export default function BeneficiaryListPage() {
   };
 
   const handleEditClick = (beneficiary) => {
-    if (!['admin','mswdo_admin'].includes(user?.role) && (user?.role === 'staff' || user?.role === 'barangay') && beneficiary.barangay_id !== user?.barangay_id) {
+    if (!isAdminOrSector && (user?.role === 'staff' || user?.role === 'barangay') && beneficiary.barangay_id !== user?.barangay_id) {
       setEditError('You can only edit beneficiaries from your own barangay');
       return;
     }
@@ -599,7 +622,7 @@ export default function BeneficiaryListPage() {
           <div class="card">
             <div class="header">
               <p class="republic">Republic of the Philippines</p>
-              <h2 class="agency">${user?.role === 'mswdo_admin' ? 'Municipal Social Welfare & Development Office' : 'DSWD / MSWDO Bongabong'}</h2>
+              <h2 class="agency">${(user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff') ? 'Municipal Social Welfare & Development Office' : 'DSWD / MSWDO Bongabong'}</h2>
               <div class="badge">Temporary Digital ID • Claim Pass</div>
             </div>
             ${printPhotoUrl ? `
@@ -712,7 +735,7 @@ export default function BeneficiaryListPage() {
       </span>
     )},
     { header: 'Barangay', accessor: 'barangay_id', cell: (row) => row.Barangay?.barangay_name || '—' },
-    ...(!isMswdoAdmin ? [{
+    ...(!isSectorAdmin ? [{
       header: 'Payout / Ayuda Channel',
       accessor: 'payout_preference',
       cell: (row) => (
@@ -753,7 +776,7 @@ export default function BeneficiaryListPage() {
         )}
       </div>
     )},
-    ...(['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff' || user?.role === 'barangay' ? [{
+    ...((isAdminOrSector || user?.role === 'staff' || user?.role === 'barangay') ? [{
       header: 'Action', 
       accessor: 'id', 
       cell: (row) => (
@@ -772,7 +795,7 @@ export default function BeneficiaryListPage() {
           >
             <QrCode className="w-4 h-4 text-emerald-600" />
           </button>
-          {['admin','mswdo_admin'].includes(user?.role) && (
+          {isAdminOrSector && (
             <button
               onClick={() => handleEditClick(row)}
               title="Edit & Register RFID"
@@ -823,7 +846,7 @@ export default function BeneficiaryListPage() {
     const barangayMatch = !selectedBarangayId || b.barangay_id === Number(selectedBarangayId);
     const catMatch = categoryMatches(b.category, selectedCategory);
     const ipMatch = !selectedIpClassification || b.ip_classification === selectedIpClassification;
-    const payoutMatch = isMswdoAdmin || !selectedPayoutStatus || (
+    const payoutMatch = isSectorAdmin || !selectedPayoutStatus || (
       selectedPayoutStatus === 'unverified' ? (b.payout_preference === 'digital' && b.account_verification_status !== 'verified') :
       selectedPayoutStatus === 'verified' ? (b.payout_preference === 'digital' && b.account_verification_status === 'verified') :
       selectedPayoutStatus === 'cash_otc' ? (b.payout_preference === 'cash_otc' || !b.payout_preference) :
@@ -839,7 +862,7 @@ export default function BeneficiaryListPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
-              {isMswdoAdmin ? 'MSWDO Registry' : 'Beneficiary Management'}
+              {isSeniorAdmin ? 'OSCA Registry' : isPwdAdmin ? 'PDAO Registry' : isMswdoAdmin ? 'MSWDO Registry' : 'Beneficiary Management'}
             </span>
             <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
@@ -849,14 +872,18 @@ export default function BeneficiaryListPage() {
           <p className="text-xs text-slate-500 mt-0.5">
             {showArchivedOnly 
               ? 'Viewing archived and deactivated municipal records.' 
-              : isMswdoAdmin 
-                ? 'Municipal registry for Senior Citizens, Persons with Disabilities (PWD), and 4Ps households.'
-                : 'Verified municipal beneficiary records, program enrollment, and status tracking.'}
+              : isSeniorAdmin
+                ? 'Municipal registry and Social Pension records for Senior Citizens.'
+                : isPwdAdmin
+                  ? 'Municipal registry and disability welfare records for Persons with Disabilities (PWD).'
+                  : isMswdoAdmin 
+                    ? 'Municipal registry for Senior Citizens, Persons with Disabilities (PWD), and 4Ps households.'
+                    : 'Verified municipal beneficiary records, program enrollment, and status tracking.'}
           </p>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
-          {['admin','mswdo_admin'].includes(user?.role) && (
+          {isAdminOrSector && (
             <button
               onClick={openPendingModal}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold transition shadow-2xs active:scale-95"
@@ -880,12 +907,24 @@ export default function BeneficiaryListPage() {
         </div>
       </div>
 
-      {isMswdoAdmin && (
+      {isSectorAdmin && (
         <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 flex items-start gap-3">
           <span className="text-xl">📋</span>
           <div>
-            <p className="text-sm font-bold text-blue-900">Municipal Beneficiary Records Oversight (MSWDO)</p>
-            <p className="text-xs text-blue-700">Municipal registry of 4Ps Household Beneficiaries, Senior Citizens, and Persons with Disabilities (PWD).</p>
+            <p className="text-sm font-bold text-blue-900">
+              {isSeniorAdmin 
+                ? 'Office of Senior Citizens Affairs (OSCA) Registry Oversight' 
+                : isPwdAdmin 
+                  ? 'Persons with Disability Affairs Office (PDAO) Registry Oversight' 
+                  : 'Municipal Beneficiary Records Oversight (MSWDO)'}
+            </p>
+            <p className="text-xs text-blue-700">
+              {isSeniorAdmin
+                ? 'Municipal registry and social pension verification for senior citizens in Bongabong.'
+                : isPwdAdmin
+                  ? 'Municipal registry and disability welfare verification for persons with disabilities.'
+                  : 'Municipal registry of 4Ps Household Beneficiaries, Senior Citizens, and Persons with Disabilities (PWD).'}
+            </p>
           </div>
         </div>
       )}
@@ -899,7 +938,7 @@ export default function BeneficiaryListPage() {
 
       {/* Filters */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md sm:p-6">
-        <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${isMswdoAdmin ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
+        <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${isSectorAdmin ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
           <div className="min-w-0">
             <label className="mb-2 block text-sm font-semibold text-slate-700">Barangay</label>
             <select
@@ -948,7 +987,7 @@ export default function BeneficiaryListPage() {
             </select>
           </div>
 
-          {!isMswdoAdmin && (
+          {!isSectorAdmin && (
             <div className="min-w-0">
               <label className="mb-2 block text-sm font-semibold text-slate-700">Disbursement Channel</label>
               <select
@@ -967,7 +1006,7 @@ export default function BeneficiaryListPage() {
       </div>
 
       {/* Stats (Grid: 4 Cards for Admin / 3 Cards for Staff) */}
-      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${['admin','mswdo_admin'].includes(user?.role) ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${isAdminOrSector ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
         <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 p-4 sm:p-6">
           <p className="mb-2 text-sm font-medium text-slate-600">Total Records</p>
           <p className="text-2xl font-bold text-blue-600 sm:text-3xl">{loading ? '...' : filteredBeneficiaries.length}</p>
@@ -982,7 +1021,7 @@ export default function BeneficiaryListPage() {
         </div>
         
         {/* Pending Beneficiaries Stat Box - Admin Only */}
-        {['admin','mswdo_admin'].includes(user?.role) && (
+        {isAdminOrSector && (
           <div 
             onClick={openPendingModal}
             className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-6 border border-amber-200 cursor-pointer hover:shadow-md transition-all group"
@@ -1097,7 +1136,7 @@ export default function BeneficiaryListPage() {
                   }`}
                 >
                   <Calendar className="w-4 h-4" />
-                  {user?.role === 'mswdo_admin' ? 'MSWDO Attendance' : 'DSWD Attendance'}
+                  {isMswdoAdmin ? 'MSWDO Attendance' : (isSeniorAdmin || isPwdAdmin) ? 'PWD and Senior Attendance' : 'DSWD Attendance'}
                   {attendanceData?.stats ? (
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                       attendanceData.stats.compliance_rate >= 80 
@@ -1112,19 +1151,17 @@ export default function BeneficiaryListPage() {
                     <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
                   ) : null}
                 </button>
-                {user?.role !== 'mswdo_admin' && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setModalTab('distributions')}
-                      className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
-                        modalTab === 'distributions'
-                          ? 'border-emerald-600 text-emerald-700'
-                          : 'border-transparent text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      <Package className="w-4 h-4" />
-                      DSWD Distributions
+                <button
+                  type="button"
+                  onClick={() => setModalTab('distributions')}
+                  className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
+                    modalTab === 'distributions'
+                      ? 'border-emerald-600 text-emerald-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Package className="w-4 h-4" />
+                  {isMswdoAdmin ? 'MSWDO Distributions' : (isSeniorAdmin || isPwdAdmin) ? 'PWD and Senior Distributions' : 'DSWD Distributions'}
                       {distributionsData?.stats ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
                           ₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH')} ({distributionsData.stats.released_count})
@@ -1132,27 +1169,27 @@ export default function BeneficiaryListPage() {
                       ) : distributionsLoading ? (
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
                       ) : null}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModalTab('programs')}
-                      className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
-                        modalTab === 'programs'
-                          ? 'border-purple-600 text-purple-700'
-                          : 'border-transparent text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      <Layers className="w-4 h-4" />
-                      DSWD Programs
-                      {enrollmentsData?.stats ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
-                          {enrollmentsData.stats.active_count} Aktibo
-                        </span>
-                      ) : enrollmentsLoading ? (
-                        <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span>
-                      ) : null}
-                    </button>
-                  </>
+                </button>
+                {!isSectorAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setModalTab('programs')}
+                    className={`flex items-center gap-2 pb-3 pt-2 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap ${
+                      modalTab === 'programs'
+                        ? 'border-purple-600 text-purple-700'
+                        : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <Layers className="w-4 h-4" />
+                    DSWD Programs
+                    {enrollmentsData?.stats ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                        {enrollmentsData.stats.active_count} Aktibo
+                      </span>
+                    ) : enrollmentsLoading ? (
+                      <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span>
+                    ) : null}
+                  </button>
                 )}
               </div>
 
@@ -1182,14 +1219,13 @@ export default function BeneficiaryListPage() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <h5 className="font-bold text-sm text-slate-900">
-                            {user?.role === 'mswdo_admin' ? 'MSWDO Attendance Compliance Record' : 'DSWD Attendance Compliance Record'}
+                            {isMswdoAdmin ? 'MSWDO Attendance Compliance Record' : (isSeniorAdmin || isPwdAdmin) ? 'PWD and Senior Attendance Compliance Record' : 'DSWD Attendance Compliance Record'}
                           </h5>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                            user?.role === 'mswdo_admin'
-                              ? 'text-purple-700 bg-purple-100/70 border-purple-200'
+                            (user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff') ? 'text-purple-700 bg-purple-100/70 border-purple-200'
                               : 'text-blue-700 bg-blue-100/70 border-blue-200'
                           }`}>
-                            {user?.role === 'mswdo_admin' ? 'MSWDO & Shared Meetings' : 'DSWD Meetings Only'}
+                            {isMswdoAdmin ? 'MSWDO Announcements & Meetings' : (isSeniorAdmin || isPwdAdmin) ? 'PWD and Senior Meetings' : 'DSWD Meetings Only'}
                           </span>
                           {attendanceData?.stats && (
                             <span className={`px-2 py-0.5 text-xs font-black rounded-full ${
@@ -1228,7 +1264,7 @@ export default function BeneficiaryListPage() {
                     </button>
                   </div>
 
-                  {user?.role !== 'mswdo_admin' && (
+                  {!isSectorAdmin && (
                     <>
                       {/* Claimed Distributions Quick KPI Banner inside Profile Tab */}
                       <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-cyan-50 rounded-2xl p-4 border border-emerald-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
@@ -1347,7 +1383,7 @@ export default function BeneficiaryListPage() {
                     </div>
 
                     {/* If Admin: show RFID registration form */}
-                    {['admin','mswdo_admin'].includes(user?.role) ? (
+                    {isAdminOrSector ? (
                       <form onSubmit={handleSaveRfidDirect} className="pt-2 border-t border-slate-100 space-y-3">
                         <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                           Register / Update RFID Card Number
@@ -1501,7 +1537,7 @@ export default function BeneficiaryListPage() {
                   </div>
 
                   {/* Payout & Disbursement Details */}
-                  {!isMswdoAdmin && (
+                  {!isSectorAdmin && (
                   <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
                     <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                       <CreditCard className="w-3.5 h-3.5 text-purple-600" /> Payout & Disbursement Details
@@ -1842,11 +1878,13 @@ export default function BeneficiaryListPage() {
                           <div>
                             <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                               <Calendar className="w-4 h-4 text-blue-600" />
-                              {user?.role === 'mswdo_admin' ? 'Talaan ng mga Pulong mula sa MSWDO' : 'Talaan ng Lahat ng Meetings'} ({attendanceData?.records?.length || 0})
+                              {isMswdoAdmin ? 'Talaan ng mga Pabatid at Pulong ng MSWDO' : (isSeniorAdmin || isPwdAdmin) ? 'Talaan ng mga Pulong para sa PWD at Senior' : 'Talaan ng Lahat ng Meetings'} ({attendanceData?.records?.length || 0})
                             </h4>
                             <p className="text-xs text-slate-500 mt-0.5">
-                              {user?.role === 'mswdo_admin'
-                                ? 'Ipinapakita ang mga pagpupulong mula sa MSWDO at mga anunsyo ng DSWD na may pabatid sa MSWDO (+ MSWDO Notified).'
+                              {isMswdoAdmin
+                                ? 'Ipinapakita ang mga opisyal na anunsyo at pagpupulong mula sa MSWDO para sa benepisyaryong ito.'
+                                : (isSeniorAdmin || isPwdAdmin)
+                                ? 'Ipinapakita ang mga opisyal na pagpupulong para sa PWD at Senior Citizens sa munisipyo at barangay.'
                                 : <>Listahan ng mga opisyal na pagpupulong para sa kategoryang <strong>{viewingBeneficiary.category}</strong></>}
                             </p>
                           </div>
@@ -1856,11 +1894,10 @@ export default function BeneficiaryListPage() {
                           <div className="p-8 text-center">
                             <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                             <p className="text-sm font-bold text-slate-700">
-                              {user?.role === 'mswdo_admin' ? 'Walang Nakatalang Pulong' : 'Walang Nakatalang Meetings'}
+                              {['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role) ? 'Walang Nakatalang Pulong' : 'Walang Nakatalang Meetings'}
                             </p>
                             <p className="text-xs text-slate-500 mt-1">
-                              {user?.role === 'mswdo_admin'
-                                ? 'Wala pang nai-publish na pulong ang MSWDO o pabatid mula sa DSWD para sa benepisyaryong ito.'
+                              {(user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff') ? 'Wala pang nai-publish na pulong ang MSWDO o pabatid mula sa DSWD para sa benepisyaryong ito.'
                                 : 'Wala pang nai-publish na pulong na tumutugma sa barangay at kategorya ng benepisyaryong ito.'}
                             </p>
                           </div>
@@ -2056,7 +2093,7 @@ export default function BeneficiaryListPage() {
                         <div className="flex items-center justify-between">
                           <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                             <Package className="w-4 h-4 text-emerald-600" />
-                            {user?.role === 'mswdo_admin' ? 'Talaan ng Na-claim na Ayuda sa MSWDO' : 'Talaan ng Na-claim na Ayuda sa DSWD'} ({distributionsData?.transactions?.length || 0})
+                            {isMswdoAdmin ? 'Talaan ng Na-claim na Ayuda sa MSWDO' : (isSeniorAdmin || isPwdAdmin) ? 'Talaan ng Na-claim na Ayuda sa PWD at Senior' : 'Talaan ng Na-claim na Ayuda sa DSWD'} ({distributionsData?.transactions?.length || 0})
                           </h4>
                           <span className="text-xs text-slate-400">
                             Beneficiary: <strong className="text-slate-700">{viewingBeneficiary.beneficiary_id_code}</strong>
@@ -2262,7 +2299,7 @@ export default function BeneficiaryListPage() {
                         <div className="flex items-center justify-between">
                           <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                             <Layers className="w-4 h-4 text-purple-600" />
-                            {user?.role === 'mswdo_admin' ? 'Mga Programang Sinalihan sa MSWDO (Municipal)' : 'Mga Programang Sinalihan sa DSWD (National)'} ({enrollmentsData?.enrollments?.length || 0})
+                            {(user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff') ? 'Mga Programang Sinalihan sa MSWDO (Municipal)' : 'Mga Programang Sinalihan sa DSWD (National)'} ({enrollmentsData?.enrollments?.length || 0})
                           </h4>
                           <span className="text-xs text-slate-400">
                             Beneficiary: <strong className="text-slate-700">{viewingBeneficiary.beneficiary_id_code}</strong>
@@ -2461,7 +2498,7 @@ export default function BeneficiaryListPage() {
                 )}
 
                 {/* ── Payout & Disbursement Details ── */}
-                {!isMswdoAdmin && (
+                {!isSectorAdmin && (
                 <div className="border-t border-slate-200 pt-4">
                   <h4 className="text-sm font-bold text-purple-700 mb-3 flex items-center gap-1.5">
                     <CreditCard className="w-4 h-4" /> Payout & Disbursement
@@ -2572,7 +2609,7 @@ export default function BeneficiaryListPage() {
       )}
 
       {/* Pending Beneficiaries Modal (Admin Only) */}
-      {showPendingModal && ['admin','mswdo_admin'].includes(user?.role) && (
+      {showPendingModal && isAdminOrSector && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
@@ -2584,9 +2621,13 @@ export default function BeneficiaryListPage() {
                 <div>
                   <h2 className="text-2xl font-bold text-slate-900">Pending Beneficiary Applications</h2>
                   <p className="text-sm text-slate-600 mt-0.5">
-                    {isMswdoAdmin 
-                      ? 'Review, verify, and approve pending Senior Citizens and PWD applicant submissions (4Ps is processed by DSWD).'
-                      : 'Review, verify, and approve pending applicant submissions (4Ps, Senior Citizens, and PWD).'}
+                    {isSeniorAdmin
+                      ? 'Review, verify, and approve pending Senior Citizens (Social Pension) applicant submissions.'
+                      : isPwdAdmin
+                        ? 'Review, verify, and approve pending Persons with Disabilities (PWD) applicant submissions.'
+                        : isMswdoAdmin 
+                          ? 'Review, verify, and approve pending Senior Citizens and PWD applicant submissions (4Ps is processed by DSWD).'
+                          : 'Review, verify, and approve pending applicant submissions (4Ps, Senior Citizens, and PWD).'}
                   </p>
                 </div>
               </div>
@@ -2695,7 +2736,7 @@ export default function BeneficiaryListPage() {
       )}
 
       {/* ADMIN DETAIL REVIEW MODAL */}
-      {selectedApp && ['admin','mswdo_admin'].includes(user?.role) && (
+      {selectedApp && isAdminOrSector && (
         <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/60 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/50">
@@ -2774,7 +2815,27 @@ export default function BeneficiaryListPage() {
                 <div className="space-y-4">
                   <h4 className="font-bold text-sm text-slate-900 uppercase tracking-wider">Review Actions</h4>
                   
-                  {isMswdoAdmin && is4PsCategory(selectedApp.category) ? (
+                  {isSeniorAdmin && !String(selectedApp.category || '').toLowerCase().includes('senior') ? (
+                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-300 text-center space-y-2">
+                      <div className="inline-flex p-2 bg-amber-100 text-amber-800 rounded-full">
+                        <ShieldAlert className="w-6 h-6" />
+                      </div>
+                      <p className="text-sm font-bold text-amber-900">Senior Citizen Admin Authority Scope</p>
+                      <p className="text-xs text-amber-700">
+                        You are logged in as Senior Citizen Admin (OSCA). You can only review and approve <strong>Senior Citizens</strong> applications.
+                      </p>
+                    </div>
+                  ) : isPwdAdmin && !['pwd', 'disabilit'].some(k => String(selectedApp.category || '').toLowerCase().includes(k)) ? (
+                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-300 text-center space-y-2">
+                      <div className="inline-flex p-2 bg-amber-100 text-amber-800 rounded-full">
+                        <ShieldAlert className="w-6 h-6" />
+                      </div>
+                      <p className="text-sm font-bold text-amber-900">PWD Admin Authority Scope</p>
+                      <p className="text-xs text-amber-700">
+                        You are logged in as PWD Admin (PDAO). You can only review and approve <strong>Persons with Disabilities (PWD)</strong> applications.
+                      </p>
+                    </div>
+                  ) : isMswdoAdmin && is4PsCategory(selectedApp.category) ? (
                     <div className="p-4 bg-amber-50 rounded-2xl border border-amber-300 text-center space-y-2">
                       <div className="inline-flex p-2 bg-amber-100 text-amber-800 rounded-full">
                         <ShieldAlert className="w-6 h-6" />
@@ -2991,7 +3052,12 @@ export default function BeneficiaryListPage() {
                     <div className="border-b border-slate-200 pb-3 text-center space-y-0.5">
                       <p className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">Republic of the Philippines</p>
                       <h4 className="font-black text-sm text-blue-950 uppercase tracking-wide">
-                        {user?.role === 'mswdo_admin' ? 'Municipal Social Welfare & Development Office' : 'DSWD / MSWDO Bongabong'}
+                        {user?.role === 'senior_citizen_admin' 
+                          ? 'Office of Senior Citizens Affairs (OSCA)' 
+                          : user?.role === 'pwd_admin' 
+                            ? 'Persons with Disability Affairs Office (PDAO)' 
+                            : (user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff') ? 'Municipal Social Welfare & Development Office' 
+                              : 'DSWD / MSWDO Bongabong'}
                       </h4>
                       <div className="inline-block px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase tracking-wider mt-1">
                         Temporary Digital ID • Claim Pass
@@ -3084,7 +3150,7 @@ export default function BeneficiaryListPage() {
 
             {/* Modal Actions */}
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
-              {['admin', 'mswdo_admin', 'staff'].includes(user?.role) && qrPassData && (
+              {['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff'].includes(user?.role) && qrPassData && (
                 <button
                   type="button"
                   onClick={handleRegenerateQrPass}

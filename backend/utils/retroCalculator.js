@@ -34,6 +34,9 @@ async function calculateRetroForBeneficiary({
   models,
   transaction,
 }) {
+  if (!programId) {
+    return { retro_amount: 0, retro_periods: 0, retro_details: [] };
+  }
   const { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay } = models;
 
   const retro_details = [];

@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { BenefitProgram, Enrollment, Beneficiary, Barangay, DistributionEvent, DistributionTransaction, AuditLog, Notification, SMSNotification, User } = require('../db');
-const { isMswdoRole, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory, isMswdoEligibility } = require('../utils/roles');
+const { isMswdoRole, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory, isMswdoEligibility, getOfficeBrand } = require('../utils/roles');
 const { processQueuedSms } = require('../utils/smsDispatcher');
 
 const router = express.Router();
@@ -91,7 +91,8 @@ const notifyProgramEnrolledBeneficiaries = async (program, beneficiaryIds = []) 
 
       const phoneNumber = b.contact_number || b.User?.contact_number || null;
       if (phoneNumber && !alreadySmsSentIds.has(Number(b.id))) {
-        const smsMessage = `EBMS [${program.agency || 'DSWD'} - Brgy. ${bgyName}]: Magandang araw ${fullName}! Kayo po ay opisyal nang naka-enroll sa programang "${program.name}" (${program.eligibility_category || 'General'}).${dateInfo}${descInfo} Hintayin ang susunod na abiso para sa schedule ng pamamahagi.`;
+        const officeBrand = getOfficeBrand(program.agency || program);
+        const smsMessage = `[${officeBrand} - Brgy. ${bgyName}]: Magandang araw ${fullName}! Kayo po ay opisyal nang naka-enroll sa programang "${program.name}" (${program.eligibility_category || 'General'}).${dateInfo}${descInfo} Hintayin ang susunod na abiso para sa schedule ng pamamahagi.`;
         smsPayloads.push({
           beneficiary_id: b.id,
           announcement_id: null,

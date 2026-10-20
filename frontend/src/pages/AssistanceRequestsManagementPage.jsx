@@ -36,9 +36,9 @@ const STATUS_CONFIG = {
 
 export default function AssistanceRequestsManagementPage() {
   const { user } = useAuth();
-  const isMswdo = user?.role === 'mswdo_admin';
+  const isMswdo = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
   const isBarangayStaff = user?.role === 'barangay' || user?.role === 'staff';
-  const canManageStatus = user?.role === 'admin' || user?.role === 'mswdo_admin';
+  const canManageStatus = ['admin', 'mswdo_admin', 'mswdo_staff'].includes(user?.role);
 
   // Unified Requests State
   const [requests, setRequests] = useState([]);
@@ -255,6 +255,12 @@ export default function AssistanceRequestsManagementPage() {
 
   // Filter requests locally by search, status, type, priority
   const filteredRequests = requests.filter(req => {
+    // Strict agency isolation:
+    // MSWDO admin and staff must strictly see only MSWDO requests
+    if (isMswdo && req.agency !== 'MSWDO') return false;
+    // DSWD staff and barangay must never see MSWDO requests
+    if (!isMswdo && user?.role !== 'admin' && req.agency === 'MSWDO') return false;
+
     const name = `${req.Beneficiary?.first_name || ''} ${req.Beneficiary?.last_name || ''}`.toLowerCase();
     const subject = (req.subject || '').toLowerCase();
     const desc = (req.description || '').toLowerCase();
@@ -508,7 +514,7 @@ export default function AssistanceRequestsManagementPage() {
                       <td className="py-4 px-5 font-mono font-bold text-slate-900">
                         REQ-#{req.id}
                         <span className="block text-[10px] font-normal text-slate-400">
-                          {new Date(req.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {(() => { const d = req.createdAt || req.created_at; return (d && !isNaN(new Date(d).getTime())) ? new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'; })()}
                         </span>
                       </td>
 
@@ -733,7 +739,7 @@ export default function AssistanceRequestsManagementPage() {
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">Date Submitted</span>
-                  <span className="font-semibold text-slate-800">{formatDate(selectedRequest.created_at)}</span>
+                  <span className="font-semibold text-slate-800">{formatDate(selectedRequest.createdAt || selectedRequest.created_at)}</span>
                 </div>
                 {selectedRequest.User && (
                   <div className="col-span-2">

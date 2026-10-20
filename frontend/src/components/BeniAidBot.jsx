@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Bot, MessageCircle, X, Send, Sparkles, HelpCircle, ChevronDown, RotateCcw } from 'lucide-react';
+import { Bot, X, Send, Sparkles, RotateCcw } from 'lucide-react';
 import { API_URL } from '../config/api';
 
 const DEFAULT_SUGGESTIONS = [
@@ -29,6 +29,38 @@ export default function BeniAidBot() {
   const [suggestedQuestions, setSuggestedQuestions] = useState(DEFAULT_SUGGESTIONS);
   const messagesEndRef = useRef(null);
 
+  // Draggable position state
+  const [position, setPosition] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return {
+        x: Math.max(16, window.innerWidth - 76),
+        y: Math.max(16, window.innerHeight - 76)
+      };
+    }
+    return { x: 500, y: 500 };
+  });
+
+  const dragRef = useRef({
+    isDragging: false,
+    hasMoved: false,
+    startX: 0,
+    startY: 0,
+    posX: 0,
+    posY: 0,
+  });
+
+  // Clamp position on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setPosition((prev) => ({
+        x: Math.min(Math.max(16, prev.x), window.innerWidth - 76),
+        y: Math.min(Math.max(16, prev.y), window.innerHeight - 76)
+      }));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -38,6 +70,50 @@ export default function BeniAidBot() {
       scrollToBottom();
     }
   }, [messages, isOpen]);
+
+  // Pointer dragging handlers
+  const handlePointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (err) {}
+    dragRef.current = {
+      isDragging: true,
+      hasMoved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      posX: position.x,
+      posY: position.y,
+    };
+  };
+
+  const handlePointerMove = (e) => {
+    if (!dragRef.current.isDragging) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    if (Math.hypot(dx, dy) > 4) {
+      dragRef.current.hasMoved = true;
+      const newX = Math.max(12, Math.min(window.innerWidth - 68, dragRef.current.posX + dx));
+      const newY = Math.max(12, Math.min(window.innerHeight - 68, dragRef.current.posY + dy));
+      setPosition({ x: newX, y: newY });
+    }
+  };
+
+  const handlePointerUp = (e) => {
+    if (dragRef.current.isDragging) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      if (!dragRef.current.hasMoved) {
+        setIsOpen((prev) => !prev);
+      }
+      dragRef.current.isDragging = false;
+    }
+  };
+
+  const handlePointerCancel = () => {
+    dragRef.current.isDragging = false;
+  };
 
   const handleSend = async (textToSend) => {
     const query = (textToSend || input).trim();
@@ -97,11 +173,10 @@ export default function BeniAidBot() {
 
   const renderFormattedText = (text) => {
     return text.split('\n').map((line, idx) => {
-      // Bold rendering **text**
       const parts = line.split(/(\*\*.*?\*\*)/g);
       const renderedParts = parts.map((part, pIdx) => {
         if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={pIdx} className="font-bold text-slate-900">{part.slice(2, -2)}</strong>;
+          return <strong key={pIdx} className="font-semibold text-slate-900">{part.slice(2, -2)}</strong>;
         }
         return part;
       });
@@ -115,32 +190,73 @@ export default function BeniAidBot() {
     });
   };
 
+  // Compute smart coordinates for the chat window clamped to screen
+  const chatWidth = typeof window !== 'undefined' ? Math.min(390, window.innerWidth - 24) : 390;
+  const chatHeight = typeof window !== 'undefined' ? Math.min(560, window.innerHeight - 30) : 560;
+
+  let chatLeft = position.x - chatWidth + 56;
+  if (chatLeft < 12) chatLeft = 12;
+  if (typeof window !== 'undefined' && chatLeft + chatWidth > window.innerWidth - 12) {
+    chatLeft = Math.max(12, window.innerWidth - chatWidth - 12);
+  }
+
+  let chatTop = position.y - chatHeight - 12;
+  if (chatTop < 12) {
+    if (typeof window !== 'undefined' && position.y + 68 + chatHeight <= window.innerHeight - 12) {
+      chatTop = position.y + 68;
+    } else {
+      chatTop = Math.max(12, (typeof window !== 'undefined' ? window.innerHeight : 600) - chatHeight - 12);
+    }
+  }
+
   return (
-    <div className="fixed bottom-5 right-5 z-[9999] font-sans antialiased">
-      {/* Floating Launcher Button */}
-      {!isOpen && (
+    <>
+      {/* Floating Draggable Bot Icon Button */}
+      <div
+        style={{
+          position: 'fixed',
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          zIndex: 9999,
+          touchAction: 'none',
+        }}
+        className="font-sans antialiased"
+      >
         <button
-          onClick={() => setIsOpen(true)}
-          className="group relative flex items-center gap-2.5 bg-gradient-to-r from-[#00338D] to-[#004bb5] text-white px-4 py-3.5 rounded-full shadow-2xl hover:shadow-[#00338D]/40 hover:scale-105 active:scale-95 transition-all duration-300"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          style={{ touchAction: 'none' }}
+          className="group relative flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-tr from-[#002870] via-[#00338D] to-[#0052cc] text-white shadow-2xl hover:shadow-[#00338D]/50 cursor-grab active:cursor-grabbing hover:scale-105 active:scale-95 transition-transform duration-150 select-none border-2 border-white/20"
           aria-label="Open BeniAid Chatbot"
+          title="BeniAid Assistant (Maaaring i-drag kahit saan)"
         >
-          <div className="relative">
-            <Bot className="w-6 h-6 text-white animate-pulse" />
-            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+          <div className="relative flex items-center justify-center">
+            <Bot className="w-7 h-7 text-white pointer-events-none" />
+            <span className="absolute -top-1 -right-1 flex h-3 w-3 pointer-events-none">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-white"></span>
             </span>
           </div>
-          <span className="font-semibold text-sm tracking-wide hidden sm:inline">BeniAid Assistant</span>
-          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full hidden sm:inline">Bot</span>
         </button>
-      )}
+      </div>
 
-      {/* Chat Window */}
+      {/* Chat Window Modal */}
       {isOpen && (
-        <div className="flex flex-col w-[92vw] sm:w-[390px] h-[560px] max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div
+          style={{
+            position: 'fixed',
+            left: `${chatLeft}px`,
+            top: `${chatTop}px`,
+            zIndex: 9999,
+            width: `${chatWidth}px`,
+            height: `${chatHeight}px`,
+          }}
+          className="flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200 font-sans antialiased"
+        >
           {/* Header */}
-          <div className="bg-gradient-to-r from-[#00338D] via-[#0047AB] to-[#002870] text-white p-3.5 flex items-center justify-between shadow-md">
+          <div className="bg-gradient-to-r from-[#00338D] via-[#0047AB] to-[#002870] text-white p-3.5 flex items-center justify-between shadow-md select-none">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white p-0.5 flex items-center justify-center border border-white/20 shadow-sm shrink-0">
                 <img src="/beniaid-logo.png" alt="BeniAid Bot" className="w-full h-full rounded-full object-contain" />
@@ -182,20 +298,20 @@ export default function BeniAidBot() {
                 className={`flex gap-2.5 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {msg.sender === 'bot' && (
-                  <div className="w-7 h-7 rounded-lg bg-[#00338D] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                  <div className="w-7 h-7 rounded-lg bg-[#00338D] text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
                     <Bot className="w-4 h-4 text-emerald-300" />
                   </div>
                 )}
                 <div
-                  className={`max-w-[82%] rounded-2xl p-3 text-xs leading-relaxed shadow-sm ${
+                  className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-xs shadow-xs leading-relaxed ${
                     msg.sender === 'user'
-                      ? 'bg-[#00338D] text-white rounded-br-xs font-medium'
+                      ? 'bg-[#00338D] text-white rounded-br-xs'
                       : 'bg-white text-slate-700 border border-slate-200/90 rounded-bl-xs'
                   }`}
                 >
-                  <div>{renderFormattedText(msg.text)}</div>
+                  <div className="break-words">{renderFormattedText(msg.text)}</div>
                   <div
-                    className={`text-[9px] mt-1.5 text-right ${
+                    className={`text-[9px] mt-1 text-right ${
                       msg.sender === 'user' ? 'text-white/60' : 'text-slate-400'
                     }`}
                   >
@@ -271,7 +387,6 @@ export default function BeniAidBot() {
           </form>
         </div>
       )}
-    </div>
+    </>
   );
 }
-

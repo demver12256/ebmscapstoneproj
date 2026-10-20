@@ -25,7 +25,7 @@ router.get('/contacts', async (req, res, next) => {
     const currentUser = req.user;
     let whereClause = { status: 'active' };
 
-    if (['admin','mswdo_admin'].includes(currentUser.role)) {
+    if (['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(currentUser.role)) {
       // Admin can message all staff/barangay users and only APPROVED beneficiaries
       const approvedBeneficiaryUserIds = (await Beneficiary.findAll({
         where: { status: 'Approved' },
@@ -64,7 +64,7 @@ router.get('/contacts', async (req, res, next) => {
 
       whereClause[Op.or] = [
         // Admin (any barangay)
-        { role: { [Op.in]: ['admin','mswdo_admin'] } },
+        { role: { [Op.in]: ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'] } },
         // Staff from the SAME barangay only
         { 
           role: { [Op.in]: ['staff','barangay'] },
@@ -88,7 +88,7 @@ router.get('/contacts', async (req, res, next) => {
       if (beneficiaryBarangayId) {
         whereClause[Op.or] = [
           // System Administrator
-          { role: { [Op.in]: ['admin','mswdo_admin'] } },
+          { role: { [Op.in]: ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'] } },
           // Staff from their registered barangay
           { 
             role: { [Op.in]: ['staff','barangay'] },
@@ -97,7 +97,7 @@ router.get('/contacts', async (req, res, next) => {
         ];
       } else {
         // If no barangay assigned yet, they can still contact System Admin
-        whereClause.role = { [Op.in]: ['admin','mswdo_admin'] };
+        whereClause.role = { [Op.in]: ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'] };
       }
     } else {
       return res.json({ success: true, data: [] });
@@ -514,7 +514,7 @@ router.post('/', async (req, res, next) => {
     const receiverRole = receiver.role;
 
     // 1. Admin can message staff, barangay, and beneficiaries
-    if (['admin','mswdo_admin'].includes(currentRole)) {
+    if (['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(currentRole)) {
       if (!['staff', 'barangay', 'beneficiary'].includes(receiverRole)) {
         return res.status(403).json({ success: false, message: 'Admin can only message staff, barangay, and beneficiary users' });
       }
@@ -533,7 +533,7 @@ router.post('/', async (req, res, next) => {
         });
       }
 
-      if (['admin','mswdo_admin'].includes(receiverRole)) {
+      if (['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(receiverRole)) {
         // Allowed
       } else if (receiverRole === 'staff' || receiverRole === 'barangay') {
         const receiverBarangayId = await getUserBarangayId(receiver);
@@ -570,7 +570,7 @@ router.post('/', async (req, res, next) => {
 
       const beneficiaryBarangayId = ben.barangay_id || req.user.barangay_id;
 
-      if (['admin','mswdo_admin'].includes(receiverRole)) {
+      if (['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(receiverRole)) {
         // Allowed to message System Administrator
       } else if (receiverRole === 'staff' || receiverRole === 'barangay') {
         if (!beneficiaryBarangayId) {

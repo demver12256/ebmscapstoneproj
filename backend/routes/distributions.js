@@ -15,21 +15,79 @@ const {
   AuditLog,
   sequelize,
 } = require('../db');
-const { isMswdoRole } = require('../utils/roles');
+const { isMswdoRole, getOfficeBrand } = require('../utils/roles');
 const { calculateRetroForBeneficiary, calculateRetroPreview } = require('../utils/retroCalculator');
 const { isNonCashProgram, getNonCashDetails } = require('../utils/nonCashPrograms');
 const { processQueuedSms } = require('../utils/smsDispatcher');
 
 const router = express.Router();
+
+// ── Category & Sitio matching helpers ──
+function buildCategoryWhere(targetCategory) {
+  if (!targetCategory || targetCategory === 'All' || targetCategory === 'All Categories') return null;
+  const lower = String(targetCategory).toLowerCase();
+  if (lower.includes('senior')) {
+    return { category: { [Op.like]: '%Senior%' } };
+  }
+  if (lower.includes('pwd') || lower.includes('disabilit')) {
+    return {
+      [Op.or]: [
+        { category: { [Op.like]: '%PWD%' } },
+        { category: { [Op.like]: '%Disabilit%' } },
+      ]
+    };
+  }
+  if (lower.includes('4ps') || lower.includes('pantawid')) {
+    return {
+      [Op.or]: [
+        { category: { [Op.like]: '%4Ps%' } },
+        { category: { [Op.like]: '%Pantawid%' } },
+      ]
+    };
+  }
+  return { category: { [Op.like]: `%${targetCategory}%` } };
+}
+
+function normalizeSitioName(val) {
+  return String(val || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^(sitio|purok|brgy\.?|barangay)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isCategoryMatch(beneficiaryCategory, targetCategory) {
+  if (!targetCategory || targetCategory === 'All' || targetCategory === 'All Categories') return true;
+  if (!beneficiaryCategory) return false;
+  const bLower = String(beneficiaryCategory).toLowerCase();
+  const tLower = String(targetCategory).toLowerCase();
+  if (tLower.includes('senior')) return bLower.includes('senior');
+  if (tLower.includes('pwd') || tLower.includes('disabilit')) return bLower.includes('pwd') || bLower.includes('disabilit');
+  if (tLower.includes('4ps') || tLower.includes('pantawid')) return bLower.includes('4ps') || bLower.includes('pantawid');
+  return bLower.includes(tLower);
+}
+
 router.use(authenticate);
 
 // ── Middleware: Ensure staff can only access their assigned barangay ──
 const restrictToAssignedBarangay = async (req, res, next) => {
   console.log('[RESTRICT_BARANGAY] Checking access for user:', req.user.role, req.user.id);
 
-  if (['admin', 'mswdo_admin'].includes(req.user.role)) {
+  if (['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role)) {
     console.log('[RESTRICT_BARANGAY] Admin - access granted');
     return next(); // Admins have full access
+  }
+
+  if (req.user.role === 'mswdo_staff') {
+    const eventId = req.params.id;
+    if (!eventId) return next();
+    const event = await DistributionEvent.findByPk(eventId);
+    if (!event) return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    if (event.agency !== 'MSWDO') {
+      return res.status(403).json({ success: false, message: 'Access denied. MSWDO Staff can only access MSWDO events.' });
+    }
+    return next();
   }
 
   if (req.user.role === 'staff' || req.user.role === 'barangay') {
@@ -75,6 +133,38 @@ const generateTransactionNumber = (eventId, index) => {
 //  DISTRIBUTION EVENTS
 // ══════════════════════════════════════════════════
 
+
+// ── GET /sitios ── Get available registered sitios in a barangay
+router.get('/sitios', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+  try {
+    const { barangay_id } = req.query;
+    const where = { status: 'Approved' };
+    if (barangay_id && barangay_id !== 'all' && barangay_id !== '') {
+      where.barangay_id = parseInt(barangay_id);
+    }
+    const bens = await Beneficiary.findAll({
+      where,
+      attributes: ['sitio'],
+    });
+    const sitioMap = new Map();
+    bens.forEach(b => {
+      const raw = String(b.sitio || '').trim();
+      if (!raw) return;
+      const key = normalizeSitioName(raw) || raw.toLowerCase();
+      if (!sitioMap.has(key)) {
+        sitioMap.set(key, { sitio: raw, count: 0 });
+      }
+      sitioMap.get(key).count += 1;
+    });
+    res.json({
+      success: true,
+      data: Array.from(sitioMap.values()),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── GET /events ── List distribution events
 router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (req, res, next) => {
   try {
@@ -110,14 +200,14 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
     }
 
     // Apply barangay filter if provided (admin only)
-    if (req.query.barangay_id && req.query.barangay_id !== 'all' && ['admin', 'mswdo_admin'].includes(req.user.role)) {
+    if (req.query.barangay_id && req.query.barangay_id !== 'all' && ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role)) {
       where.barangay_id = parseInt(req.query.barangay_id);
     }
 
     // Agency-level scoping: MSWDO sees ONLY MSWDO distribution events; DSWD Admin sees ONLY DSWD events
-    if (req.user.role === 'mswdo_admin') {
+    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') {
       where.agency = 'MSWDO';
-    } else if (req.user.role === 'admin') {
+    } else if (req.user.role === 'admin' || req.user.role === 'staff' || req.user.role === 'barangay') {
       where.agency = 'DSWD';
     }
     // Staff & Barangay see events for their assigned barangay regardless of agency (both DSWD and MSWDO)
@@ -159,7 +249,7 @@ router.get('/events/:id', authorize('admin', 'staff', 'barangay', 'beneficiary')
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): MSWDO Admin cannot view or access DSWD distribution events.' });
     }
     if (req.user.role === 'admin' && event.agency === 'MSWDO') {
@@ -191,13 +281,14 @@ router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'ba
     let programId = req.query.program_id;
     let barangayId = req.query.barangay_id;
     let target_category = req.query.target_category;
+    let target_sitio = req.query.target_sitio || req.query.sitio;
 
     if (req.params.id && req.params.id !== 'new') {
       const ev = await DistributionEvent.findByPk(req.params.id);
       if (!ev) {
         return res.status(404).json({ success: false, message: 'Distribution event not found' });
       }
-      if (req.user.role === 'mswdo_admin' && ev.agency !== 'MSWDO') {
+      if (isMswdoRole(req.user.role) && ev.agency !== 'MSWDO') {
         return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot access DSWD distribution events.' });
       }
       if (req.user.role === 'admin' && ev.agency === 'MSWDO') {
@@ -206,36 +297,51 @@ router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'ba
       if (!programId) programId = ev.program_id;
       if (!barangayId) barangayId = ev.barangay_id;
       if (!target_category) target_category = ev.target_category;
+      if (!target_sitio) target_sitio = ev.target_sitio;
     }
 
-    if (!programId || !barangayId) {
-      return res.status(400).json({ success: false, message: 'program_id and barangay_id are required' });
-    }
-
-    const program = await BenefitProgram.findByPk(programId);
-    if (!program) {
-      return res.status(404).json({ success: false, message: 'Program not found' });
-    }
-
-    // MSWDO Admin cannot access beneficiaries for DSWD programs/events
-    if (req.user.role === 'mswdo_admin') {
-      if (program.agency !== 'MSWDO') {
+    let program = null;
+    if (programId) {
+      program = await BenefitProgram.findByPk(programId);
+      if (!program) {
+        return res.status(404).json({ success: false, message: 'Program not found' });
+      }
+      if (isMswdoRole(req.user.role) && program.agency !== 'MSWDO') {
         return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot access eligible beneficiaries for DSWD programs.' });
       }
-    }
-    if (req.user.role === 'admin' && program.agency === 'MSWDO') {
-      return res.status(403).json({ success: false, message: 'Access Denied: DSWD Admin cannot access eligible beneficiaries for MSWDO programs.' });
+      if (req.user.role === 'admin' && program.agency === 'MSWDO') {
+        return res.status(403).json({ success: false, message: 'Access Denied: DSWD Admin cannot access eligible beneficiaries for MSWDO programs.' });
+      }
+    } else if (!isMswdoRole(req.user.role) && req.user.role !== 'admin') {
+      return res.status(400).json({ success: false, message: 'program_id is required' });
     }
 
-    // Step 1: Fetch ALL approved beneficiaries in the selected barangay
-    // Optionally filtered by target_category if provided
+    // Step 1: Fetch approved beneficiaries in selected barangay (or all barangays if 'all' / omitted)
     const beneficiaryWhere = {
-      barangay_id: barangayId,
       status: 'Approved',
     };
 
-    if (target_category) {
-      beneficiaryWhere.category = { [Op.like]: `%${target_category}%` };
+    if (barangayId && barangayId !== 'all' && barangayId !== '') {
+      beneficiaryWhere.barangay_id = parseInt(barangayId);
+    }
+
+    if (target_category && target_category !== 'All' && target_category !== 'All Categories') {
+      const catWhere = buildCategoryWhere(target_category);
+      if (catWhere) {
+        beneficiaryWhere[Op.and] = beneficiaryWhere[Op.and] || [];
+        beneficiaryWhere[Op.and].push(catWhere);
+      }
+    }
+
+    if (target_sitio && target_sitio !== 'all' && target_sitio !== 'All Sitios') {
+      const normSitio = normalizeSitioName(target_sitio);
+      beneficiaryWhere[Op.and] = beneficiaryWhere[Op.and] || [];
+      beneficiaryWhere[Op.and].push({
+        [Op.or]: [
+          { sitio: { [Op.like]: `%${target_sitio.trim()}%` } },
+          { sitio: { [Op.like]: `%${normSitio}%` } },
+        ]
+      });
     }
 
     const allBeneficiaries = await Beneficiary.findAll({
@@ -244,29 +350,35 @@ router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'ba
       order: [['last_name', 'ASC'], ['first_name', 'ASC']],
     });
 
-    // Step 2: Get all active enrollments for this program in this barangay
-    const enrollments = await Enrollment.findAll({
-      where: { program_id: programId, status: 'active' },
-      include: [{
-        model: Beneficiary,
-        where: { barangay_id: barangayId },
-        attributes: ['id'],
-      }],
-    });
-
-    // Build a set of enrolled beneficiary IDs for fast lookup
-    const enrolledIds = new Set(enrollments.map(e => e.beneficiary_id));
+    // Step 2: Get all active enrollments for this program (if programId provided)
+    let enrolledIds = new Set();
+    if (programId) {
+      const enrollWhere = { program_id: programId, status: 'active' };
+      const enrollBenWhere = {};
+      if (barangayId && barangayId !== 'all') {
+        enrollBenWhere.barangay_id = parseInt(barangayId);
+      }
+      const enrollments = await Enrollment.findAll({
+        where: enrollWhere,
+        include: [{
+          model: Beneficiary,
+          where: enrollBenWhere,
+          attributes: ['id'],
+        }],
+      });
+      enrolledIds = new Set(enrollments.map(e => e.beneficiary_id));
+    }
 
     // Step 3: Map beneficiaries with enrollment/qualification status
     const beneficiaries = allBeneficiaries.map(b => {
-      const isEnrolled = enrolledIds.has(b.id);
+      const isEnrolled = programId ? enrolledIds.has(b.id) : true;
 
-      // Category match check (for target_category filter)
-      const categoryMatch = !target_category || (b.category && b.category.includes(target_category));
+      // Smart category match check (flexible, matches singular/plural e.g. Senior Citizen & Senior Citizens)
+      const categoryMatch = !target_category || target_category === 'All' || target_category === 'All Categories' || isCategoryMatch(b.category, target_category);
 
-      // Program eligibility category check
-      const programCategoryMatch = !program.eligibility_category ||
-        (b.category && b.category.includes(program.eligibility_category));
+      // Program eligibility category check (always matches if no program)
+      const programCategoryMatch = !program || !program.eligibility_category ||
+        isCategoryMatch(b.category, program.eligibility_category);
 
       return {
         beneficiary_id: b.id,
@@ -274,6 +386,7 @@ router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'ba
         last_name: b.last_name,
         middle_name: b.middle_name,
         category: b.category,
+        sitio: b.sitio || null,
         RFID_number: b.RFID_number,
         beneficiary_id_code: b.beneficiary_id_code,
         contact_number: b.contact_number,
@@ -295,12 +408,25 @@ router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'ba
 
     const qualifiedCount = beneficiaries.filter(b => b.is_qualified).length;
 
+    // Extract unique available sitios in this barangay / selection
+    const sitioMap = new Map();
+    allBeneficiaries.forEach(b => {
+      const raw = String(b.sitio || '').trim();
+      if (!raw) return;
+      const key = normalizeSitioName(raw) || raw.toLowerCase();
+      if (!sitioMap.has(key)) {
+        sitioMap.set(key, { sitio: raw, count: 0 });
+      }
+      sitioMap.get(key).count += 1;
+    });
+
     res.json({
       success: true,
       data: beneficiaries,
       total: beneficiaries.length,
       qualified_count: qualifiedCount,
-      program_name: program.name,
+      available_sitios: Array.from(sitioMap.values()),
+      program_name: program ? program.name : (target_category ? `${target_category} Distribution` : 'Direct Aid Distribution'),
     });
   } catch (error) {
     next(error);
@@ -319,32 +445,52 @@ router.get('/events/:id/count-eligible', authorize('admin', 'staff', 'barangay')
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot access DSWD distribution events.' });
     }
 
     const program = event.Program;
     const beneficiaryWhere = {
-      barangay_id: event.barangay_id,
       status: 'Approved',
     };
-
-    // Apply category filtering:
-    // 1. If event has target_category, use it (distribution-specific filter)
-    // 2. Otherwise, if program has eligibility_category, use that (program-wide filter)
-    if (event.target_category) {
-      beneficiaryWhere.category = { [Op.like]: `%${event.target_category}%` };
-    } else if (program && program.eligibility_category) {
-      beneficiaryWhere.category = { [Op.like]: `%${program.eligibility_category}%` };
+    if (event.barangay_id) {
+      beneficiaryWhere.barangay_id = event.barangay_id;
     }
 
-    // Get eligible beneficiaries based on program enrollment
-    const enrollments = await Enrollment.findAll({
-      where: { program_id: event.program_id, status: 'active' },
-      include: [{ model: Beneficiary, where: beneficiaryWhere }],
-    });
+    // Apply category filtering (with smart category matcher)
+    const activeCat = event.target_category || program?.eligibility_category;
+    if (activeCat && activeCat !== 'All' && activeCat !== 'All Categories') {
+      const catWhere = buildCategoryWhere(activeCat);
+      if (catWhere) {
+        beneficiaryWhere[Op.and] = beneficiaryWhere[Op.and] || [];
+        beneficiaryWhere[Op.and].push(catWhere);
+      }
+    }
 
-    const eligibleCount = enrollments.length;
+    // Apply sitio filtering
+    if (event.target_sitio && event.target_sitio !== 'all' && event.target_sitio !== 'All Sitios') {
+      const normSitio = normalizeSitioName(event.target_sitio);
+      beneficiaryWhere[Op.and] = beneficiaryWhere[Op.and] || [];
+      beneficiaryWhere[Op.and].push({
+        [Op.or]: [
+          { sitio: { [Op.like]: `%${event.target_sitio.trim()}%` } },
+          { sitio: { [Op.like]: `%${normSitio}%` } },
+        ]
+      });
+    }
+
+    // Get eligible beneficiaries (program enrollments OR direct sector beneficiaries)
+    let eligibleCount = 0;
+    if (event.program_id) {
+      const enrollments = await Enrollment.findAll({
+        where: { program_id: event.program_id, status: 'active' },
+        include: [{ model: Beneficiary, where: beneficiaryWhere }],
+      });
+      eligibleCount = enrollments.length;
+    } else {
+      eligibleCount = await Beneficiary.count({ where: beneficiaryWhere });
+    }
+
     const amountPerBeneficiary = parseFloat(event.amount_per_beneficiary);
     const totalRequired = amountPerBeneficiary * eligibleCount;
     const rawBudget = parseFloat(event.budget || 0);
@@ -355,7 +501,7 @@ router.get('/events/:id/count-eligible', authorize('admin', 'staff', 'barangay')
       success: true,
       data: {
         event_id: event.id,
-        program_name: program.name,
+        program_name: program ? program.name : (event.title || 'Municipal Aid Distribution'),
         eligible_count: eligibleCount,
         amount_per_beneficiary: amountPerBeneficiary,
         total_required: totalRequired,
@@ -379,6 +525,7 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
       title,
       program_id,
       barangay_id,
+      target_sitio,
       distribution_date,
       amount_per_beneficiary,
       budget,
@@ -389,38 +536,40 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
       item_unit: reqItemUnit,
     } = req.body;
 
+    const isSectorRole = isMswdoRole(req.user.role);
     const missingFields = [];
     if (!title) missingFields.push('title');
-    if (!program_id) missingFields.push('program_id');
-    if (!barangay_id) missingFields.push('barangay_id');
+    if (!isSectorRole && !program_id) missingFields.push('program_id');
     if (!distribution_date) missingFields.push('distribution_date');
 
-    // Validate that program exists
-    const program = await BenefitProgram.findByPk(program_id);
-    if (!program) {
-      console.error('[CREATE EVENT] Program not found:', program_id);
-      return res.status(404).json({
-        success: false,
-        message: `Program with ID ${program_id} not found`,
-      });
+    let program = null;
+    if (program_id) {
+      program = await BenefitProgram.findByPk(program_id);
+      if (!program) {
+        console.error('[CREATE EVENT] Program not found:', program_id);
+        return res.status(404).json({
+          success: false,
+          message: `Program with ID ${program_id} not found`,
+        });
+      }
+      if (isSectorRole && program.agency !== 'MSWDO') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access Denied (403 Forbidden): MSWDO Admin cannot create distribution events for DSWD programs. Only MSWDO municipal programs are permitted.',
+        });
+      }
     }
 
-    // MSWDO Admin can ONLY create distribution events for MSWDO programs (cannot create for DSWD programs)
-    if (req.user.role === 'mswdo_admin' && program.agency !== 'MSWDO') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access Denied (403 Forbidden): MSWDO Admin cannot create distribution events for DSWD programs. Only MSWDO municipal programs are permitted.',
-      });
-    }
+    // Amount per beneficiary is optional (defaults to 0 for in-kind, food packs, assistive devices, or non-cash aid)
+    const parsedAmount = parseFloat(amount_per_beneficiary);
+    const hasValidAmount = !isNaN(parsedAmount) && parsedAmount > 0;
+    const finalAmount = hasValidAmount ? parsedAmount : 0;
 
-    // Determine if this program is non-cash / in-kind
-    const isNonCash = isNonCashProgram(program.name, reqBenefitType || program.benefit_type);
-    const nonCashDetails = isNonCash ? getNonCashDetails(program.name) : null;
-
-    // Only cash programs strictly require amount_per_beneficiary > 0
-    if (!isNonCash && (!amount_per_beneficiary || isNaN(parseFloat(amount_per_beneficiary)) || parseFloat(amount_per_beneficiary) <= 0)) {
-      missingFields.push('amount_per_beneficiary');
-    }
+    // Determine if this program / event is non-cash / in-kind
+    const progOrTitle = program ? program.name : title;
+    const isExplicitNonCash = isNonCashProgram(progOrTitle, reqBenefitType || (program ? program.benefit_type : 'Cash'));
+    const isNonCash = isExplicitNonCash || !hasValidAmount || (reqBenefitType && reqBenefitType.toLowerCase() !== 'cash');
+    const nonCashDetails = isNonCash ? getNonCashDetails(progOrTitle) : null;
 
     if (missingFields.length > 0) {
       console.error('[CREATE EVENT] Missing required fields:', missingFields);
@@ -431,18 +580,21 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
       });
     }
 
-    // Validate that barangay exists
-    const barangay = await Barangay.findByPk(barangay_id);
-    if (!barangay) {
-      console.error('[CREATE EVENT] Barangay not found:', barangay_id);
-      return res.status(404).json({
-        success: false,
-        message: `Barangay with ID ${barangay_id} not found`,
-      });
+    // Validate barangay if provided (null/all means municipality-wide)
+    let parsedBarangayId = null;
+    if (barangay_id && barangay_id !== 'all' && barangay_id !== '') {
+      parsedBarangayId = parseInt(barangay_id);
+      const barangay = await Barangay.findByPk(parsedBarangayId);
+      if (!barangay) {
+        console.error('[CREATE EVENT] Barangay not found:', parsedBarangayId);
+        return res.status(404).json({
+          success: false,
+          message: `Barangay with ID ${parsedBarangayId} not found`,
+        });
+      }
     }
 
-    let finalAmount = isNonCash ? 0 : parseFloat(amount_per_beneficiary);
-    let finalBudget = isNonCash ? 0 : parseFloat(budget || 0);
+    let finalBudget = hasValidAmount ? parseFloat(budget || 0) : 0;
     if (isNaN(finalBudget) || finalBudget < 0) {
       finalBudget = 0;
     }
@@ -459,13 +611,17 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
 
     console.log('[CREATE EVENT] Validation passed, creating event (isNonCash:', isNonCash, ')...');
 
-    const agency = req.user.role === 'mswdo_admin' ? 'MSWDO' : 'DSWD';
+    const agency = isMswdoRole(req.user.role) ? 'MSWDO' : 'DSWD';
     const event = await DistributionEvent.create({
       ...req.body,
+      program_id: program ? program.id : null,
+      barangay_id: parsedBarangayId,
+      target_category: req.body.target_category || (program ? program.eligibility_category : null),
+      target_sitio: (target_sitio && target_sitio !== 'all' && target_sitio !== 'All Sitios') ? target_sitio.trim() : null,
       agency,
       created_by: req.user.id,
-      benefit_type: isNonCash ? (reqBenefitType || nonCashDetails?.type || 'In-Kind') : 'Cash',
-      item_name: isNonCash ? (reqItemName || nonCashDetails?.default_item || nonCashDetails?.assistance_type || 'In-Kind Package') : null,
+      benefit_type: (hasValidAmount && (!reqBenefitType || reqBenefitType === 'Cash')) ? 'Cash' : (reqBenefitType || (isNonCash ? (nonCashDetails?.type || 'In-Kind') : 'In-Kind')),
+      item_name: isNonCash ? (reqItemName || nonCashDetails?.default_item || nonCashDetails?.assistance_type || title || 'In-Kind Package') : null,
       item_quantity: isNonCash ? (parseInt(reqItemQuantity, 10) || 1) : 1,
       item_unit: isNonCash ? (reqItemUnit || 'package') : null,
       amount_per_beneficiary: finalAmount,
@@ -516,7 +672,7 @@ router.put('/events/:id', authorize('admin'), async (req, res, next) => {
     if (!event) {
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): MSWDO Admin cannot edit DSWD distribution events.' });
     }
     if (event.status !== 'draft') {
@@ -558,7 +714,7 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       await transaction.rollback();
       return res.status(403).json({ success: false, message: 'Access Denied (403 Forbidden): MSWDO Admin cannot publish DSWD distribution events.' });
     }
@@ -603,19 +759,34 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
 
     const enrollmentWhere = { program_id: event.program_id, status: 'active' };
     const beneficiaryWhere = {
-      barangay_id: event.barangay_id,
       status: 'Approved',
     };
+    if (event.barangay_id) {
+      beneficiaryWhere.barangay_id = event.barangay_id;
+    }
 
-    // Apply category filtering:
-    // 1. If event has target_category, use it (distribution-specific filter)
-    // 2. Otherwise, if program has eligibility_category, use that (program-wide filter)
-    if (event.target_category) {
-      beneficiaryWhere.category = { [Op.like]: `%${event.target_category}%` };
-      console.log('[PUBLISH EVENT] Using event target_category filter:', event.target_category);
-    } else if (program && program.eligibility_category) {
-      beneficiaryWhere.category = { [Op.like]: `%${program.eligibility_category}%` };
-      console.log('[PUBLISH EVENT] Using program eligibility_category filter:', program.eligibility_category);
+    // Apply smart category filtering:
+    const activePublishCat = event.target_category || program?.eligibility_category;
+    if (activePublishCat && activePublishCat !== 'All' && activePublishCat !== 'All Categories') {
+      const catWhere = buildCategoryWhere(activePublishCat);
+      if (catWhere) {
+        beneficiaryWhere[Op.and] = beneficiaryWhere[Op.and] || [];
+        beneficiaryWhere[Op.and].push(catWhere);
+      }
+      console.log('[PUBLISH EVENT] Using smart category filter:', activePublishCat);
+    }
+
+    // Apply sitio filtering:
+    if (event.target_sitio && event.target_sitio !== 'all' && event.target_sitio !== 'All Sitios') {
+      const normSitio = normalizeSitioName(event.target_sitio);
+      beneficiaryWhere[Op.and] = beneficiaryWhere[Op.and] || [];
+      beneficiaryWhere[Op.and].push({
+        [Op.or]: [
+          { sitio: { [Op.like]: `%${event.target_sitio.trim()}%` } },
+          { sitio: { [Op.like]: `%${normSitio}%` } },
+        ]
+      });
+      console.log('[PUBLISH EVENT] Using target_sitio filter:', event.target_sitio);
     }
 
     console.log('[PUBLISH EVENT] Querying enrollments with:', {
@@ -623,20 +794,29 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       beneficiaryWhere,
     });
 
-    const enrollments = await Enrollment.findAll({
-      where: enrollmentWhere,
-      include: [{ model: Beneficiary, where: beneficiaryWhere }],
-      transaction,
-    });
+    let eligibleBeneficiariesList = [];
+    if (event.program_id) {
+      const enrollments = await Enrollment.findAll({
+        where: enrollmentWhere,
+        include: [{ model: Beneficiary, where: beneficiaryWhere }],
+        transaction,
+      });
+      eligibleBeneficiariesList = enrollments.map(e => e.Beneficiary).filter(Boolean);
+    } else {
+      eligibleBeneficiariesList = await Beneficiary.findAll({
+        where: beneficiaryWhere,
+        transaction,
+      });
+    }
 
-    console.log('[PUBLISH EVENT] Found enrollments:', enrollments.length);
+    console.log('[PUBLISH EVENT] Found eligible beneficiaries:', eligibleBeneficiariesList.length);
 
-    if (enrollments.length === 0) {
+    if (eligibleBeneficiariesList.length === 0) {
       console.error('[PUBLISH EVENT] No eligible beneficiaries found');
       await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: 'No eligible beneficiaries found for this event. Please check program enrollment and beneficiary approval status.',
+        message: 'No eligible beneficiaries found for this event. Please check category and beneficiary approval status in this barangay.',
         debug: {
           program_id: event.program_id,
           barangay_id: event.barangay_id,
@@ -647,42 +827,33 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     }
 
     // Calculate budget requirements
-    const eligibleCount = enrollments.length;
-    const amountPerBeneficiary = parseFloat(event.amount_per_beneficiary);
-    const totalRequired = amountPerBeneficiary * eligibleCount;
+    const eligibleCount = eligibleBeneficiariesList.length;
+    const amountPerBeneficiary = parseFloat(event.amount_per_beneficiary || 0);
+    const hasCashAmount = !isNaN(amountPerBeneficiary) && amountPerBeneficiary > 0;
+    const totalRequired = hasCashAmount ? (amountPerBeneficiary * eligibleCount) : 0;
     let availableBudget = parseFloat(event.budget || 0);
 
-    // If budget was not explicitly set or is 0 (budget field is now removed from form),
-    // automatically set availableBudget to match totalRequired
-    if (availableBudget <= 0) {
+    // If budget was not explicitly set or is 0, automatically set availableBudget to match totalRequired
+    if (availableBudget <= 0 && hasCashAmount) {
       availableBudget = totalRequired;
     }
 
-    console.log('[PUBLISH EVENT] Budget calculation:', {
-      eligibleCount,
-      amountPerBeneficiary,
-      totalRequired,
-      availableBudget,
-      sufficient: totalRequired <= availableBudget,
-    });
-
     // Determine if this program is non-cash / in-kind
-    const isNonCash = isNonCashProgram(program.name, event.benefit_type);
-    const nonCashDetails = isNonCash ? getNonCashDetails(program.name) : null;
-    const itemDisplayName = event.item_name || nonCashDetails?.default_item || 'In-Kind Goods / Service';
+    const isNonCash = !hasCashAmount || isNonCashProgram(program ? program.name : event.title, event.benefit_type) || event.benefit_type !== 'Cash';
+    const nonCashDetails = isNonCash ? getNonCashDetails(program ? program.name : event.title) : null;
+    const itemDisplayName = event.item_name || nonCashDetails?.default_item || event.title || 'In-Kind Goods / Service';
 
     // Generate transactions WITH retroactive payment calculation (for cash only)
     const models = { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay };
     const transactions = [];
     let totalRetroAmount = 0;
 
-    for (let i = 0; i < enrollments.length; i++) {
-      const enrollment = enrollments[i];
-      const beneficiaryId = enrollment.Beneficiary.id;
-      const beneficiary = enrollment.Beneficiary;
+    for (let i = 0; i < eligibleBeneficiariesList.length; i++) {
+      const beneficiary = eligibleBeneficiariesList[i];
+      const beneficiaryId = beneficiary.id;
 
       let retro = { retro_amount: 0, retro_periods: 0, retro_details: [] };
-      if (!isNonCash) {
+      if (!isNonCash && event.program_id) {
         // Calculate retroactive payment for this beneficiary
         retro = await calculateRetroForBeneficiary({
           beneficiaryId,
@@ -761,8 +932,7 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
 
     // ── Notify all eligible beneficiaries (In-App + PhilSMS) ──
     const smsPayloads = [];
-    const notificationPromises = enrollments.map(async (enrollment, idx) => {
-      const b = enrollment.Beneficiary;
+    const notificationPromises = eligibleBeneficiariesList.map(async (b, idx) => {
       const txn = transactions[idx];
       const regularAmt = parseFloat(event.amount_per_beneficiary);
       const retroAmt = txn ? parseFloat(txn.retro_amount || 0) : 0;
@@ -772,14 +942,17 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
         : '';
 
       const notifTitle = isNonCash ? 'Upcoming In-Kind Distribution / Service' : 'Upcoming Benefit Distribution';
+      const progNameDisplay = program ? program.name : event.title;
+      const agencyDisplay = event.agency || (program ? program.agency : 'MSWDO');
       const notifMessage = isNonCash
-        ? `You are scheduled to receive ${itemDisplayName} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`
-        : `You are scheduled to receive ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} from "${program.name}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`;
+        ? `You are scheduled to receive ${itemDisplayName} from "${progNameDisplay}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`
+        : `You are scheduled to receive ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} from "${progNameDisplay}" on ${event.distribution_date} at ${event.venue || 'the designated venue'}. Please bring a valid ID for verification.`;
 
       const fullName = [b.first_name, b.middle_name, b.last_name].filter(Boolean).join(' ') || 'Beneficiary';
+      const officeBrand = getOfficeBrand(req.user?.role || event.target_category || event.agency || 'MSWDO');
       const smsMessage = isNonCash
-        ? `EBMS [${event.agency || program.agency || 'DSWD'}]: Magandang araw ${fullName}! Kayo po ay naka-schedule na tumanggap ng ${itemDisplayName} mula sa programang "${program.name}" (${event.title}) sa ${event.distribution_date} sa ${event.venue || 'Barangay Hall'}. Magdala po ng valid ID at EBMS ID/QR.`
-        : `EBMS [${event.agency || program.agency || 'DSWD'}]: Magandang araw ${fullName}! Kayo po ay naka-schedule na tumanggap ng ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} mula sa programang "${program.name}" (${event.title}) sa ${event.distribution_date} sa ${event.venue || 'Barangay Hall'}. Magdala po ng valid ID at EBMS ID/QR.`;
+        ? `[${officeBrand}]: Magandang araw ${fullName}! Kayo po ay naka-schedule na tumanggap ng ${itemDisplayName} mula sa programang "${progNameDisplay}" (${event.title}) sa ${event.distribution_date} sa ${event.venue || 'Barangay Hall'}. Magdala po ng valid ID at EBMS ID/QR.`
+        : `[${officeBrand}]: Magandang araw ${fullName}! Kayo po ay naka-schedule na tumanggap ng ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroMsg} mula sa programang "${progNameDisplay}" (${event.title}) sa ${event.distribution_date} sa ${event.venue || 'Barangay Hall'}. Magdala po ng valid ID at EBMS ID/QR.`;
 
       smsPayloads.push({
         beneficiary_id: b.id,
@@ -888,7 +1061,7 @@ router.get('/events/:id/retro-preview', authorize('admin', 'staff', 'barangay'),
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot preview DSWD distribution events.' });
     }
 
@@ -954,7 +1127,41 @@ router.get('/events/:id/retro-preview', authorize('admin', 'staff', 'barangay'),
     }
 
     // Event is still in draft: calculate dynamically based on eligible enrollments
-    const program = event.Program || (await BenefitProgram.findByPk(event.program_id));
+    const program = event.Program || (event.program_id ? await BenefitProgram.findByPk(event.program_id) : null);
+
+    if (!event.program_id) {
+      const bWhere = {
+        barangay_id: event.barangay_id,
+        status: 'Approved',
+      };
+      if (event.target_category) {
+        bWhere.category = { [Op.like]: `%${event.target_category}%` };
+      }
+      const eligibleCount = await Beneficiary.count({ where: bWhere });
+      const amountPerBeneficiary = parseFloat(event.amount_per_beneficiary || 0);
+      const grandTotal = amountPerBeneficiary * eligibleCount;
+      const rawBudget = parseFloat(event.budget || 0);
+      const availableBudget = rawBudget > 0 ? rawBudget : grandTotal;
+      return res.json({
+        success: true,
+        data: {
+          event_id: event.id,
+          total_eligible: eligibleCount,
+          beneficiaries_with_retro: 0,
+          total_regular_amount: grandTotal,
+          regular_total: grandTotal,
+          total_retro_amount: 0,
+          retro_total: 0,
+          grand_total_required: grandTotal,
+          grand_total: grandTotal,
+          available_budget: availableBudget,
+          budget_sufficient: grandTotal <= availableBudget,
+          deficit: grandTotal > availableBudget ? grandTotal - availableBudget : 0,
+          amount_per_beneficiary: amountPerBeneficiary,
+          retro_breakdown: [],
+        },
+      });
+    }
     const enrollmentWhere = {
       program_id: event.program_id,
       status: 'active',
@@ -1008,7 +1215,7 @@ router.patch('/events/:id/status', authorize('admin', 'staff', 'barangay'), rest
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot update DSWD distribution events.' });
     }
 
@@ -1058,7 +1265,7 @@ router.post('/events/:id/start-session', authorize('admin', 'staff', 'barangay')
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot start session for DSWD distribution events.' });
     }
 
@@ -1177,7 +1384,7 @@ router.post('/events/:id/end-session', authorize('admin', 'staff', 'barangay'), 
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot end session for DSWD distribution events.' });
     }
 
@@ -1275,7 +1482,7 @@ router.get('/events/:id/transactions', authorize('admin', 'staff', 'barangay', '
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot view transactions for DSWD distribution events.' });
     }
 
@@ -1627,8 +1834,9 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
 
       // AUTO-COMPLETE PROGRAM: Mark the program as completed as well
       console.log('[RELEASE BENEFIT] Auto-completing program...');
-      const program = await BenefitProgram.findByPk(event.program_id, { transaction: dbTransaction });
-      if (program && program.status === 'active') {
+      if (event.program_id) {
+        const program = await BenefitProgram.findByPk(event.program_id, { transaction: dbTransaction });
+        if (program && program.status === 'active') {
         await program.update({
           status: 'completed',
         }, { transaction: dbTransaction });
@@ -1649,6 +1857,7 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
             auto_completed: true,
           }),
         }, { transaction: dbTransaction });
+        }
       }
     }
 
@@ -1677,6 +1886,22 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
         reference_id: txn.id,
         reference_type: 'DistributionTransaction',
         is_read: false,
+      }, { transaction: dbTransaction });
+    }
+
+    if (beneficiary?.contact_number) {
+      const officeBrand = getOfficeBrand(req.user?.role || event.target_category || event.agency || 'DSWD');
+      const releaseSmsMsg = isNonCashTxn
+        ? `[${officeBrand}]: Magandang araw ${beneficiary.first_name}! Matagumpay mong natanggap ang ${itemDesc} para sa "${event.title}" (TXN: ${txn.transaction_number}).`
+        : `[${officeBrand}]: Magandang araw ${beneficiary.first_name}! Matagumpay mong natanggap ang ayuda na ₱${totalPayout.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${retroText} para sa "${event.title}" (TXN: ${txn.transaction_number}).`;
+
+      await SMSNotification.create({
+        beneficiary_id: beneficiary.id,
+        announcement_id: null,
+        notification_type: `payout_release_${txn.id}`,
+        phone_number: beneficiary.contact_number,
+        message: releaseSmsMsg,
+        status: 'queued',
       }, { transaction: dbTransaction });
     }
 
@@ -1750,7 +1975,7 @@ router.get('/events/:id/receipt/:txnId', authorize('admin', 'staff', 'barangay',
       return res.status(404).json({ success: false, message: 'Transaction not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && txn.Event?.agency !== 'MSWDO') {
+    if (isMswdoRole(req.user.role) && txn.Event?.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot view receipts for DSWD distribution events.' });
     }
 
@@ -1904,7 +2129,7 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
     }
 
     // Agency-level scoping: MSWDO Admin strictly sees ONLY MSWDO events and stats; DSWD sees DSWD
-    if (req.user.role === 'mswdo_admin') {
+    if (isMswdoRole(req.user.role)) {
       where.agency = 'MSWDO';
     } else if (req.user.role === 'admin') {
       where.agency = req.query.agency || 'DSWD';
@@ -1990,7 +2215,7 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
           total_amount_pending: parseFloat(transactionStats.total_amount_pending).toFixed(2),
           release_percentage: parseFloat(releasePercentage),
         },
-        scope: ['admin', 'mswdo_admin'].includes(req.user.role) ? 'all_barangays' : 'assigned_barangay',
+        scope: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role) ? 'all_barangays' : 'assigned_barangay',
         generated_at: new Date().toISOString(),
       },
     });
@@ -2002,7 +2227,7 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
 });
 
 // ── POST /verify-beneficiary ── Verify by RFID/QR/ID/Manual search
-router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, res, next) => {
+router.post('/verify-beneficiary', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const { event_id, search_type, search_value } = req.body;
 
@@ -2028,7 +2253,7 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
     }
 
     // STRICT: Staff can only verify beneficiaries in their assigned barangay
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && !['admin', 'mswdo_admin'].includes(req.user.role)) {
+    if ((req.user.role === 'staff' || req.user.role === 'barangay') && !['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role)) {
       if (req.user.barangay_id !== event.barangay_id) {
         return res.status(403).json({
           success: false,
@@ -2100,19 +2325,22 @@ router.post('/verify-beneficiary', authorize('staff', 'barangay'), async (req, r
         where: { distribution_event_id: event_id, beneficiary_id: b.id },
       });
 
-      // Enrollment check
-      const enrollment = await Enrollment.findOne({
-        where: {
-          beneficiary_id: b.id,
-          program_id: event.program_id,
-          status: 'active',
-        },
-      });
+      // Enrollment check (only required if event has program_id)
+      let enrollment = null;
+      if (event.program_id) {
+        enrollment = await Enrollment.findOne({
+          where: {
+            beneficiary_id: b.id,
+            program_id: event.program_id,
+            status: 'active',
+          },
+        });
+      }
 
       const checks = {
         registered: true,
         eligible: b.status === 'Approved',
-        enrolled_in_program: !!enrollment,
+        enrolled_in_program: event.program_id ? !!enrollment : true,
         has_transaction: !!txn,
         not_yet_claimed: txn ? txn.status === 'pending' : false,
         correct_barangay: b.barangay_id === event.barangay_id,
@@ -2197,7 +2425,7 @@ router.delete('/events/:id', authorize('admin'), async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot delete DSWD distribution events.' });
     }
 
@@ -2242,7 +2470,7 @@ router.get('/events/:id/payout-summary', authorize('admin', 'staff', 'barangay',
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot view payout summary for DSWD distribution events.' });
     }
 
@@ -2327,9 +2555,17 @@ router.post('/events/:id/disburse-digital', authorize('admin', 'mswdo_admin'), a
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if (req.user.role === 'mswdo_admin' && event.agency !== 'MSWDO') {
+    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
       await dbTransaction.rollback();
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot disburse for DSWD distribution events.' });
+    }
+
+    if (event.agency === 'MSWDO') {
+      await dbTransaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Ang MSWDO distribution ay walang digital disbursement. Lahat ng tulong ay pisikal na kinukuha (Physical Claiming) gamit ang RFID card o QR code.',
+      });
     }
 
     if (!['scheduled', 'ongoing'].includes(event.status)) {

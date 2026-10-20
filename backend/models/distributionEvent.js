@@ -8,7 +8,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       program_id: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         references: {
           model: 'benefit_programs',
           key: 'id',
@@ -16,7 +16,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       barangay_id: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         references: {
           model: 'barangays',
           key: 'id',
@@ -76,6 +76,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: true,
         comment: 'Optional category filter for this distribution (e.g. 4Ps, Senior Citizen, PWD)',
+      },
+      target_sitio: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Optional target sitio/purok filter (e.g. Cupang, Centro, Badjang)',
       },
       published_at: {
         type: DataTypes.DATE,

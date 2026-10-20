@@ -1,3 +1,4 @@
+const { getOfficeBrand, getOfficeName } = require('./roles');
 const { Op } = require('sequelize');
 const {
   Announcement,
@@ -66,6 +67,7 @@ async function autoCompleteExpiredAnnouncements() {
     const now = new Date();
 
     const announcementsToCheck = await Announcement.findAll({
+      include: [{ model: User, as: 'CreatedBy', attributes: ['id', 'role', 'first_name', 'last_name', 'username'] }],
       where: {
         status: { [Op.in]: ['published', 'completed'] },
       },
@@ -135,7 +137,7 @@ async function autoCompleteExpiredAnnouncements() {
             inAppNotifications.push({
               user_id: b.User.id,
               title: `Paunawa: Hindi Naka-attend sa ${ann.title}`,
-              message: `Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad na "${ann.title}" noong ${ann.event_date || 'N/A'}${ann.event_time ? ` (${ann.event_time})` : ''}. Mangyaring makipag-ugnayan sa Tanggapan ng DSWD/MSWDO o sa inyong Barangay Staff kung may balidong dahilan.`,
+              message: `Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad na "${ann.title}" noong ${ann.event_date || 'N/A'}${ann.event_time ? ` (${ann.event_time})` : ''}. Mangyaring makipag-ugnayan sa ${getOfficeName(ann)} o sa inyong Barangay Staff kung may balidong dahilan.`,
               type: 'announcement_absence',
               reference_id: ann.id,
               reference_type: 'announcement_absence',
@@ -162,7 +164,7 @@ async function autoCompleteExpiredAnnouncements() {
               notification_type: 'announcement_absence',
               beneficiary_id: b.id,
               phone_number: contactNumber,
-              message: `[BeniAid DSWD Bongabong] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad na "${ann.title}" noong ${ann.event_date || 'N/A'}${timePart}${venuePart}. Mangyaring makipag-ugnayan sa Tanggapan ng DSWD/MSWDO o sa inyong Barangay Staff kung may balidong dahilan.`,
+              message: `[${getOfficeBrand(ann)}] Ikaw ay naitalang HINDI NAKADALO (Absent) sa aktibidad na "${ann.title}" noong ${ann.event_date || 'N/A'}${timePart}${venuePart}. Mangyaring makipag-ugnayan sa ${getOfficeName(ann)} o sa inyong Barangay Staff kung may balidong dahilan.`,
               status: 'queued',
             });
           }

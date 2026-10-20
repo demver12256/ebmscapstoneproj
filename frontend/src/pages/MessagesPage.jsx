@@ -196,7 +196,7 @@ export default function MessagesPage() {
   };
 
   const getRoleBadge = (role, brgyName) => {
-    if (['admin','mswdo_admin'].includes(role)) {
+    if (['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(role)) {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
           <ShieldCheck className="w-3 h-3 text-purple-600" />
@@ -278,7 +278,7 @@ export default function MessagesPage() {
     return name.includes(term) || role.includes(term) || brgy.includes(term) || lastMsg.includes(term);
   });
 
-  const canMessage = user && ['admin', 'mswdo_admin', 'staff', 'barangay', 'beneficiary'].includes(user.role);
+  const canMessage = user && ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'barangay', 'beneficiary'].includes(user.role);
 
   if (!canMessage) {
     return (
@@ -392,7 +392,7 @@ export default function MessagesPage() {
           <p className="text-xs text-slate-500 mt-0.5">
             {user.role === 'beneficiary'
               ? 'Direct communication line with your assigned Barangay Staff and System Administrator.'
-              : ['admin','mswdo_admin'].includes(user.role)
+              : ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(user.role)
               ? 'Communicate with Barangay Staff and Beneficiaries in real time.'
               : 'Communicate with the System Administrator, fellow Barangay Staff, and registered Beneficiaries.'}
           </p>
@@ -524,7 +524,7 @@ export default function MessagesPage() {
                         }`}
                       >
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm ${
-                          ['admin','mswdo_admin'].includes(contact.role)
+                          ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(contact.role)
                             ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
                             : 'bg-gradient-to-br from-blue-500 to-cyan-600'
                         }`}>
@@ -572,7 +572,7 @@ export default function MessagesPage() {
                       >
                         <div className="relative shrink-0">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm ${
-                            ['admin','mswdo_admin'].includes(conv.partner.role)
+                            ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(conv.partner.role)
                               ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
                               : 'bg-gradient-to-br from-blue-500 to-cyan-600'
                           }`}>
@@ -649,7 +649,7 @@ export default function MessagesPage() {
                       >
                         <div className="relative shrink-0">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm ${
-                            ['admin','mswdo_admin'].includes(conv.partner.role)
+                            ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(conv.partner.role)
                               ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
                               : 'bg-gradient-to-br from-blue-500 to-cyan-600'
                           }`}>
@@ -698,7 +698,7 @@ export default function MessagesPage() {
                       <ArrowLeft className="w-5 h-5" />
                     </button>
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm ${
-                      ['admin','mswdo_admin'].includes(selectedPartner.role)
+                      ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(selectedPartner.role)
                         ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
                         : 'bg-gradient-to-br from-blue-500 to-cyan-600'
                     }`}>
@@ -883,7 +883,7 @@ export default function MessagesPage() {
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 ${
-                                ['admin','mswdo_admin'].includes(c.role)
+                                ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(c.role)
                                   ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
                                   : 'bg-gradient-to-br from-blue-500 to-cyan-600'
                               }`}>

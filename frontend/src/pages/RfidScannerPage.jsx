@@ -627,7 +627,7 @@ export default function RfidScannerPage() {
               <option value="">-- Choose a distribution event --</option>
               {distributionEvents.map((event) => (
                 <option key={event.id} value={event.id}>
-                  {event.Program?.eligibility_category || event.Program?.category} - {event.Program?.name || 'N/A'} ({event.distribution_date ? new Date(event.distribution_date).toLocaleDateString() : 'No date set'})
+                  {event.title} {event.target_category || event.Program?.name ? `(${event.target_category || event.Program?.name})` : ''} - {event.distribution_date ? new Date(event.distribution_date).toLocaleDateString() : 'No date set'}
                 </option>
               ))}
             </select>

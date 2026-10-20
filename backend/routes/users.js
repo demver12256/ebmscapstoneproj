@@ -1,4 +1,5 @@
 const express = require('express');
+const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { User, Beneficiary, AuditLog, Message, SMSNotification, BeneficiaryDocument } = require('../db');
@@ -23,9 +24,32 @@ router.get('/', async (req, res, next) => {
     if (req.user.role === 'staff') {
       whereClause = {
         role: 'beneficiary',
-        barangay_id: req.user.barangay_id,
+        ...(req.user.barangay_id ? { barangay_id: req.user.barangay_id } : {}),
+      };
+    } else if (req.user.role === 'mswdo_staff') {
+      whereClause = {
+        role: { [Op.in]: ['mswdo_staff', 'beneficiary'] },
+      };
+    } else if (req.user.role === 'mswdo_admin') {
+      // MSWDO Admin strictly manages MSWDO Staff & Municipal Sector Admins
+      whereClause = {
+        role: { [Op.in]: ['mswdo_staff', 'senior_citizen_admin', 'pwd_admin'] },
+      };
+    } else if (req.user.role === 'admin') {
+      // DSWD Admin strictly manages DSWD Staff & Barangay Staff
+      whereClause = {
+        role: { [Op.in]: ['staff', 'barangay'] },
+      };
+    } else if (req.user.role === 'senior_citizen_admin') {
+      whereClause = {
+        role: { [Op.in]: ['mswdo_staff', 'senior_citizen_admin'] },
+      };
+    } else if (req.user.role === 'pwd_admin') {
+      whereClause = {
+        role: { [Op.in]: ['mswdo_staff', 'pwd_admin'] },
       };
     }
+
     const users = await User.findAll({
       where: whereClause,
       attributes: { exclude: ['password'] }
@@ -40,10 +64,23 @@ router.post('/', async (req, res, next) => {
   try {
     let { first_name, last_name, username, email, password, contact_number, address, barangay_id, role, category, household_id_number } = req.body;
 
-    if (req.user.role === 'staff') {
-      // Staff can only create beneficiaries for their own barangay
+    if (req.user.role === 'mswdo_admin') {
+      // MSWDO Admin creates MSWDO staff (all barangays coverage, barangay_id = null)
+      if (!role || role === 'staff') {
+        role = 'mswdo_staff';
+      }
+      if (role === 'mswdo_staff') {
+        barangay_id = null;
+      }
+    } else if (req.user.role === 'admin') {
+      if (!role || role === 'mswdo_staff') {
+        role = 'staff';
+      }
+    } else if (req.user.role === 'staff' || req.user.role === 'mswdo_staff') {
       role = 'beneficiary';
-      barangay_id = req.user.barangay_id;
+      if (req.user.barangay_id) {
+        barangay_id = req.user.barangay_id;
+      }
     }
 
     const trimmedUsername = username ? String(username).trim() : null;
@@ -66,7 +103,7 @@ router.post('/', async (req, res, next) => {
     if (normalizedCategory.toLowerCase().includes('4ps') && trimmedHouseholdId) {
       const existingHousehold = await Beneficiary.findOne({
         where: {
-          [require('sequelize').Op.or]: [
+          [Op.or]: [
             { household_id_number: trimmedHouseholdId },
             { beneficiary_id_code: trimmedHouseholdId }
           ]
@@ -80,14 +117,14 @@ router.post('/', async (req, res, next) => {
     if (trimmedUsername) {
       const existingUser = await User.findOne({ where: { username: trimmedUsername } });
       if (existingUser) {
-        return res.status(409).json({ success: false, message: 'A user with this username already exists' });
+        return res.status(409).json({ success: false, message: `Ang username na "${trimmedUsername}" ay nagamit na. Pumili ng ibang username.` });
       }
     }
 
     if (trimmedEmail) {
       const existing = await User.findOne({ where: { email: trimmedEmail } });
       if (existing) {
-        return res.status(409).json({ success: false, message: 'A user with this email already exists' });
+        return res.status(409).json({ success: false, message: `Ang email na "${trimmedEmail}" ay nakarehistro na sa ibang user.` });
       }
     }
 
@@ -99,7 +136,7 @@ router.post('/', async (req, res, next) => {
       password,
       contact_number,
       address,
-      barangay_id,
+      barangay_id: role === 'mswdo_staff' ? null : barangay_id,
       role
     });
 
@@ -168,7 +205,7 @@ router.put('/:id', async (req, res, next) => {
     }
 
     // Tiyakin na hindi mapapalitan ng staff ang role at barangay_id ng user
-    if (req.user.role === 'staff') {
+    if (req.user.role === 'staff' || req.user.role === 'mswdo_staff') {
       delete updates.role;
       delete updates.barangay_id;
     }

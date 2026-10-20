@@ -15,6 +15,10 @@ import Pagination from '../components/ui/Pagination';
 export default function DistributionPage() {
   const { user } = useAuth();
   const isMswdoAdmin = user?.role === 'mswdo_admin';
+  const isMswdoStaff = user?.role === 'mswdo_staff';
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin';
+  const isPwdAdmin = user?.role === 'pwd_admin';
+  const isSectorAdmin = isMswdoAdmin || isMswdoStaff || isSeniorAdmin || isPwdAdmin;
   const [events, setEvents] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -35,10 +39,12 @@ export default function DistributionPage() {
   const [showEligibleModal, setShowEligibleModal] = useState(false);
   
   // Form data
+  const [availableSitios, setAvailableSitios] = useState([]);
   const [formData, setFormData] = useState({
     title: '',
     program_id: '',
     barangay_id: '',
+    target_sitio: '',
     distribution_date: '',
     venue: '',
     budget: '',
@@ -87,7 +93,7 @@ export default function DistributionPage() {
       
       const res = await distributionApi.listEvents(params);
       const rawEvents = res.data.data || [];
-      const scopedEvents = isMswdoAdmin
+      const scopedEvents = isSectorAdmin
         ? rawEvents.filter(e => e.agency === 'MSWDO' || e.Program?.agency === 'MSWDO')
         : user?.role === 'admin'
         ? rawEvents.filter(e => !e.agency || e.agency === 'DSWD' || e.Program?.agency === 'DSWD')
@@ -131,9 +137,9 @@ export default function DistributionPage() {
         : rawProgs;
       setPrograms(scopedProgs);
       setBarangays(barangaysRes.data.data || []);
-      // Filter users to only staff/barangay roles
+      // Filter users to only staff/barangay roles and mswdo_staff
       const staffUsers = (usersRes.data.data || []).filter(
-        u => u.role === 'staff' || u.role === 'barangay'
+        u => u.role === 'staff' || u.role === 'barangay' || u.role === 'mswdo_staff'
       );
       setStaff(staffUsers);
     } catch (err) {
@@ -164,6 +170,27 @@ export default function DistributionPage() {
     
     return () => clearInterval(interval);
   }, [events, loadEvents, loadDashboardStats]);
+
+  // Handle barangay selection and fetch registered sitios
+  const handleBarangayChange = async (bgyId) => {
+    setFormData(prev => ({ ...prev, barangay_id: bgyId, target_sitio: '' }));
+    setProgramAutoFilled(false);
+    if (!bgyId || bgyId === 'all') {
+      try {
+        const res = await distributionApi.getSitios('all');
+        setAvailableSitios(res.data?.data || []);
+      } catch (e) {
+        setAvailableSitios([]);
+      }
+      return;
+    }
+    try {
+      const res = await distributionApi.getSitios(bgyId);
+      setAvailableSitios(res.data?.data || []);
+    } catch (e) {
+      setAvailableSitios([]);
+    }
+  };
 
   // Handle program selection — auto-fill barangay & category from program data
   const handleProgramChange = async (programId) => {
@@ -263,21 +290,26 @@ export default function DistributionPage() {
     setSuccess(null);
     
     try {
-      const selectedProgram = programs.find(p => p.id === parseInt(formData.program_id));
-      const isNonCash = isNonCashProgram(selectedProgram?.name, formData.benefit_type || selectedProgram?.benefit_type);
-      const nonCashDetails = isNonCash ? getNonCashDetails(selectedProgram?.name) : null;
+      const selectedProgram = formData.program_id ? programs.find(p => p.id === parseInt(formData.program_id)) : null;
+      const parsedAmt = parseFloat(formData.amount_per_beneficiary || 0);
+      const isExplicitNonCash = isNonCashProgram(selectedProgram?.name || formData.title, formData.benefit_type || selectedProgram?.benefit_type);
+      const isNonCash = isExplicitNonCash || isNaN(parsedAmt) || parsedAmt <= 0 || (formData.benefit_type && formData.benefit_type !== 'Cash');
+      const nonCashDetails = isNonCash ? getNonCashDetails(selectedProgram?.name || formData.title) : null;
 
-      const amountPerBen = isNonCash ? 0 : parseFloat(formData.amount_per_beneficiary || 0);
-      const benCount = eligibleMeta.qualified_count || 1;
+      const amountPerBen = isNonCash ? 0 : parsedAmt;
+      const benCount = eligibleMeta.qualified_count || 0;
       const computedBudget = isNonCash ? 0 : (amountPerBen * benCount);
 
       await distributionApi.createEvent({
         ...formData,
-        agency: isMswdoAdmin ? 'MSWDO' : 'DSWD',
+        program_id: isSectorAdmin ? null : (formData.program_id ? parseInt(formData.program_id) : null),
+        barangay_id: formData.barangay_id && formData.barangay_id !== 'all' ? parseInt(formData.barangay_id) : null,
+        target_sitio: formData.target_sitio?.trim() || null,
+        agency: isSectorAdmin ? 'MSWDO' : 'DSWD',
         amount_per_beneficiary: amountPerBen,
         budget: computedBudget,
         benefit_type: isNonCash ? (formData.benefit_type || nonCashDetails?.type || 'In-Kind') : 'Cash',
-        item_name: isNonCash ? (formData.item_name || nonCashDetails?.default_item || 'In-Kind Package') : null,
+        item_name: isNonCash ? (formData.item_name || nonCashDetails?.default_item || formData.title || 'In-Kind Package') : null,
         item_quantity: isNonCash ? (parseInt(formData.item_quantity, 10) || 1) : 1,
         item_unit: isNonCash ? (formData.item_unit || 'package') : null,
         venue: formData.venue?.trim() || null,
@@ -287,6 +319,7 @@ export default function DistributionPage() {
         title: '',
         program_id: '',
         barangay_id: '',
+        target_sitio: '',
         distribution_date: '',
         venue: '',
         budget: '',
@@ -335,66 +368,31 @@ export default function DistributionPage() {
   };
 
   const handlePreviewEligible = async () => {
-    if (!formData.program_id || !formData.barangay_id) {
-      setError('Please select both program and barangay first');
+    if (!isSectorAdmin && !formData.program_id) {
+      setError('Please select a program first');
       return;
     }
-    
+
     setLoading(true);
     try {
-      // Get the selected program
-      const selectedProgram = programs.find(p => p.id === parseInt(formData.program_id));
-      
-      // Get enrolled beneficiaries for the program
-      const res = await programApi.getEnrolledBeneficiaries(formData.program_id);
-      let enrolledBeneficiaries = res.data.data || [];
-      
-      // AUTO-ENROLL: If no enrolled beneficiaries, trigger auto-enrollment
-      if (enrolledBeneficiaries.length === 0) {
-        console.log('No enrolled beneficiaries found. Triggering auto-enrollment...');
-        try {
-          const autoEnrollRes = await programApi.autoEnrollBeneficiaries(formData.program_id);
-          console.log('Auto-enrollment result:', autoEnrollRes.data);
-          
-          // Reload enrolled beneficiaries after auto-enrollment
-          const updatedRes = await programApi.getEnrolledBeneficiaries(formData.program_id);
-          enrolledBeneficiaries = updatedRes.data.data || [];
-          
-          // Show success message
-          setSuccess(autoEnrollRes.data.message || `Successfully auto-enrolled ${autoEnrollRes.data.data.newly_enrolled} beneficiary(ies)`);
-          setTimeout(() => setSuccess(null), 5000);
-        } catch (autoEnrollError) {
-          console.error('Auto-enrollment failed:', autoEnrollError);
-          // Continue with empty list if auto-enrollment fails
-        }
-      }
-      
-      // Filter by barangay (should already match, but double-check)
-      enrolledBeneficiaries = enrolledBeneficiaries.filter(
-        b => b.barangay_id === parseInt(formData.barangay_id)
-      );
-      
-      // Further filter by target_category if specified
-      if (formData.target_category) {
-        enrolledBeneficiaries = enrolledBeneficiaries.filter(
-          b => b.category && b.category.includes(formData.target_category)
-        );
-      }
-      
-      // Filter by status = Approved (extra validation)
-      const qualifiedBeneficiaries = enrolledBeneficiaries.filter(
-        b => b.status === 'Approved'
-      );
-      
+      const res = await distributionApi.getEligibleBeneficiaries('new', {
+        program_id: !isSectorAdmin ? (formData.program_id ? parseInt(formData.program_id) : undefined) : undefined,
+        barangay_id: formData.barangay_id && formData.barangay_id !== 'all' ? parseInt(formData.barangay_id) : undefined,
+        target_category: formData.target_category || undefined,
+        target_sitio: formData.target_sitio || undefined,
+      });
+
+      const beneficiaries = res.data?.data || [];
+      const qualifiedBeneficiaries = beneficiaries.filter(b => b.is_qualified);
       setEligibleBeneficiaries(qualifiedBeneficiaries);
       setEligibleMeta({
-        total: enrolledBeneficiaries.length,
+        total: beneficiaries.length,
         qualified_count: qualifiedBeneficiaries.length,
-        program_name: selectedProgram?.name || '',
+        program_name: res.data?.program_name || formData.title || (formData.target_category ? `${formData.target_category} Distribution` : 'Direct Aid Distribution'),
       });
       setShowEligibleModal(true);
     } catch (err) {
-      setError(err.message || 'Failed to load enrolled beneficiaries');
+      setError(err.response?.data?.message || err.message || 'Failed to load eligible beneficiaries');
     } finally {
       setLoading(false);
     }
@@ -1019,10 +1017,10 @@ export default function DistributionPage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm">
-                            <p className="font-medium text-slate-900">{event.Program?.name}</p>
+                            <p className="font-medium text-slate-900">{event.Program?.name || event.title || 'Direct Aid Distribution'}</p>
                             <div className="flex items-center gap-1 text-xs text-slate-600 mt-1">
                               <MapPin className="w-3 h-3" />
-                              {event.Barangay?.barangay_name}
+                              {event.Barangay?.barangay_name || 'All Barangays'}{event.target_sitio ? ` (Sitio ${event.target_sitio})` : ''}
                             </div>
                           </div>
                         </td>
@@ -1233,43 +1231,46 @@ export default function DistributionPage() {
                 />
               </div>
 
-              {/* Program */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Benefit Program *
-                </label>
-                <select
-                  value={formData.program_id}
-                  onChange={(e) => handleProgramChange(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                  required
-                >
-                  <option value="">Select Program</option>
-                  {programs.filter(p => p.status === 'active' || String(p.id) === String(formData.program_id)).map((program) => (
-                    <option key={program.id} value={program.id}>
-                      {program.name} {program.eligibility_category ? `[${program.eligibility_category}]` : ''}
-                    </option>
-                  ))}
-                </select>
-                {programAutoFilled && (
-                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                    ✅ Barangay at category auto-filled mula sa program settings
-                  </p>
-                )}
-              </div>
+              {/* Program (DSWD only; MSWDO does not require program enrollment) */}
+              {!isSectorAdmin && (
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Benefit Program *
+                  </label>
+                  <select
+                    value={formData.program_id}
+                    onChange={(e) => handleProgramChange(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    required
+                  >
+                    <option value="">Select Program</option>
+                    {programs.filter(p => p.status === 'active' || String(p.id) === String(formData.program_id)).map((program) => (
+                      <option key={program.id} value={program.id}>
+                        {program.name} {program.eligibility_category ? `[${program.eligibility_category}]` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {programAutoFilled && (
+                    <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                      ✅ Barangay at category auto-filled mula sa program settings
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Barangay */}
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Target Barangay *
+                <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center justify-between">
+                  <span>Target Barangay {isSectorAdmin ? '' : '*'}</span>
+                  {isSectorAdmin && <span className="text-xs text-slate-400 font-normal">Lahat ng Barangay kung blangko</span>}
                 </label>
                 <select
                   value={formData.barangay_id}
-                  onChange={(e) => { setFormData({ ...formData, barangay_id: e.target.value }); setProgramAutoFilled(false); }}
+                  onChange={(e) => handleBarangayChange(e.target.value)}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 ${programAutoFilled ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
-                  required
+                  required={!isSectorAdmin}
                 >
-                  <option value="">Select Barangay</option>
+                  <option value="">{isSectorAdmin ? 'Lahat ng Barangay (Municipality-Wide)' : 'Select Barangay'}</option>
                   {barangays.map((barangay) => (
                     <option key={barangay.id} value={barangay.id}>
                       {barangay.barangay_name}
@@ -1278,6 +1279,66 @@ export default function DistributionPage() {
                 </select>
                 {programAutoFilled && formData.barangay_id && (
                   <p className="text-xs text-green-600 mt-1">📍 Auto-filled from program</p>
+                )}
+              </div>
+
+              {/* Target Sitio / Purok */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center justify-between">
+                  <span>Target Sitio / Purok</span>
+                  <span className="text-xs text-slate-400 font-normal">Optional (Lahat kung blangko)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    list="available-sitios-list"
+                    value={formData.target_sitio || ''}
+                    onChange={(e) => setFormData({ ...formData, target_sitio: e.target.value })}
+                    placeholder="Piliin o i-type ang Sitio (hal. Centro, Cupang) o iwanang blangko"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  />
+                  <datalist id="available-sitios-list">
+                    {availableSitios.map((item) => (
+                      <option key={item.sitio} value={item.sitio}>
+                        Sitio {item.sitio} ({item.count} benepisyaryo)
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+                {availableSitios.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[11px] text-slate-500 font-medium">Rehistradong Sitio:</span>
+                    {availableSitios.map((item) => (
+                      <button
+                        key={item.sitio}
+                        type="button"
+                        onClick={() => setFormData(prev => ({
+                          ...prev,
+                          target_sitio: prev.target_sitio === item.sitio ? '' : item.sitio
+                        }))}
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border transition cursor-pointer ${
+                          formData.target_sitio === item.sitio
+                            ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
+                            : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                        }`}
+                      >
+                        {item.sitio} ({item.count})
+                      </button>
+                    ))}
+                    {formData.target_sitio && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, target_sitio: '' }))}
+                        className="text-[11px] px-2 py-0.5 rounded-full text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                      >
+                        Lahat ng Sitio
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-1">
+                    {formData.barangay_id ? 'Walang partikular na Sitio; sakop ang buong barangay o i-type ang custom sitio.' : 'Pumili muna ng Barangay upang makita ang mga rehistradong Sitio.'}
+                  </p>
                 )}
               </div>
 
@@ -1395,25 +1456,24 @@ export default function DistributionPage() {
                 return (
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Amount per Beneficiary (₱) *
+                      Amount per Beneficiary (₱) <span className="text-slate-400 font-normal text-xs">(Optional - ilagay 0 kung in-kind o relief goods)</span>
                     </label>
                     <input
                       type="number"
                       value={formData.amount_per_beneficiary}
                       onChange={(e) => setFormData({ ...formData, amount_per_beneficiary: e.target.value })}
-                      placeholder="e.g., 1000"
-                      min="1"
+                      placeholder="e.g., 1000 (o 0 kung in-kind / food pack)"
+                      min="0"
                       step="0.01"
                       className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-semibold text-slate-900"
-                      required
                     />
-                    {formData.amount_per_beneficiary && eligibleMeta.qualified_count > 0 ? (
+                    {formData.amount_per_beneficiary && parseFloat(formData.amount_per_beneficiary) > 0 && eligibleMeta.qualified_count > 0 ? (
                       <p className="text-xs text-green-600 mt-1 font-medium">
                         ₱{parseFloat(formData.amount_per_beneficiary || 0).toLocaleString()} × {eligibleMeta.qualified_count} qualified beneficiaries = ₱{(parseFloat(formData.amount_per_beneficiary || 0) * eligibleMeta.qualified_count).toLocaleString()} estimated total
                       </p>
                     ) : (
                       <p className="text-xs text-slate-500 mt-1">
-                        Manual: Ilagay ang halaga na matatanggap ng bawat benepisyaryo
+                        Optional: Iwanang blangko o 0 para sa in-kind goods, food packs, o serbisyo.
                       </p>
                     )}
                   </div>
@@ -1447,15 +1507,26 @@ export default function DistributionPage() {
                 >
                   <option value="">Select Staff Member</option>
                   {staff
-                    .filter(s => !formData.barangay_id || s.barangay_id === parseInt(formData.barangay_id))
+                    .filter(s => {
+                      if (isMswdoAdmin || isMswdoStaff || isSectorAdmin) {
+                        return s.role === 'mswdo_staff';
+                      }
+                      return (s.role === 'staff' || s.role === 'barangay') && (!formData.barangay_id || s.barangay_id === parseInt(formData.barangay_id));
+                    })
                     .map((staffMember) => (
                       <option key={staffMember.id} value={staffMember.id}>
-                        {staffMember.first_name} {staffMember.last_name} ({staffMember.email})
+                        {staffMember.first_name} {staffMember.last_name} ({staffMember.role === 'mswdo_staff' ? 'MSWDO Staff' : (staffMember.email || 'Staff')})
                       </option>
                     ))}
                 </select>
-                {formData.barangay_id && staff.filter(s => s.barangay_id === parseInt(formData.barangay_id)).length === 0 && (
-                  <p className="text-xs text-amber-600 mt-1">No staff assigned to this barangay</p>
+                {(isMswdoAdmin || isMswdoStaff || isSectorAdmin) ? (
+                  staff.filter(s => s.role === 'mswdo_staff').length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">Walang nahanap na MSWDO Staff. Mangyaring gumawa muna ng MSWDO Staff account sa Users page.</p>
+                  )
+                ) : (
+                  formData.barangay_id && staff.filter(s => (s.role === 'staff' || s.role === 'barangay') && s.barangay_id === parseInt(formData.barangay_id)).length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">No staff assigned to this barangay</p>
+                  )
                 )}
               </div>
 
@@ -1479,7 +1550,7 @@ export default function DistributionPage() {
               <button
                 type="button"
                 onClick={handlePreviewEligible}
-                disabled={!formData.program_id || !formData.barangay_id}
+                disabled={!isSectorAdmin && !formData.program_id}
                 className="px-6 py-2.5 border-2 border-purple-600 text-purple-600 hover:bg-purple-50 font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Preview Eligible Beneficiaries
@@ -1546,8 +1617,8 @@ export default function DistributionPage() {
                   <Package className="w-4 h-4 text-purple-600" />
                   <p className="text-sm font-semibold text-slate-700">Program</p>
                 </div>
-                <p className="text-base text-slate-900">{selectedEvent.Program?.name}</p>
-                <p className="text-xs text-slate-600">{selectedEvent.Program?.code}</p>
+                <p className="text-base text-slate-900">{selectedEvent.Program?.name || selectedEvent.title}</p>
+                <p className="text-xs text-slate-600">{selectedEvent.Program?.code || selectedEvent.target_category || 'MSWDO Direct Aid'}</p>
               </div>
 
               <div>
@@ -2120,11 +2191,17 @@ export default function DistributionPage() {
             {/* Sticky Header */}
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-bold text-slate-900">Enrolled Beneficiaries Preview</h2>
+                <h2 className="text-xl font-bold text-slate-900">{isSectorAdmin ? 'Beneficiaries Distribution Preview' : 'Enrolled Beneficiaries Preview'}</h2>
                 <p className="text-sm text-slate-600 mt-1">
                   <span className="font-semibold text-green-600">{eligibleMeta.qualified_count} qualified</span>
                   {' '}out of{' '}
-                  <span className="font-semibold">{eligibleMeta.total} enrolled beneficiaries</span>
+                  <span className="font-semibold">{eligibleMeta.total} {isSectorAdmin ? 'registered beneficiaries' : 'enrolled beneficiaries'}</span>
+                  {eligibleMeta.program_name && (
+                    <span> in {isSectorAdmin ? 'distribution' : 'program'} "{eligibleMeta.program_name}"</span>
+                  )}
+                  {formData.target_sitio && (
+                    <span className="font-semibold text-amber-700"> (Sitio {formData.target_sitio})</span>
+                  )}
                   {' '}in program "{eligibleMeta.program_name}"
                 </p>
               </div>
@@ -2140,14 +2217,27 @@ export default function DistributionPage() {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm font-semibold text-blue-900 mb-2">Selection Criteria:</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-blue-800">
-                  <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 flex-shrink-0" />
-                    <span>Program: <strong>{programs.find(p => p.id === parseInt(formData.program_id))?.name || 'N/A'}</strong></span>
-                  </div>
+                  {!isSectorAdmin ? (
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 flex-shrink-0" />
+                      <span>Program: <strong>{programs.find(p => p.id === parseInt(formData.program_id))?.name || 'N/A'}</strong></span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 flex-shrink-0" />
+                      <span>Distribution: <strong>{formData.title || 'MSWDO Direct Aid'}</strong></span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 flex-shrink-0" />
-                    <span>Barangay: <strong>{barangays.find(b => b.id === parseInt(formData.barangay_id))?.barangay_name || 'N/A'}</strong></span>
+                    <span>Barangay: <strong>{barangays.find(b => b.id === parseInt(formData.barangay_id))?.barangay_name || 'Lahat ng Barangay (Municipality-Wide)'}</strong></span>
                   </div>
+                  {formData.target_sitio && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 flex-shrink-0 text-amber-600" />
+                      <span>Target Sitio: <strong>Sitio {formData.target_sitio}</strong></span>
+                    </div>
+                  )}
                   {formData.target_category && (
                     <div className="flex items-center gap-2">
                       <Users className="w-4 h-4 flex-shrink-0" />
@@ -2164,7 +2254,7 @@ export default function DistributionPage() {
               {/* Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
-                  <p className="text-xs text-slate-500 mb-1">Total Enrolled</p>
+                  <p className="text-xs text-slate-500 mb-1">{isSectorAdmin ? 'Total in Barangay' : 'Total Enrolled'}</p>
                   <p className="text-2xl font-bold text-slate-900">{eligibleMeta.total}</p>
                 </div>
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
@@ -2279,9 +2369,10 @@ export default function DistributionPage() {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">#</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Beneficiary</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Category</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Sitio / Purok</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Contact</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">RFID</th>
-                        <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase">Enrolled</th>
+                        {!isSectorAdmin && <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase">Enrolled</th>}
                         <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase">Qualified</th>
                       </tr>
                     </thead>
@@ -2307,11 +2398,22 @@ export default function DistributionPage() {
                               {b.category || 'N/A'}
                             </span>
                           </td>
+                          <td className="px-4 py-3 text-xs">
+                            {b.sitio ? (
+                              <span className="font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                📍 {b.sitio}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">—</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-slate-600">{b.contact_number || '—'}</td>
                           <td className="px-4 py-3 font-mono text-slate-600 text-xs">{b.RFID_number || '—'}</td>
-                          <td className="px-4 py-3 text-center">
-                            <CheckCircle className="w-5 h-5 text-green-500 mx-auto" title="Enrolled in program" />
-                          </td>
+                          {!isSectorAdmin && (
+                            <td className="px-4 py-3 text-center">
+                              <CheckCircle className="w-5 h-5 text-green-500 mx-auto" title="Enrolled in program" />
+                            </td>
+                          )}
                           <td className="px-4 py-3 text-center">
                             {b.status === 'Approved' ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">

@@ -32,7 +32,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { announcementApi, programApi, barangayApi } from '../services/api';
+import { announcementApi, programApi, barangayApi, userApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
@@ -241,6 +241,11 @@ export default function AnnouncementManagementPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isBarangayStaff = user?.role === 'staff' || user?.role === 'barangay';
+  const isMswdoAdmin = user?.role === 'mswdo_admin';
+  const isMswdoStaff = user?.role === 'mswdo_staff';
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin';
+  const isPwdAdmin = user?.role === 'pwd_admin';
+  const isSectorAdmin = isMswdoAdmin || isMswdoStaff || isSeniorAdmin || isPwdAdmin;
   const [announcements, setAnnouncements] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [barangays, setBarangays] = useState([]);
@@ -278,6 +283,7 @@ export default function AnnouncementManagementPage() {
   const [sitioSelectionMode, setSitioSelectionMode] = useState('all'); // 'all' | 'specific'
   const [availableSitios, setAvailableSitios] = useState([]);
   const [customSitioInput, setCustomSitioInput] = useState('');
+  const [staffList, setStaffList] = useState([]);
   const [formData, setFormData] = useState({
     title: '',
     message: '',
@@ -288,6 +294,7 @@ export default function AnnouncementManagementPage() {
     priority: 'Medium',
     status: 'published',
     expiration_date: '',
+    assigned_staff_id: '',
     target_categories: [...activeAllowedCategories],
     target_programs: [],
     target_barangays: [],
@@ -298,14 +305,17 @@ export default function AnnouncementManagementPage() {
   // Load programs & barangays for dropdowns/target options
   const fetchMetadata = async () => {
     try {
-      const [progRes, bgryRes] = await Promise.all([
+      const [progRes, bgryRes, userRes] = await Promise.all([
         programApi.list(),
         barangayApi.list(),
+        userApi.list().catch(() => ({ data: { data: [] } })),
       ]);
       const loadedPrograms = progRes.data?.data || progRes.data || [];
       const loadedBarangays = bgryRes.data?.data || bgryRes.data || [];
+      const loadedUsers = userRes.data?.data || userRes.data || [];
       setPrograms(loadedPrograms);
       setBarangays(loadedBarangays);
+      setStaffList(loadedUsers.filter((u) => u.role === 'staff' || u.role === 'barangay' || u.role === 'mswdo_staff'));
 
       setFormData((prev) => ({
         ...prev,
@@ -333,8 +343,8 @@ export default function AnnouncementManagementPage() {
 
       const res = await announcementApi.list(params);
       let list = res.data?.data || [];
-      if (user?.role === 'mswdo_admin') {
-        list = list.filter((a) => a.created_by_user_id === user.id || a.notify_mswdo);
+      if (['mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role)) {
+        list = list.filter((a) => a.created_by_user_id === user.id || ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(a.CreatedBy?.role));
       }
       setAnnouncements(list);
     } catch (err) {
@@ -473,6 +483,7 @@ export default function AnnouncementManagementPage() {
       target_barangays: staffBarangayTarget,
       target_sitios: [],
       notify_mswdo: false,
+      assigned_staff_id: '',
     });
     setIsModalOpen(true);
   };
@@ -529,6 +540,7 @@ export default function AnnouncementManagementPage() {
       target_barangays: parsedTargetBarangays,
       target_sitios: parsedTargetSitios,
       notify_mswdo: !!ann.notify_mswdo,
+      assigned_staff_id: ann.assigned_staff_id || '',
     });
     setIsModalOpen(true);
   };
@@ -897,7 +909,7 @@ export default function AnnouncementManagementPage() {
             <span>Archived ({announcements.filter((a) => a.status === 'archived').length})</span>
           </button>
 
-          {['admin', 'mswdo_admin', 'staff', 'barangay'].includes(user?.role) && (
+          {['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'barangay'].includes(user?.role) && (
             <button
               type="button"
               onClick={handleOpenCreateModal}
@@ -1125,6 +1137,11 @@ export default function AnnouncementManagementPage() {
                                 Barangay Staff
                               </span>
                             )}
+                            {ann.AssignedStaff && (
+                              <span className="bg-purple-50 text-purple-800 border border-purple-200 px-1.5 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-1">
+                                📋 Staff: {ann.AssignedStaff.first_name} {ann.AssignedStaff.last_name} ({ann.AssignedStaff.role === 'mswdo_staff' ? 'MSWDO Staff' : 'DSWD Staff'})
+                              </span>
+                            )}
                             <span>•</span>
                             <span>{new Date(ann.created_at || ann.createdAt).toLocaleDateString()}</span>
                           </div>
@@ -1313,7 +1330,7 @@ export default function AnnouncementManagementPage() {
                           >
                             <Download className="w-4 h-4" />
                           </button>
-                          {ann.status === 'published' && ['admin', 'mswdo_admin'].includes(user?.role) && (
+                          {ann.status === 'published' && ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role) && (
                             <button
                               onClick={() => handleResend(ann.id)}
                               title="Resend notifications"
@@ -1322,7 +1339,7 @@ export default function AnnouncementManagementPage() {
                               <Send className="w-4 h-4" />
                             </button>
                           )}
-                          {(['admin', 'mswdo_admin'].includes(user?.role) ||
+                          {(['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role) ||
                             (isBarangayStaff &&
                               Number(ann.created_by_user_id) === Number(user?.id) &&
                               ['pending_approval', 'rejected', 'draft'].includes(ann.status))) && (
@@ -1547,6 +1564,37 @@ export default function AnnouncementManagementPage() {
                   onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                 />
+              </div>
+
+              {/* ASSIGNED STAFF SECTION */}
+              <div className="space-y-1">
+                <label className="block text-xs font-black text-slate-700 uppercase">
+                  Assign Staff to Assist Attendance (Optional)
+                </label>
+                <select
+                  value={formData.assigned_staff_id || ''}
+                  onChange={(e) => setFormData({ ...formData, assigned_staff_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                >
+                  <option value="">-- Walang Naka-assign (Pumili ng Staff) --</option>
+                  {staffList
+                    .filter((s) => {
+                      if (isMswdoAdmin || isMswdoStaff || isSectorAdmin) {
+                        return s.role === 'mswdo_staff';
+                      }
+                      return s.role === 'staff' || s.role === 'barangay';
+                    })
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.first_name} {s.last_name} ({s.role === 'mswdo_staff' ? 'MSWDO Staff' : (s.email || 'Staff')})
+                      </option>
+                    ))}
+                </select>
+                <p className="text-[11px] text-slate-500">
+                  {isMswdoAdmin || isMswdoStaff || isSectorAdmin
+                    ? 'Piliin ang MSWDO Staff na mamamahala sa pag-scan ng RFID attendance para sa aktibidad na ito.'
+                    : 'Piliin ang Staff na mag-aasikaso ng RFID attendance.'}
+                </p>
               </div>
 
               {/* TARGET AUDIENCE SELECTION SECTION */}

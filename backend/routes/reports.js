@@ -19,8 +19,15 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     if (isBarangayScoped) {
       beneficiaryWhere.barangay_id = barangayId;
     }
-    // MSWDO focuses on Senior Citizens and PWD only
-    if (isMswdoRole(req.user.role)) {
+    // Scope based on sector role
+    if (req.user.role === 'senior_citizen_admin') {
+      beneficiaryWhere.category = { [Op.like]: '%Senior%' };
+    } else if (req.user.role === 'pwd_admin') {
+      beneficiaryWhere[Op.or] = [
+        { category: { [Op.like]: '%PWD%' } },
+        { category: { [Op.like]: '%Disabilit%' } }
+      ];
+    } else if (isMswdoRole(req.user.role)) {
       beneficiaryWhere[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
     }
 
@@ -211,6 +218,86 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
       };
     }
 
+    // ── Assistance Request stats ──
+    const assistWhere = {};
+    if (isBarangayScoped && barangayId) {
+      assistWhere.barangay_id = barangayId;
+    }
+    if (isMswdoRole(req.user.role)) {
+      assistWhere.agency = 'MSWDO';
+    } else if (req.user.role === 'admin') {
+      assistWhere.agency = 'DSWD';
+    }
+    const totalAssistanceRequests = await AssistanceRequest.count({ where: assistWhere });
+    const pendingAssistanceRequests = await AssistanceRequest.count({
+      where: { ...assistWhere, status: { [Op.in]: ['Pending', 'pending', 'Under Review', 'under_review'] } }
+    });
+    const approvedAssistanceRequests = await AssistanceRequest.count({
+      where: { ...assistWhere, status: { [Op.in]: ['Approved', 'approved'] } }
+    });
+    const completedAssistanceRequests = await AssistanceRequest.count({
+      where: { ...assistWhere, status: { [Op.in]: ['Completed', 'completed'] } }
+    });
+    const rejectedAssistanceRequests = await AssistanceRequest.count({
+      where: { ...assistWhere, status: { [Op.in]: ['Rejected', 'rejected'] } }
+    });
+
+    // ── Attendance stats ──
+    let announcementScopeIds = null;
+    let attendanceWhere = {};
+    if (isMswdoRole(req.user.role)) {
+      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff'] } }, attributes: ['id'] });
+      const mswdoUserIds = mswdoUsers.map(u => u.id);
+      const mswdoAnnouncements = await Announcement.findAll({
+        where: {
+          [Op.or]: [
+            { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
+            { notify_mswdo: true },
+            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
+            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
+            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
+          ],
+        },
+        attributes: ['id'],
+      });
+      announcementScopeIds = mswdoAnnouncements.map(a => a.id);
+      if (announcementScopeIds.length > 0) {
+        attendanceWhere.announcement_id = { [Op.in]: announcementScopeIds };
+      }
+    }
+    const presentAttendance = await Attendance.count({
+      where: { ...attendanceWhere, status: { [Op.in]: ['Present', 'present'] } }
+    });
+    const lateAttendance = await Attendance.count({
+      where: { ...attendanceWhere, status: { [Op.in]: ['Late', 'late'] } }
+    });
+    const absentWhere = { attendance_status: 'Absent' };
+    if (announcementScopeIds && announcementScopeIds.length > 0) {
+      absentWhere.announcement_id = { [Op.in]: announcementScopeIds };
+    }
+    const absentAttendance = await AnnouncementRecipient.count({ where: absentWhere });
+    const totalAttendanceRecords = presentAttendance + lateAttendance + absentAttendance;
+    const attendanceTurnoutRate = totalAttendanceRecords > 0
+      ? Math.round(((presentAttendance + lateAttendance) / totalAttendanceRecords) * 100)
+      : 0;
+
+    // ── Announcement stats ──
+    let announceWhere = {};
+    if (isMswdoRole(req.user.role)) {
+      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff'] } }, attributes: ['id'] });
+      const mswdoUserIds = mswdoUsers.map(u => u.id);
+      announceWhere[Op.or] = [
+        { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
+        { notify_mswdo: true },
+        sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
+        sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
+        sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
+      ];
+    }
+    const totalAnnouncements = await Announcement.count({ where: announceWhere });
+    const publishedAnnouncements = await Announcement.count({ where: { ...announceWhere, status: 'published' } });
+    const completedAnnouncements = await Announcement.count({ where: { ...announceWhere, status: 'completed' } });
+
     res.json({
       success: true,
       data: {
@@ -238,6 +325,22 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
         distributionProgress,
         totalReleased,
         totalBeneficiariesInEvents,
+        // Assistance Request stats
+        totalAssistanceRequests,
+        pendingAssistanceRequests,
+        approvedAssistanceRequests,
+        completedAssistanceRequests,
+        rejectedAssistanceRequests,
+        // Attendance stats
+        totalAttendanceRecords,
+        presentAttendance,
+        lateAttendance,
+        absentAttendance,
+        attendanceTurnoutRate,
+        // Announcement stats
+        totalAnnouncements,
+        publishedAnnouncements,
+        completedAnnouncements,
         // Staff-specific
         staffStats,
       },
@@ -561,7 +664,14 @@ router.get('/export/beneficiaries', authorize('admin', 'staff', 'barangay'), asy
     const where = { status: 'Approved' };
     if (isBarangayScoped && barangayId) where.barangay_id = barangayId;
     else if (qBarangay) where.barangay_id = qBarangay;
-    if (isMswdoRole(req.user.role)) {
+    if (req.user.role === 'senior_citizen_admin') {
+      where.category = { [Op.like]: '%Senior%' };
+    } else if (req.user.role === 'pwd_admin') {
+      where[Op.or] = [
+        { category: { [Op.like]: '%PWD%' } },
+        { category: { [Op.like]: '%Disabilit%' } }
+      ];
+    } else if (isMswdoRole(req.user.role)) {
       // Enforce Senior/PWD/4Ps even if category query provided
       const cat = category || '';
       const lower = String(cat).toLowerCase();
@@ -772,7 +882,14 @@ router.get('/table/beneficiaries', authorize('admin', 'staff', 'barangay'), asyn
     const where = { status: 'Approved' };
     if (isBarangayScoped && barangayId) where.barangay_id = barangayId;
     else if (qBarangay) where.barangay_id = qBarangay;
-    if (isMswdoRole(req.user.role)) {
+    if (req.user.role === 'senior_citizen_admin') {
+      where.category = { [Op.like]: '%Senior%' };
+    } else if (req.user.role === 'pwd_admin') {
+      where[Op.or] = [
+        { category: { [Op.like]: '%PWD%' } },
+        { category: { [Op.like]: '%Disabilit%' } }
+      ];
+    } else if (isMswdoRole(req.user.role)) {
       const cat = category || '';
       const lower = String(cat).toLowerCase();
       if (!cat || (!lower.includes('senior') && !lower.includes('pwd') && !lower.includes('disabilit') && !lower.includes('4ps') && !lower.includes('pantawid'))) {

@@ -31,6 +31,8 @@ import RequestAssistancePage from './pages/RequestAssistancePage';
 import AssistanceRequestsManagementPage from './pages/AssistanceRequestsManagementPage';
 import MyInterventionsPage from './pages/MyInterventionsPage';
 import InterventionsManagementPage from './pages/InterventionsManagementPage';
+import SeniorCitizenAdminPage from './pages/SeniorCitizenAdminPage';
+import PwdAdminPage from './pages/PwdAdminPage';
 import MainLayout from './components/layout/MainLayout';
 
 const ProtectedRoute = ({ children }) => {
@@ -43,14 +45,23 @@ const ProtectedRoute = ({ children }) => {
 
 // Dashboard Router Component - Shows different dashboard based on role
 const DashboardRouter = () => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   
+  if (loading || !user) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent"></div>
+        <p className="text-xs text-slate-500 font-medium">Loading portal...</p>
+      </div>
+    );
+  }
+
   // Beneficiaries see the application portal dashboard
   if (user?.role === 'beneficiary') {
     return <DashboardPage />;
   }
-  
-  // Staff and Admin see the modern dashboard
+
+  // Staff and Admin (including MSWDO, Senior Citizen, and PWD admins) see the modern dashboard
   return <ModernDashboard />;
 };
 
@@ -74,6 +85,10 @@ const AppRoutes = () => (
     <Route path="/attendance" element={<Navigate to="/dashboard/attendance" replace />} />
     <Route path="/Attendance" element={<Navigate to="/dashboard/attendance" replace />} />
     <Route path="/reports" element={<Navigate to="/dashboard/reports" replace />} />
+    <Route path="/senior-citizen-admin" element={<Navigate to="/dashboard/senior-citizen-admin" replace />} />
+    <Route path="/pwd-admin" element={<Navigate to="/dashboard/pwd-admin" replace />} />
+    <Route path="/senior-citizens" element={<Navigate to="/dashboard/senior-citizen-admin" replace />} />
+    <Route path="/pwd" element={<Navigate to="/dashboard/pwd-admin" replace />} />
     <Route
       path="/dashboard"
       element={
@@ -83,6 +98,10 @@ const AppRoutes = () => (
       }
     >
       <Route index element={<DashboardRouter />} />
+      <Route path="senior-citizen-admin" element={<SeniorCitizenAdminPage />} />
+      <Route path="pwd-admin" element={<PwdAdminPage />} />
+      <Route path="senior-citizens" element={<Navigate to="/dashboard/senior-citizen-admin" replace />} />
+      <Route path="pwd" element={<Navigate to="/dashboard/pwd-admin" replace />} />
       <Route path="beneficiaries" element={<BeneficiaryListPage />} />
       <Route path="programs" element={<ProgramListPage />} />
       <Route path="programs/:id" element={<ProgramDetailsPage />} />

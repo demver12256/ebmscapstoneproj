@@ -90,9 +90,13 @@ app.use('/uploads', cors(), express.static(path.join(__dirname, 'uploads')), ser
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 2000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    const url = req.originalUrl || req.url || '';
+    return url.includes('unread') || url.includes('popup') || url.includes('/api/reports/summary');
+  },
 });
 
 app.use('/api', apiLimiter);

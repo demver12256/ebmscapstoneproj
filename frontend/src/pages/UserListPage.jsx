@@ -6,7 +6,14 @@ import { userApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { UserPlus, X, Users } from 'lucide-react';
 
-const ROLES = ['staff', 'barangay', 'beneficiary'];
+const ROLES = [
+  { value: 'mswdo_staff', label: 'MSWDO Staff' },
+  { value: 'staff', label: 'DSWD Staff' },
+  { value: 'senior_citizen_admin', label: 'Senior Citizen Admin (OSCA)' },
+  { value: 'pwd_admin', label: 'PWD Admin (PDAO)' },
+  { value: 'barangay', label: 'Barangay' },
+  { value: 'beneficiary', label: 'Beneficiary' },
+];
 const BENEFICIARY_CATEGORY_OPTIONS = [
   { value: '4Ps Household Beneficiaries', label: '4Ps Household Beneficiaries' },
   { value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' },
@@ -139,7 +146,7 @@ export default function UserListPage() {
       });
       await loadUsers();
     } catch (err) {
-      setFormError(err.message || 'Failed to create user');
+      setFormError(err.response?.data?.message || err.message || 'Failed to create user');
     } finally {
       setSubmitting(false);
     }
@@ -177,7 +184,7 @@ export default function UserListPage() {
         row.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
       }`}>{row.status}</span>
     )},
-    { header: 'Actions', accessor: 'id', cell: (row) => !['admin','mswdo_admin'].includes(row.role) ? (
+    { header: 'Actions', accessor: 'id', cell: (row) => !['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(row.role) ? (
       <button
         onClick={() => handleDelete(row.id)}
         className="rounded-lg px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 transition"
@@ -188,14 +195,30 @@ export default function UserListPage() {
   ];
 
   // Filter display lists based on user role
-  const displayUsers = currentUser?.role === 'staff'
-    ? users // Backend already filtered it to only show their barangay's beneficiaries
-    : users.filter((user) => user.role === 'staff');
+  const isStaffView = currentUser?.role === 'staff' || currentUser?.role === 'mswdo_staff';
+  const displayUsers = isStaffView
+    ? users // Backend already filtered it to only show their beneficiaries
+    : users.filter((user) => user.role !== 'beneficiary');
 
-  const pageTitle = currentUser?.role === 'staff' ? 'Beneficiary Accounts' : 'Staff Accounts';
-  const pageDescription = currentUser?.role === 'staff' ? 'Manage beneficiary accounts in your barangay.' : 'Manage staff and user accounts.';
-  const loadingLabel = currentUser?.role === 'staff' ? 'Loading beneficiary accounts...' : 'Loading staff accounts...';
-  const emptyLabel = currentUser?.role === 'staff' ? 'No beneficiary accounts found' : 'No staff accounts found';
+  const pageTitle = isStaffView 
+    ? 'Beneficiary Accounts' 
+    : (currentUser?.role === 'mswdo_admin' ? 'MSWDO Staff Accounts' : 'Staff Accounts');
+  const pageDescription = isStaffView 
+    ? 'Manage beneficiary accounts.' 
+    : (currentUser?.role === 'mswdo_admin' ? 'Manage MSWDO staff and municipal accounts.' : 'Manage DSWD staff and user accounts.');
+  const loadingLabel = isStaffView ? 'Loading beneficiary accounts...' : 'Loading staff accounts...';
+  const emptyLabel = isStaffView ? 'No beneficiary accounts found' : 'No staff accounts found';
+
+  const availableRoles = currentUser?.role === 'mswdo_admin'
+    ? [
+        { value: 'mswdo_staff', label: 'MSWDO Staff' },
+        { value: 'senior_citizen_admin', label: 'Senior Citizen Admin (OSCA)' },
+        { value: 'pwd_admin', label: 'PWD Admin (PDAO)' },
+      ]
+    : [
+        { value: 'staff', label: 'DSWD Staff' },
+        { value: 'barangay', label: 'Barangay Staff' },
+      ];
 
   return (
     <div className="space-y-6">
@@ -277,7 +300,7 @@ export default function UserListPage() {
               </div>
               <div>
                 <h2 className="text-base font-semibold text-slate-900">
-                  {currentUser?.role === 'staff' ? 'Create Beneficiary Account' : 'Create New Account'}
+                  {isStaffView ? 'Create Beneficiary Account' : (currentUser?.role === 'mswdo_admin' ? 'Create MSWDO Staff Account' : 'Create Staff Account')}
                 </h2>
                 <p className="text-xs text-slate-500">
                   {currentUser?.role === 'staff'
@@ -306,7 +329,7 @@ export default function UserListPage() {
               <Input label="Password" name="password" type="password" value={form.password} onChange={handleChange} required autoComplete="new-password" />
               <Input label="Contact Number" name="contact_number" value={form.contact_number} onChange={handleChange} autoComplete="off" />
 
-              {(form.role === 'beneficiary' || currentUser?.role === 'staff') && (
+              {(form.role === 'beneficiary' || isStaffView) && (
                 <>
                   <label className="block text-sm font-semibold text-slate-700">
                     Beneficiary Category
@@ -376,8 +399,8 @@ export default function UserListPage() {
                       onChange={handleChange}
                       className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                     >
-                      {ROLES.map((r) => (
-                        <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
+                      {availableRoles.map((r) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
                       ))}
                     </select>
                   </label>

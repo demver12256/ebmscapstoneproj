@@ -117,7 +117,15 @@ async function sendSms(recipient, message) {
   const normalizedRecipient = normalizePhilippineNumber(recipient);
   if (!normalizedRecipient) throw new Error('A valid Philippine mobile number is required.');
   if (!String(message || '').trim()) throw new Error('SMS message is required.');
-  const brandedMessage = String(message).trim().replace(/\bEBMS\b/gi, SMS_BRAND);
+  let brandedMessage = String(message).trim()
+    .replace(/EBMS\s*\[MSWDO\]/gi, '[BeniAid MSWDO Bongabong]')
+    .replace(/EBMS\s*\[OSCA\]/gi, '[BeniAid OSCA Bongabong]')
+    .replace(/EBMS\s*\[(PWDO|PDAO)\]/gi, '[BeniAid PWDO Bongabong]')
+    .replace(/EBMS\s*\[DSWD\]/gi, '[BeniAid DSWD Bongabong]')
+    .replace(/\bEBMS\b/gi, (match, offset, str) => {
+      if (str.includes('BeniAid')) return '';
+      return 'BeniAid DSWD Bongabong';
+    });
 
   const baseUrls = getPhilSmsBaseUrls();
   let lastError = null;

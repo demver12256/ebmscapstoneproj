@@ -1,10 +1,15 @@
-const ADMIN_ROLES = ['admin', 'mswdo_admin'];
+const ADMIN_ROLES = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'];
+const STAFF_ROLES = ['staff', 'mswdo_staff'];
 
 const expandRoles = (roles) => {
   const expanded = new Set(roles);
-  // mswdo_admin inherits all admin permissions
+  // admin inherits all admin sub-roles
   if (expanded.has('admin')) {
     ADMIN_ROLES.forEach(r => expanded.add(r));
+  }
+  // staff inherits all staff sub-roles
+  if (expanded.has('staff')) {
+    STAFF_ROLES.forEach(r => expanded.add(r));
   }
   return [...expanded];
 };

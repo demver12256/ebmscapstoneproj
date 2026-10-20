@@ -112,6 +112,8 @@ User.hasMany(Message, { as: 'ReceivedMessages', foreignKey: 'receiver_id', onDel
 
 // ── Announcement Associations ──
 Announcement.belongsTo(User, { as: 'CreatedBy', foreignKey: 'created_by_user_id' });
+Announcement.belongsTo(User, { as: 'AssignedStaff', foreignKey: 'assigned_staff_id' });
+User.hasMany(Announcement, { as: 'AssignedAnnouncements', foreignKey: 'assigned_staff_id' });
 User.hasMany(Announcement, { foreignKey: 'created_by_user_id' });
 
 Announcement.hasMany(AnnouncementRecipient, { foreignKey: 'announcement_id', as: 'Recipients', onDelete: 'CASCADE' });

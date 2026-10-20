@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
 import { getAnnouncementEndDateTime } from '../utils/announcementSchedule';
+import { useAuth } from '../context/AuthContext';
 
 // Helper to determine if announcement is active for attendance recording
 const isAnnouncementActiveForAttendance = (ann) => {
@@ -50,6 +51,7 @@ const deduplicateAttendanceRecords = (records) => {
 };
 
 export default function RfidAttendancePage() {
+  const { user } = useAuth();
   const [announcements, setAnnouncements] = useState([]);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState('');
   const [eventName, setEventName] = useState('');
@@ -537,7 +539,7 @@ export default function RfidAttendancePage() {
                 <optgroup label="🟢 Aktibong mga Anunsyo (Bukás para sa Attendance)">
                   {activeAnnouncements.map((announcement) => (
                     <option key={announcement.id} value={announcement.id}>
-                      {announcement.title} {announcement.event_date && `(${new Date(announcement.event_date).toLocaleDateString()})`}
+                      {announcement.title} {announcement.event_date && `(${new Date(announcement.event_date).toLocaleDateString()})`}{announcement.assigned_staff_id === user?.id ? ' ★ (Assigned to You)' : ''}
                     </option>
                   ))}
                 </optgroup>

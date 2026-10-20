@@ -5,6 +5,7 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { AssistanceRequest, Beneficiary, User, Barangay, Notification, SMSNotification, AuditLog } = require('../db');
+const { getOfficeBrand } = require('../utils/roles');
 
 // Configure multer storage for assistance request attachments
 const storage = multer.diskStorage({
@@ -469,7 +470,7 @@ router.patch('/:id/status', async (req, res, next) => {
       if (contactNo && updated.beneficiary_id) {
         await SMSNotification.create({
           beneficiary_id: updated.beneficiary_id,
-          message: `BeniAid DSWD Bongabong Ayuda Alert: Ang iyong ${request.type} sa ${request.agency} (#${request.id}) ay "${status}".${grantedAmountText} ${admin_notes ? `Paalala: ${admin_notes}` : ''}`.trim(),
+          message: `[${getOfficeBrand(currentUser.role === 'admin' ? request.agency : (currentUser || request.agency))}] Ayuda Alert: Ang iyong ${request.type} sa ${request.agency} (#${request.id}) ay "${status}".${grantedAmountText} ${admin_notes ? `Paalala: ${admin_notes}` : ''}`.trim(),
           status: 'queued',
         });
       }
@@ -599,6 +600,15 @@ router.post('/claim-rfid', async (req, res, next) => {
           reference_id: assistanceReq.id,
           reference_type: 'assistance_request',
           is_read: false,
+        });
+      }
+
+      if (beneficiary.contact_number) {
+        const brand = getOfficeBrand(currentUser.role === 'admin' ? assistanceReq.agency : (currentUser || assistanceReq.agency));
+        await SMSNotification.create({
+          beneficiary_id: beneficiary.id,
+          message: `[${brand}] Matagumpay mong na-claim ang iyong ${assistanceReq.type} sa ${assistanceReq.agency} (#${assistanceReq.id}) gamit ang RFID card ngayong ${new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}.`,
+          status: 'queued',
         });
       }
     } catch (e) {}

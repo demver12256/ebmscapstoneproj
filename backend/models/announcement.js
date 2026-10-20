@@ -74,6 +74,14 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: false,
         comment: 'If true, also sends notification notice to MSWDO Admin',
       },
+      assigned_staff_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'users',
+          key: 'id',
+        },
+      },
       created_by_user_id: {
         type: DataTypes.INTEGER,
         allowNull: false,

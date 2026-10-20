@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FileText, Calendar, Filter, X, Download, FileSpreadsheet, Printer, Eye, CheckCircle, AlertCircle, TrendingUp, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { FileText, Calendar, Filter, X, Download, FileSpreadsheet, Printer, Eye, CheckCircle, AlertCircle, TrendingUp, Users, ExternalLink, Check, ArrowDown } from 'lucide-react';
 import { reportsApi, programApi, barangayApi, beneficiaryApi, distributionApi, announcementApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx';
@@ -336,16 +337,39 @@ function DistributionDetailModal({ distribution, onClose }) {
 // ─── Main Report Page ──────────────────────────────────────────────
 export default function ReportsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSelectReport = (type) => {
+    setReportType(type);
+    setCurrentPage(1);
+    setTimeout(() => {
+      const el = document.getElementById('report-table-section');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 50);
+  };
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin';
+  const isPwdAdmin = user?.role === 'pwd_admin';
   const isMswdoAdmin = user?.role === 'mswdo_admin';
+  const isMswdoStaff = user?.role === 'mswdo_staff';
+  const isMswdo = isMswdoAdmin || isMswdoStaff;
+  const isSectorAdmin = isMswdo || isSeniorAdmin || isPwdAdmin;
   const [loading, setLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState('');
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
 
   // Filters
-  const [reportType, setReportType] = useState(user?.role === 'mswdo_admin' ? 'beneficiary' : '');
+  const [reportType, setReportType] = useState(isSectorAdmin ? 'beneficiary' : '');
   const [programFilter, setProgramFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState(
+    isSeniorAdmin 
+      ? 'Senior Citizens (Social Pension)' 
+      : isPwdAdmin 
+        ? 'Persons with Disabilities (PWD)' 
+        : ''
+  );
   const [barangayFilter, setBarangayFilter] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
@@ -394,7 +418,7 @@ export default function ReportsPage() {
         barangayApi.list(),
       ]);
       const allPrograms = programsRes.data.data || [];
-      const mswdoPrograms = isMswdoAdmin
+      const mswdoPrograms = isSectorAdmin
         ? allPrograms.filter(p => p.agency === 'MSWDO' || (p.eligibility_category && (p.eligibility_category.includes('Senior') || p.eligibility_category.includes('PWD'))))
         : allPrograms;
       setPrograms(mswdoPrograms);
@@ -417,9 +441,9 @@ export default function ReportsPage() {
     setLoading(true);
     setError(null);
     try {
-      const effectiveRType = (isMswdoAdmin && (!rType || rType === 'distribution')) ? 'beneficiary' : rType;
+      const effectiveRType = (!rType && isSectorAdmin) ? 'beneficiary' : (rType || 'distribution');
       const params = { page, limit };
-      if (pFilter && !isMswdoAdmin) params.program_id = pFilter;
+      if (pFilter && !isSectorAdmin) params.program_id = pFilter;
       if (cFilter) params.category = cFilter;
       if (bFilter) params.barangay_id = bFilter;
       if (dRange.start) params.start_date = dRange.start;
@@ -535,9 +559,14 @@ export default function ReportsPage() {
         setTableData(res.data.data || []);
         setTableTotal(res.data.pagination?.total || 0);
         setTotalPages(res.data.pagination?.totalPages || 1);
+      } else if (effectiveRType === 'distribution') {
+        const distRes = await reportsApi.recentDistributions(params);
+        setTableData(distRes.data.data || []);
+        setTableTotal(distRes.data.pagination?.total || 0);
+        setTotalPages(distRes.data.pagination?.totalPages || 1);
       } else {
-        // Default: distribution (also used for 'distribution' type and 'all')
-        if (isMswdoAdmin) {
+        // Default overview (when reportType is empty)
+        if (isSectorAdmin) {
           try {
             const res = await reportsApi.getTableBeneficiaries(params);
             const benList = res.data.data || [];
@@ -575,9 +604,15 @@ export default function ReportsPage() {
   };
 
   const resetFilters = () => {
-    setReportType(isMswdoAdmin ? 'beneficiary' : '');
+    setReportType(isSectorAdmin ? 'beneficiary' : '');
     setProgramFilter('');
-    setCategoryFilter('');
+    setCategoryFilter(
+      isSeniorAdmin 
+        ? 'Senior Citizens (Social Pension)' 
+        : isPwdAdmin 
+          ? 'Persons with Disabilities (PWD)' 
+          : ''
+    );
     setBarangayFilter('');
     setDateRange({ start: '', end: '' });
     setCurrentPage(1);
@@ -585,7 +620,10 @@ export default function ReportsPage() {
 
   // ── Table Configuration per Report Type ─────────────────────────
   const getTableConfig = () => {
-    const effectiveType = (isMswdoAdmin && (!reportType || reportType === 'distribution')) ? 'beneficiary' : reportType;
+    let effectiveType = reportType;
+    if (!reportType) {
+      effectiveType = isSectorAdmin ? 'beneficiary' : 'distribution';
+    }
     switch (effectiveType) {
       case 'beneficiary':
         return {
@@ -753,7 +791,7 @@ export default function ReportsPage() {
               <td className="px-6 py-4">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
                   row.user_role === 'admin' ? 'bg-blue-100 text-blue-700' :
-                  row.user_role === 'mswdo_admin' ? 'bg-purple-100 text-purple-700' :
+                  ['mswdo_admin','senior_citizen_admin','pwd_admin'].includes(row.user_role) ? 'bg-purple-100 text-purple-700' :
                   row.user_role === 'staff' ? 'bg-amber-100 text-amber-700' :
                   'bg-slate-100 text-slate-600'
                 }`}>{row.user_role}</span>
@@ -862,7 +900,7 @@ export default function ReportsPage() {
   // ── Export Helpers ──────────────────────────────────────────────
   const getExportParams = () => {
     const params = {};
-    if (programFilter && !isMswdoAdmin) params.program_id = programFilter;
+    if (programFilter && !isSectorAdmin) params.program_id = programFilter;
     if (categoryFilter) params.category = categoryFilter;
     if (barangayFilter) params.barangay_id = barangayFilter;
     if (dateRange.start) params.start_date = dateRange.start;
@@ -1248,7 +1286,7 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
   <div class="header">
     <h1>BeniAid Beneficiary Management System</h1>
     <p>Official Report &mdash; Generated: ${now}</p>
-    ${!isMswdoAdmin && programFilter ? `<p>Program Filter: ${programs.find(p => String(p.id) === String(programFilter))?.name || ''}</p>` : ''}
+    ${!isSectorAdmin && programFilter ? `<p>Program Filter: ${programs.find(p => String(p.id) === String(programFilter))?.name || ''}</p>` : ''}
     ${categoryFilter ? `<p>Category Filter: ${categoryFilter}</p>` : ''}
     ${barangayFilter ? `<p>Barangay Filter: ${barangays.find(b => String(b.id) === String(barangayFilter))?.barangay_name || ''}</p>` : ''}
     ${dateRange.start || dateRange.end ? `<p>Date Range: ${dateRange.start || '—'} to ${dateRange.end || '—'}</p>` : ''}
@@ -1281,9 +1319,9 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
   // ── Charts ──────────────────────────────────────────────────────
   const getProgramChartData = () => {
     const data = [
-      { name: isMswdoAdmin ? '4Ps Beneficiaries' : '4Ps Program', count: summary.fourPsCount || 0 },
+      { name: isSectorAdmin ? '4Ps Beneficiaries' : '4Ps Program', count: summary.fourPsCount || 0 },
       { name: 'Senior Citizens', count: summary.seniorCitizensCount || 0 },
-      { name: isMswdoAdmin ? 'PWD Beneficiaries' : 'PWD Program', count: summary.pwdCount || 0 },
+      { name: isSectorAdmin ? 'PWD Beneficiaries' : 'PWD Program', count: summary.pwdCount || 0 },
     ];
     const total = data.reduce((sum, p) => sum + p.count, 0);
     return data.map(p => ({ ...p, percentage: total > 0 ? ((p.count / total) * 100).toFixed(1) : 0 }));
@@ -1316,13 +1354,13 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
   // ── Available report definitions ──────────────────────────────
   const availableReports = [
     { icon: '👥', title: 'Beneficiary List', desc: 'Excel report with auto-sized columns', color: 'bg-blue-50 hover:bg-blue-100 border-blue-200', exportType: 'beneficiaries', fileName: 'beneficiary-list.xlsx' },
+    { icon: '📊', title: 'Distribution Report', desc: 'Excel report with auto-sized columns', color: 'bg-green-50 hover:bg-green-100 border-green-200', exportType: 'distributions', fileName: 'distribution-report.xlsx' },
+    { icon: '🆘', title: 'Assistance Requests', desc: 'Excel report with auto-sized columns', color: 'bg-orange-50 hover:bg-orange-100 border-orange-200', exportType: 'assistance-requests', fileName: 'assistance-requests-report.xlsx' },
     { icon: '📅', title: 'Attendance Report', desc: 'Excel report with attendee records', color: 'bg-teal-50 hover:bg-teal-100 border-teal-200', exportType: 'attendance', fileName: 'attendance-report.xlsx' },
     { icon: '📢', title: 'Announcement Report', desc: 'Excel report with announcements and meetings summary', color: 'bg-amber-50 hover:bg-amber-100 border-amber-200', exportType: 'announcements', fileName: 'announcement-report.xlsx' },
-    ...(!isMswdoAdmin ? [
-      { icon: '📊', title: 'Distribution Report', desc: 'Excel report with auto-sized columns', color: 'bg-green-50 hover:bg-green-100 border-green-200', exportType: 'distributions', fileName: 'distribution-report.xlsx' },
+    ...(!isSectorAdmin ? [
       { icon: '📝', title: 'Program Report', desc: 'Excel report with auto-sized columns', color: 'bg-purple-50 hover:bg-purple-100 border-purple-200', exportType: 'programs', fileName: 'program-report.xlsx' },
       { icon: '📋', title: 'Enrollment Report', desc: 'Excel report with auto-sized columns', color: 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200', exportType: 'enrollments', fileName: 'enrollment-report.xlsx' },
-      { icon: '🆘', title: 'Assistance Requests', desc: 'Excel report with auto-sized columns', color: 'bg-orange-50 hover:bg-orange-100 border-orange-200', exportType: 'assistance-requests', fileName: 'assistance-requests-report.xlsx' },
     ] : []),
     ...(user?.role === 'admin' ? [{ icon: '🔐', title: 'Audit / System Logs', desc: 'Excel report with auto-sized columns', color: 'bg-slate-50 hover:bg-slate-100 border-slate-300', exportType: 'audit-logs', fileName: 'audit-logs.xlsx' }] : []),
   ];
@@ -1336,15 +1374,27 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
-              {isMswdoAdmin ? 'MSWDO Analytics' : 'Reports & Exports'}
+              {isSeniorAdmin ? 'OSCA Analytics' : isPwdAdmin ? 'PDAO Analytics' : isMswdo ? (isMswdoStaff ? 'MSWDO Staff Analytics' : 'MSWDO Admin Analytics') : 'Reports & Exports'}
             </span>
             <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-            Reports & Analytics
+            {isSeniorAdmin 
+              ? 'OSCA Social Pension Analytics & Reports' 
+              : isPwdAdmin 
+                ? 'PDAO Disability Welfare Analytics & Reports' 
+                : isMswdo 
+                  ? 'Municipal Social Welfare & Development Analytics & Reports' 
+                  : 'System Reports & Analytics'}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Generate and download municipal reports for monitoring, transparency, and decision-making.
+            {isSeniorAdmin
+              ? 'Generate and download senior citizen social pension and demographic reports.'
+              : isPwdAdmin
+                ? 'Generate and download persons with disabilities (PWD) demographic reports.'
+                : isMswdo
+                  ? 'Monitor municipal welfare analytics, distribution events, assistance requests, and attendance reports.'
+                  : 'Generate and download municipal reports for monitoring, transparency, and decision-making.'}
           </p>
         </div>
 
@@ -1397,9 +1447,12 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
               className="w-full px-4 py-2.5 border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white appearance-none cursor-pointer hover:border-blue-300 transition-colors shadow-sm"
               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%233B82F6' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.75rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.25em 1.25em', paddingRight: '2.5rem' }}
             >
-              {isMswdoAdmin ? (
+              {isSectorAdmin ? (
                 <>
-                  <option value="beneficiary">Beneficiary Records (Municipal Registry)</option>
+                  <option value="">All Reports (Overview & Analytics)</option>
+                  <option value="beneficiary">Beneficiary Records ({isSeniorAdmin ? 'OSCA Registry' : isPwdAdmin ? 'PDAO Registry' : 'Municipal Registry'})</option>
+                  <option value="distribution">Distribution Reports</option>
+                  <option value="assistance">Assistance Requests</option>
                   <option value="attendance">Attendance Reports</option>
                   <option value="announcement">Announcement Reports</option>
                 </>
@@ -1420,7 +1473,7 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
           </div>
 
           {/* Program or Category Filter */}
-          {isMswdoAdmin ? (
+          {isSectorAdmin ? (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">Category / Sector</label>
               <select
@@ -1505,12 +1558,48 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        {(isMswdoAdmin ? [
-          { icon: '👥', label: 'Total Beneficiaries', value: totalBeneficiaries, sub: 'Municipal Registry', color: 'bg-blue-50', iconColor: 'bg-blue-100' },
-          { icon: '🧓', label: 'Senior Citizens', value: summary.seniorCitizensCount || 0, sub: 'Social Pension', color: 'bg-white', iconColor: 'bg-rose-100' },
-          { icon: '♿', label: 'PWD Beneficiaries', value: summary.pwdCount || 0, sub: 'Municipal Registry', color: 'bg-white', iconColor: 'bg-amber-100' },
-          { icon: '📍', label: 'Covered Barangays', value: barangays.length || 10, sub: 'Municipal Scope', color: 'bg-white', iconColor: 'bg-purple-100' },
-          { icon: '⏳', label: 'Pending Applications', value: summary.pendingApplications || 0, sub: 'Awaiting Review', color: 'bg-amber-50', iconColor: 'bg-amber-100' },
+        {(isSectorAdmin ? [
+          { 
+            icon: '👥', 
+            label: isSeniorAdmin ? 'Senior Citizens' : isPwdAdmin ? 'PWD Beneficiaries' : 'Total Beneficiaries', 
+            value: isSeniorAdmin ? (summary.seniorCitizensCount || 0) : isPwdAdmin ? (summary.pwdCount || 0) : totalBeneficiaries, 
+            sub: isSeniorAdmin ? 'Social Pension' : isPwdAdmin ? 'Disability Registry' : 'Municipal Registry', 
+            color: 'bg-blue-50', 
+            iconColor: 'bg-blue-100' 
+          },
+          { 
+            icon: '📦', 
+            label: 'Distributions Done', 
+            value: summary.completedEvents || 0, 
+            sub: `${summary.totalDistributionEvents || 0} Total Events`, 
+            color: 'bg-emerald-50', 
+            iconColor: 'bg-emerald-100' 
+          },
+          { 
+            icon: '🆘', 
+            label: 'Assistance Requests', 
+            value: summary.totalAssistanceRequests || 0, 
+            sub: `${summary.pendingAssistanceRequests || 0} Pending Review`, 
+            color: 'bg-amber-50', 
+            iconColor: 'bg-amber-100' 
+          },
+          { 
+            icon: '📅', 
+            label: 'Attendance Scans', 
+            value: summary.totalAttendanceRecords || 0, 
+            sub: `${summary.attendanceTurnoutRate || 0}% Turnout Rate`, 
+            color: 'bg-teal-50', 
+            iconColor: 'bg-teal-100' 
+          },
+          { 
+            icon: '💰', 
+            label: 'Aid Disbursed', 
+            value: formatCurrency(summary.totalDistributedFunds), 
+            sub: 'Municipal Released', 
+            color: 'bg-purple-50', 
+            iconColor: 'bg-purple-100',
+            small: true
+          },
         ] : [
           { icon: '👥', label: 'Total Beneficiaries', value: totalBeneficiaries, sub: 'All Programs', color: 'bg-blue-50', iconColor: 'bg-blue-100', Icon: null },
           { icon: '📋', label: 'Active Programs', value: summary.totalPrograms || 0, sub: 'All Programs', color: 'bg-white', iconColor: 'bg-red-100' },
@@ -1529,11 +1618,238 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
         ))}
       </div>
 
+      {/* ── Comprehensive Analytics for All Reports ── */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-6 border-b border-slate-100 gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm">📊</span>
+              <h2 className="text-lg font-bold text-slate-900">All Reports Live Analytics & Statistics</h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Select any report card below to instantly display its live data records in the table below
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Live Synced
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {[
+            {
+              type: 'beneficiary',
+              title: 'Beneficiaries',
+              icon: '👥',
+              badge: 'Registry',
+              color: 'blue',
+              mainValue: totalBeneficiaries,
+              mainLabel: 'Total Approved Beneficiaries',
+              stats: [
+                { label: '👴 Senior Citizens', value: summary.seniorCitizensCount || 0 },
+                { label: '♿ PWD Members', value: summary.pwdCount || 0 },
+                { label: '👨‍👩‍👧‍👦 4Ps Households', value: summary.fourPsCount || 0 },
+                { label: '⏳ Pending Review', value: summary.pendingApplications || 0, highlight: true }
+              ],
+              path: '/dashboard/beneficiaries',
+              buttonLabel: 'Beneficiary Report'
+            },
+            {
+              type: 'distribution',
+              title: 'Distributions',
+              icon: '📦',
+              badge: 'Aid & Relief',
+              color: 'emerald',
+              mainValue: summary.totalDistributionEvents || 0,
+              mainLabel: 'Total Distribution Events',
+              stats: [
+                { label: '✅ Completed', value: summary.completedEvents || 0 },
+                { label: '⚡ Ongoing / Active', value: summary.ongoingEvents || 0 },
+                { label: '📅 Scheduled', value: summary.scheduledEvents || 0 },
+                { label: '💰 Released Funds', value: formatCurrency(summary.totalDistributedFunds), highlight: true }
+              ],
+              path: '/dashboard/distributions',
+              buttonLabel: 'Distribution Report'
+            },
+            {
+              type: 'assistance',
+              title: 'Assistance',
+              icon: '🆘',
+              badge: 'Requests',
+              color: 'amber',
+              mainValue: summary.totalAssistanceRequests || 0,
+              mainLabel: 'Total Aid Requests Filed',
+              stats: [
+                { label: '⏳ Pending Review', value: summary.pendingAssistanceRequests || 0, highlight: true },
+                { label: '👍 Approved', value: summary.approvedAssistanceRequests || 0 },
+                { label: '✅ Completed / Aided', value: summary.completedAssistanceRequests || 0 },
+                { label: '❌ Rejected', value: summary.rejectedAssistanceRequests || 0 }
+              ],
+              path: '/dashboard/assistance-requests',
+              buttonLabel: 'Assistance Report'
+            },
+            {
+              type: 'attendance',
+              title: 'Attendance',
+              icon: '📅',
+              badge: 'Logs',
+              color: 'teal',
+              mainValue: summary.totalAttendanceRecords || 0,
+              mainLabel: 'Total Recorded Check-ins',
+              stats: [
+                { label: '👤 Present', value: summary.presentAttendance || 0 },
+                { label: '⏰ Late', value: summary.lateAttendance || 0 },
+                { label: '🚫 Absent', value: summary.absentAttendance || 0 },
+                { label: '📈 Turnout Rate', value: `${summary.attendanceTurnoutRate || 0}%`, highlight: true }
+              ],
+              path: '/dashboard/rfid-attendance',
+              buttonLabel: 'Attendance Report'
+            },
+            {
+              type: 'announcement',
+              title: 'Announcements',
+              icon: '📢',
+              badge: 'Assemblies',
+              color: 'purple',
+              mainValue: summary.totalAnnouncements || 0,
+              mainLabel: 'Total Municipal Assemblies',
+              stats: [
+                { label: '📢 Published / Active', value: summary.publishedAnnouncements || 0 },
+                { label: '✅ Completed', value: summary.completedAnnouncements || 0 },
+                { label: '📍 Covered Barangays', value: barangays.length || 10 },
+                { label: '👥 Attendees Reached', value: summary.presentAttendance || 0, highlight: true }
+              ],
+              path: '/dashboard/announcements',
+              buttonLabel: 'Announcement Report'
+            }
+          ].map((card) => {
+            const isActive = reportType === card.type || (!reportType && isSectorAdmin && card.type === 'beneficiary');
+            const colorMap = {
+              blue: {
+                active: 'border-blue-600 bg-blue-50/90 ring-2 ring-blue-500/60 shadow-md',
+                inactive: 'border-blue-200/80 bg-blue-50/40 hover:border-blue-300 hover:shadow-xs',
+                title: 'text-blue-700',
+                badge: 'bg-blue-100 text-blue-800',
+                btnActive: 'bg-blue-600 text-white shadow-xs',
+                btnInactive: 'text-blue-700 bg-blue-100/80 hover:bg-blue-200/90',
+              },
+              emerald: {
+                active: 'border-emerald-600 bg-emerald-50/90 ring-2 ring-emerald-500/60 shadow-md',
+                inactive: 'border-emerald-200/80 bg-emerald-50/40 hover:border-emerald-300 hover:shadow-xs',
+                title: 'text-emerald-700',
+                badge: 'bg-emerald-100 text-emerald-800',
+                btnActive: 'bg-emerald-600 text-white shadow-xs',
+                btnInactive: 'text-emerald-700 bg-emerald-100/80 hover:bg-emerald-200/90',
+              },
+              amber: {
+                active: 'border-amber-600 bg-amber-50/90 ring-2 ring-amber-500/60 shadow-md',
+                inactive: 'border-amber-200/80 bg-amber-50/40 hover:border-amber-300 hover:shadow-xs',
+                title: 'text-amber-700',
+                badge: 'bg-amber-100 text-amber-800',
+                btnActive: 'bg-amber-600 text-white shadow-xs',
+                btnInactive: 'text-amber-800 bg-amber-100/80 hover:bg-amber-200/90',
+              },
+              teal: {
+                active: 'border-teal-600 bg-teal-50/90 ring-2 ring-teal-500/60 shadow-md',
+                inactive: 'border-teal-200/80 bg-teal-50/40 hover:border-teal-300 hover:shadow-xs',
+                title: 'text-teal-700',
+                badge: 'bg-teal-100 text-teal-800',
+                btnActive: 'bg-teal-600 text-white shadow-xs',
+                btnInactive: 'text-teal-700 bg-teal-100/80 hover:bg-teal-200/90',
+              },
+              purple: {
+                active: 'border-purple-600 bg-purple-50/90 ring-2 ring-purple-500/60 shadow-md',
+                inactive: 'border-purple-200/80 bg-purple-50/40 hover:border-purple-300 hover:shadow-xs',
+                title: 'text-purple-700',
+                badge: 'bg-purple-100 text-purple-800',
+                btnActive: 'bg-purple-600 text-white shadow-xs',
+                btnInactive: 'text-purple-700 bg-purple-100/80 hover:bg-purple-200/90',
+              },
+            }[card.color];
+
+            return (
+              <div
+                key={card.type}
+                onClick={() => handleSelectReport(card.type)}
+                className={`rounded-xl border p-4 flex flex-col justify-between transition-all cursor-pointer relative group ${
+                  isActive ? colorMap.active : colorMap.inactive
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${colorMap.title}`}>
+                      <span>{card.icon}</span>
+                      <span>{card.title}</span>
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {isActive ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900 text-white font-black flex items-center gap-1 shadow-xs">
+                          <Check className="w-2.5 h-2.5 text-emerald-400" /> ACTIVE
+                        </span>
+                      ) : (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${colorMap.badge}`}>
+                          {card.badge}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(card.path);
+                        }}
+                        title={`Open ${card.title} Module`}
+                        className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-white/80 transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="text-2xl font-black text-slate-900">{card.mainValue}</div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{card.mainLabel}</p>
+
+                  <div className="mt-4 space-y-1.5 text-xs">
+                    {card.stats.map((st, sIdx) => (
+                      <div
+                        key={sIdx}
+                        className={`flex justify-between ${
+                          st.highlight ? 'font-bold pt-1 border-t border-slate-200/60 text-slate-900' : 'text-slate-600'
+                        }`}
+                      >
+                        <span>{st.label}:</span>
+                        <span>{st.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectReport(card.type);
+                  }}
+                  className={`mt-4 w-full py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                    isActive ? colorMap.btnActive : colorMap.btnInactive
+                  }`}
+                >
+                  <span>{isActive ? 'Viewing Table Below' : `View ${card.buttonLabel}`}</span>
+                  <ArrowDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Program Distribution Donut */}
         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900 mb-6">{isMswdoAdmin ? 'Sector Demographics' : 'Program Distribution'}</h3>
+          <h3 className="text-lg font-semibold text-slate-900 mb-6">{isSectorAdmin ? (isSeniorAdmin ? 'OSCA Demographics' : isPwdAdmin ? 'PDAO Demographics' : 'Sector Demographics') : 'Program Distribution'}</h3>
           <div className="flex flex-col items-center">
             <div className="relative w-48 h-48 mb-4">
               <svg viewBox="0 0 200 200" className="transform -rotate-90">
@@ -1591,10 +1907,16 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
         </div>
 
         {/* Chart 2: Beneficiaries by Barangay (MSWDO) or Monthly Aid Bar Chart */}
-        {isMswdoAdmin ? (
+        {isSectorAdmin ? (
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-1">Beneficiaries by Barangay</h3>
+              <h3 className="text-lg font-semibold text-slate-900 mb-1">
+                {isSeniorAdmin 
+                  ? 'Senior Citizens by Barangay' 
+                  : isPwdAdmin 
+                    ? 'PWD Beneficiaries by Barangay' 
+                    : 'Beneficiaries by Barangay'}
+              </h3>
               <p className="text-xs text-slate-500 mb-4">Official roster registered per barangay</p>
             </div>
             <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
@@ -1663,7 +1985,7 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
         )}
 
         {/* Chart 3: Application Review Status (MSWDO) or Distribution Status Donut */}
-        {isMswdoAdmin ? (
+        {isSectorAdmin ? (
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-900 mb-6">Application Review Status</h3>
             <div className="flex flex-col items-center">
@@ -1799,13 +2121,20 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
         const cfg = getTableConfig();
         const colCount = cfg.columns.length;
         return (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+          <div id="report-table-section" className="bg-white rounded-xl border-2 border-blue-200 shadow-sm scroll-mt-6">
             {/* Table Header */}
-            <div className="p-6 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4">
+            <div className="p-6 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4 bg-slate-50/70 rounded-t-xl">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">{cfg.title}</h3>
-                <p className="text-sm text-slate-600 mt-1">
-                  Showing {tableData.length} of {tableTotal} records
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-bold uppercase tracking-wider bg-blue-600 text-white shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                    Active Report Table
+                  </span>
+                  <span className="text-xs font-semibold text-slate-700">• {cfg.title}</span>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">{cfg.title}</h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Showing {tableData.length} of {tableTotal} records with current filters applied
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -1941,73 +2270,87 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900 mb-1">Quick Export</h3>
           <p className="text-sm text-slate-600 mb-5">
-            {isMswdoAdmin ? 'Export municipal beneficiary and activity records to your preferred format' : 'Export current distribution data to your preferred format'}
+            {isSectorAdmin ? 'Export municipal beneficiary and activity records to your preferred format' : 'Export current distribution data to your preferred format'}
           </p>
           <div className="grid grid-cols-2 gap-3">
             {/* Beneficiary Excel */}
             <button
               onClick={() => handleExportCSV('beneficiaries')}
               disabled={exportLoading === 'beneficiaries'}
-              className="bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
+              className="bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl p-4 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
             >
               {exportLoading === 'beneficiaries' ? (
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+                <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" />
               ) : (
-                <FileSpreadsheet className="w-8 h-8 text-blue-600" />
+                <FileSpreadsheet className="w-7 h-7 text-blue-600" />
               )}
-              <div className="font-semibold text-slate-900 text-sm text-center">Beneficiary Excel</div>
-              <div className="text-xs text-slate-600 text-center">Download municipal roster (.xlsx)</div>
+              <div className="font-semibold text-slate-900 text-xs text-center">Beneficiary Excel</div>
+              <div className="text-[11px] text-slate-500 text-center">Download municipal roster (.csv)</div>
             </button>
 
-            {/* Attendance Excel (MSWDO) or Distribution Excel (Admin/Staff) */}
-            {isMswdoAdmin ? (
-              <button
-                onClick={() => handleExportCSV('attendance')}
-                disabled={exportLoading === 'attendance'}
-                className="bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
-              >
-                {exportLoading === 'attendance' ? (
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
-                ) : (
-                  <FileSpreadsheet className="w-8 h-8 text-teal-600" />
-                )}
-                <div className="font-semibold text-slate-900 text-sm text-center">Attendance Excel</div>
-                <div className="text-xs text-slate-600 text-center">Download attendee logs (.xlsx)</div>
-              </button>
-            ) : (
-              <button
-                onClick={() => handleExportCSV('distributions')}
-                disabled={exportLoading === 'distributions'}
-                className="bg-green-50 hover:bg-green-100 border border-green-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
-              >
-                {exportLoading === 'distributions' ? (
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" />
-                ) : (
-                  <Download className="w-8 h-8 text-green-600" />
-                )}
-                <div className="font-semibold text-slate-900 text-sm text-center">Export as Excel</div>
-                <div className="text-xs text-slate-600 text-center">Download formatted Excel file</div>
-              </button>
-            )}
+            {/* Distribution Excel */}
+            <button
+              onClick={() => handleExportCSV('distributions')}
+              disabled={exportLoading === 'distributions'}
+              className="bg-green-50 hover:bg-green-100 border border-green-200 rounded-xl p-4 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {exportLoading === 'distributions' ? (
+                <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-green-600" />
+              ) : (
+                <Download className="w-7 h-7 text-green-600" />
+              )}
+              <div className="font-semibold text-slate-900 text-xs text-center">Distribution Excel</div>
+              <div className="text-[11px] text-slate-500 text-center">Download distribution log (.xlsx)</div>
+            </button>
+
+            {/* Attendance Excel */}
+            <button
+              onClick={() => handleExportCSV('attendance')}
+              disabled={exportLoading === 'attendance'}
+              className="bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl p-4 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {exportLoading === 'attendance' ? (
+                <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-teal-600" />
+              ) : (
+                <FileSpreadsheet className="w-7 h-7 text-teal-600" />
+              )}
+              <div className="font-semibold text-slate-900 text-xs text-center">Attendance Excel</div>
+              <div className="text-[11px] text-slate-500 text-center">Download attendee logs (.csv)</div>
+            </button>
+
+            {/* Assistance Requests Excel */}
+            <button
+              onClick={() => handleExportCSV('assistance-requests')}
+              disabled={exportLoading === 'assistance-requests'}
+              className="bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl p-4 transition-colors text-left flex flex-col items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {exportLoading === 'assistance-requests' ? (
+                <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-amber-600" />
+              ) : (
+                <FileSpreadsheet className="w-7 h-7 text-amber-600" />
+              )}
+              <div className="font-semibold text-slate-900 text-xs text-center">Assistance Excel</div>
+              <div className="text-[11px] text-slate-500 text-center">Download requests roster (.csv)</div>
+            </button>
 
             {/* Export as PDF */}
             <button
               onClick={handlePrint}
-              className="bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2"
+              className="bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl p-4 transition-colors text-left flex flex-col items-center justify-center gap-2"
             >
-              <FileText className="w-8 h-8 text-red-600" />
-              <div className="font-semibold text-slate-900 text-sm text-center">Export as PDF</div>
-              <div className="text-xs text-slate-600 text-center">Print to PDF / Save</div>
+              <FileText className="w-7 h-7 text-red-600" />
+              <div className="font-semibold text-slate-900 text-xs text-center">Export as PDF</div>
+              <div className="text-[11px] text-slate-500 text-center">Print to PDF / Save</div>
             </button>
 
             {/* Print */}
             <button
               onClick={handlePrint}
-              className="bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-5 transition-colors text-left flex flex-col items-center justify-center gap-2"
+              className="bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-4 transition-colors text-left flex flex-col items-center justify-center gap-2"
             >
-              <Printer className="w-8 h-8 text-slate-600" />
-              <div className="font-semibold text-slate-900 text-sm text-center">Print Report</div>
-              <div className="text-xs text-slate-600 text-center">Open print preview</div>
+              <Printer className="w-7 h-7 text-slate-600" />
+              <div className="font-semibold text-slate-900 text-xs text-center">Print Report</div>
+              <div className="text-[11px] text-slate-500 text-center">Open print preview</div>
             </button>
           </div>
         </div>

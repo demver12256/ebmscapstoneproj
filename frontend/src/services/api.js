@@ -144,6 +144,7 @@ export const distributionApi = {
   getRetroPreview: (id) => apiClient.get(`/distributions/events/${id}/retro-preview`),
   getEligibleBeneficiaries: (id, params) => apiClient.get(`/distributions/events/${id}/eligible-beneficiaries`, { params }),
   getEligibleCount: (id) => apiClient.get(`/distributions/events/${id}/count-eligible`),
+  getSitios: (barangayId) => apiClient.get('/distributions/sitios', { params: { barangay_id: barangayId } }),
   
   // Session Management
   startSession: (id) => apiClient.post(`/distributions/events/${id}/start-session`),
