@@ -1626,27 +1626,67 @@ export default function DistributionPage() {
                 >
                   <option value="">Select Staff Member</option>
                   {staff
-                    .filter(s => {
-                      if (isMswdoAdmin || isMswdoStaff || isSectorAdmin) {
+                    .filter((s) => {
+                      if (isAnySenior) {
+                        return s.role === 'senior_citizen_staff';
+                      }
+                      if (isAnyPwd) {
+                        return s.role === 'pwd_staff';
+                      }
+                      if (isAnyMswdo) {
                         return s.role === 'mswdo_staff';
                       }
                       return (s.role === 'staff' || s.role === 'barangay') && (!formData.barangay_id || s.barangay_id === parseInt(formData.barangay_id));
                     })
-                    .map((staffMember) => (
-                      <option key={staffMember.id} value={staffMember.id}>
-                        {staffMember.first_name} {staffMember.last_name} ({staffMember.role === 'mswdo_staff' ? 'MSWDO Staff' : (staffMember.email || 'Staff')})
-                      </option>
-                    ))}
+                    .map((staffMember) => {
+                      const roleLabel =
+                        staffMember.role === 'senior_citizen_staff' ? 'Senior Staff' :
+                        staffMember.role === 'pwd_staff' ? 'PWD Staff' :
+                        staffMember.role === 'mswdo_staff' ? 'MSWDO Staff' :
+                        (staffMember.email || 'Staff');
+                      return (
+                        <option key={staffMember.id} value={staffMember.id}>
+                          {staffMember.first_name} {staffMember.last_name} ({roleLabel})
+                        </option>
+                      );
+                    })}
                 </select>
-                {(isMswdoAdmin || isMswdoStaff || isSectorAdmin) ? (
-                  staff.filter(s => s.role === 'mswdo_staff').length === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">Walang nahanap na MSWDO Staff. Mangyaring gumawa muna ng MSWDO Staff account sa Users page.</p>
-                  )
-                ) : (
-                  formData.barangay_id && staff.filter(s => (s.role === 'staff' || s.role === 'barangay') && s.barangay_id === parseInt(formData.barangay_id)).length === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">No staff assigned to this barangay</p>
-                  )
-                )}
+                {(() => {
+                  const filteredStaff = staff.filter((s) => {
+                    if (isAnySenior) return s.role === 'senior_citizen_staff';
+                    if (isAnyPwd) return s.role === 'pwd_staff';
+                    if (isAnyMswdo) return s.role === 'mswdo_staff';
+                    return (s.role === 'staff' || s.role === 'barangay') && (!formData.barangay_id || s.barangay_id === parseInt(formData.barangay_id));
+                  });
+
+                  if (filteredStaff.length === 0) {
+                    return (
+                      <p className="text-xs text-amber-600 mt-1">
+                        {isAnySenior
+                          ? 'Walang nahanap na Senior Citizen Staff. Mangyaring gumawa muna ng Senior Staff account sa Users page.'
+                          : isAnyPwd
+                          ? 'Walang nahanap na PWD Staff. Mangyaring gumawa muna ng PWD Staff account sa Users page.'
+                          : isAnyMswdo
+                          ? 'Walang nahanap na MSWDO Staff. Mangyaring gumawa muna ng MSWDO Staff account sa Users page.'
+                          : formData.barangay_id
+                          ? 'No staff assigned to this barangay'
+                          : 'Walang nahanap na Staff.'}
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <p className="text-xs text-slate-500 mt-1">
+                      {isAnySenior
+                        ? 'Piliin ang Senior Citizen Staff na mamamahala sa pamamahagi ng tulong at physical claiming.'
+                        : isAnyPwd
+                        ? 'Piliin ang PWD Staff na mamamahala sa pamamahagi ng tulong at physical claiming.'
+                        : isAnyMswdo
+                        ? 'Piliin ang MSWDO Staff na mamamahala sa pamamahagi ng tulong at physical claiming.'
+                        : 'Piliin ang Staff na mag-aasikaso ng disbursement.'}
+                    </p>
+                  );
+                })()}
               </div>
 
               {/* Notes */}

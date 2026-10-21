@@ -326,7 +326,7 @@ export default function AnnouncementManagementPage() {
       const loadedUsers = userRes.data?.data || userRes.data || [];
       setPrograms(loadedPrograms);
       setBarangays(loadedBarangays);
-      setStaffList(loadedUsers.filter((u) => u.role === 'staff' || u.role === 'barangay' || u.role === 'mswdo_staff'));
+      setStaffList(loadedUsers.filter((u) => ['staff', 'barangay', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(u.role)));
 
       setFormData((prev) => ({
         ...prev,
@@ -1654,22 +1654,62 @@ export default function AnnouncementManagementPage() {
                   <option value="">-- Walang Naka-assign (Pumili ng Staff) --</option>
                   {staffList
                     .filter((s) => {
-                      if (isMswdoAdmin || isMswdoStaff || isSectorAdmin) {
+                      if (isSeniorAdmin) {
+                        return s.role === 'senior_citizen_staff';
+                      }
+                      if (isPwdAdmin) {
+                        return s.role === 'pwd_staff';
+                      }
+                      if (isMswdoAdmin || isMswdoStaff) {
                         return s.role === 'mswdo_staff';
                       }
                       return s.role === 'staff' || s.role === 'barangay';
                     })
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.first_name} {s.last_name} ({s.role === 'mswdo_staff' ? 'MSWDO Staff' : (s.email || 'Staff')})
-                      </option>
-                    ))}
+                    .map((s) => {
+                      const roleLabel =
+                        s.role === 'senior_citizen_staff' ? 'Senior Staff' :
+                        s.role === 'pwd_staff' ? 'PWD Staff' :
+                        s.role === 'mswdo_staff' ? 'MSWDO Staff' :
+                        (s.email || 'Staff');
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.first_name} {s.last_name} ({roleLabel})
+                        </option>
+                      );
+                    })}
                 </select>
-                <p className="text-[11px] text-slate-500">
-                  {isMswdoAdmin || isMswdoStaff || isSectorAdmin
-                    ? 'Piliin ang MSWDO Staff na mamamahala sa pag-scan ng RFID attendance para sa aktibidad na ito.'
-                    : 'Piliin ang Staff na mag-aasikaso ng RFID attendance.'}
-                </p>
+                {(() => {
+                  const filteredCount = staffList.filter((s) => {
+                    if (isSeniorAdmin) return s.role === 'senior_citizen_staff';
+                    if (isPwdAdmin) return s.role === 'pwd_staff';
+                    if (isMswdoAdmin || isMswdoStaff) return s.role === 'mswdo_staff';
+                    return s.role === 'staff' || s.role === 'barangay';
+                  }).length;
+
+                  if (filteredCount === 0) {
+                    return (
+                      <p className="text-[11px] text-amber-600 font-semibold mt-1">
+                        {isSeniorAdmin
+                          ? 'Walang nahanap na Senior Citizen Staff. Mangyaring gumawa muna ng Senior Staff account sa Users page.'
+                          : isPwdAdmin
+                          ? 'Walang nahanap na PWD Staff. Mangyaring gumawa muna ng PWD Staff account sa Users page.'
+                          : 'Walang nahanap na MSWDO Staff. Mangyaring gumawa muna ng MSWDO Staff account sa Users page.'}
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <p className="text-[11px] text-slate-500">
+                      {isSeniorAdmin
+                        ? 'Piliin ang Senior Citizen Staff na mamamahala sa pag-scan ng RFID attendance para sa aktibidad na ito.'
+                        : isPwdAdmin
+                        ? 'Piliin ang PWD Staff na mamamahala sa pag-scan ng RFID attendance para sa aktibidad na ito.'
+                        : (isMswdoAdmin || isMswdoStaff)
+                        ? 'Piliin ang MSWDO Staff na mamamahala sa pag-scan ng RFID attendance para sa aktibidad na ito.'
+                        : 'Piliin ang Staff na mag-aasikaso ng RFID attendance.'}
+                    </p>
+                  );
+                })()}
               </div>
 
               {/* TARGET AUDIENCE SELECTION SECTION */}
