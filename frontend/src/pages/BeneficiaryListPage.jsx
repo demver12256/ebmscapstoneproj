@@ -94,8 +94,12 @@ export default function BeneficiaryListPage() {
   const isSeniorAdmin = user?.role === 'senior_citizen_admin';
   const isPwdAdmin = user?.role === 'pwd_admin';
   const isMswdoAdmin = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
+  const isDswdAdmin = user?.role === 'admin';
   const isSectorAdmin = isMswdoAdmin || isSeniorAdmin || isPwdAdmin;
   const isAdminOrSector = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(user?.role);
+  // Applications approval is strictly delegated by sector: DSWD Admin (4Ps only), Senior Admin (Senior Citizens only), PWD Admin (PWD only).
+  // MSWDO Admin / Staff does NOT approve applications.
+  const canManageApplications = (isDswdAdmin || isSeniorAdmin || isPwdAdmin) && !isMswdoAdmin;
   const CATEGORIES = [
     '4Ps Household Beneficiary',
     'Senior Citizens (Social Pension)',
@@ -124,16 +128,16 @@ export default function BeneficiaryListPage() {
         beneficiaryApi.list(),
         barangayApi.list()
       ];
-      if (isAdminOrSector) {
+      if (canManageApplications) {
         promises.push(beneficiaryApi.listApplications());
       }
       const results = await Promise.all(promises);
       setBeneficiaries(results[0].data?.data || []);
       setBarangays(results[1].data?.data || []);
       
-      if (isAdminOrSector && results[2]) {
+      if (canManageApplications && results[2]) {
         const apps = results[2].data?.data || [];
-        // Filter non-approved applications for the pending queue
+        // Filter non-approved applications strictly for the role's sector
         const pendingList = apps.filter(a => {
           if (a.status === 'Approved') return false;
           if (isSeniorAdmin) {
@@ -143,8 +147,11 @@ export default function BeneficiaryListPage() {
             const c = String(a.category || '').toLowerCase();
             return c.includes('pwd') || c.includes('disabilit');
           }
-          if (isMswdoAdmin && is4PsCategory(a.category)) return false;
-          return true;
+          if (isDswdAdmin) {
+            const c = String(a.category || '').toLowerCase();
+            return c.includes('4ps') || c.includes('pantawid');
+          }
+          return false;
         });
         setPendingApplications(pendingList);
       } else {
@@ -166,7 +173,7 @@ export default function BeneficiaryListPage() {
   }, [user]);
 
   useEffect(() => {
-    if (isAdminOrSector && (location.state?.openPending || new URLSearchParams(location.search).get('pending') === 'true')) {
+    if (canManageApplications && (location.state?.openPending || new URLSearchParams(location.search).get('pending') === 'true')) {
       openPendingModal();
     }
     const params = new URLSearchParams(location.search);
@@ -177,7 +184,7 @@ export default function BeneficiaryListPage() {
   }, [location, user, isMswdoAdmin, isSeniorAdmin, isPwdAdmin]);
 
   const openPendingModal = async () => {
-    if (!isAdminOrSector) return;
+    if (!canManageApplications) return;
     setShowPendingModal(true);
     setLoadingPending(true);
     try {
@@ -419,8 +426,12 @@ export default function BeneficiaryListPage() {
   };
 
   const handleApproveApplication = (appId) => {
-    if (isMswdoAdmin && selectedApp && is4PsCategory(selectedApp.category)) {
-      alert('Access Denied: MSWDO can only approve Senior Citizens and PWD applications. 4Ps applications must be approved by DSWD.');
+    if (isDswdAdmin && selectedApp && !is4PsCategory(selectedApp.category)) {
+      alert('Access Denied: DSWD Admin can only approve 4Ps applications. Senior Citizen applications must be approved by OSCA, and PWD applications by PDAO.');
+      return;
+    }
+    if (isMswdoAdmin) {
+      alert('Access Denied: MSWDO does not approve applications. Senior applications are approved by OSCA, PWD by PDAO, and 4Ps by DSWD.');
       return;
     }
     setShowApproveConfirm(true);
@@ -447,8 +458,12 @@ export default function BeneficiaryListPage() {
 
   const handleRejectApplication = async (e) => {
     e.preventDefault();
-    if (isMswdoAdmin && selectedApp && is4PsCategory(selectedApp.category)) {
-      alert('Access Denied: MSWDO can only process Senior Citizens and PWD applications. 4Ps applications must be handled by DSWD.');
+    if (isDswdAdmin && selectedApp && !is4PsCategory(selectedApp.category)) {
+      alert('Access Denied: DSWD Admin can only handle 4Ps applications. Senior Citizen applications must be handled by OSCA, and PWD applications by PDAO.');
+      return;
+    }
+    if (isMswdoAdmin) {
+      alert('Access Denied: MSWDO does not process applications. Senior applications are handled by OSCA, PWD by PDAO, and 4Ps by DSWD.');
       return;
     }
     if (!rejectionReason.trim()) {
@@ -883,7 +898,7 @@ export default function BeneficiaryListPage() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
-          {isAdminOrSector && (
+          {canManageApplications && (
             <button
               onClick={openPendingModal}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold transition shadow-2xs active:scale-95"
@@ -1005,8 +1020,8 @@ export default function BeneficiaryListPage() {
         </div>
       </div>
 
-      {/* Stats (Grid: 4 Cards for Admin / 3 Cards for Staff) */}
-      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${isAdminOrSector ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+      {/* Stats (Grid: 4 Cards when canManageApplications is true, 3 Cards for MSWDO / Staff) */}
+      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${canManageApplications ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
         <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 p-4 sm:p-6">
           <p className="mb-2 text-sm font-medium text-slate-600">Total Records</p>
           <p className="text-2xl font-bold text-blue-600 sm:text-3xl">{loading ? '...' : filteredBeneficiaries.length}</p>
@@ -1020,8 +1035,8 @@ export default function BeneficiaryListPage() {
           <p className="text-2xl font-bold text-emerald-600 sm:text-3xl">{loading ? '...' : filteredBeneficiaries.filter(b => b.User?.status === 'inactive').length}</p>
         </div>
         
-        {/* Pending Beneficiaries Stat Box - Admin Only */}
-        {isAdminOrSector && (
+        {/* Pending Beneficiaries Stat Box - DSWD Admin (4Ps) & Sector Admins only (Hidden for MSWDO) */}
+        {canManageApplications && (
           <div 
             onClick={openPendingModal}
             className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-6 border border-amber-200 cursor-pointer hover:shadow-md transition-all group"
@@ -2815,7 +2830,17 @@ export default function BeneficiaryListPage() {
                 <div className="space-y-4">
                   <h4 className="font-bold text-sm text-slate-900 uppercase tracking-wider">Review Actions</h4>
                   
-                  {isSeniorAdmin && !String(selectedApp.category || '').toLowerCase().includes('senior') ? (
+                  {isDswdAdmin && !is4PsCategory(selectedApp.category) ? (
+                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-300 text-center space-y-2">
+                      <div className="inline-flex p-2 bg-amber-100 text-amber-800 rounded-full">
+                        <ShieldAlert className="w-6 h-6" />
+                      </div>
+                      <p className="text-sm font-bold text-amber-900">DSWD Approval Authority Scope</p>
+                      <p className="text-xs text-amber-700">
+                        You are logged in as DSWD Admin. You can only review and approve <strong>4Ps Household Beneficiaries</strong> applications. Senior Citizen applications must be approved by Senior Citizen Admin (OSCA), and PWD applications must be approved by PWD Admin (PDAO).
+                      </p>
+                    </div>
+                  ) : isSeniorAdmin && !String(selectedApp.category || '').toLowerCase().includes('senior') ? (
                     <div className="p-4 bg-amber-50 rounded-2xl border border-amber-300 text-center space-y-2">
                       <div className="inline-flex p-2 bg-amber-100 text-amber-800 rounded-full">
                         <ShieldAlert className="w-6 h-6" />
@@ -2833,16 +2858,6 @@ export default function BeneficiaryListPage() {
                       <p className="text-sm font-bold text-amber-900">PWD Admin Authority Scope</p>
                       <p className="text-xs text-amber-700">
                         You are logged in as PWD Admin (PDAO). You can only review and approve <strong>Persons with Disabilities (PWD)</strong> applications.
-                      </p>
-                    </div>
-                  ) : isMswdoAdmin && is4PsCategory(selectedApp.category) ? (
-                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-300 text-center space-y-2">
-                      <div className="inline-flex p-2 bg-amber-100 text-amber-800 rounded-full">
-                        <ShieldAlert className="w-6 h-6" />
-                      </div>
-                      <p className="text-sm font-bold text-amber-900">DSWD Approval Authority Required</p>
-                      <p className="text-xs text-amber-700">
-                        This applicant belongs to the <strong>4Ps Household Beneficiaries</strong> category. 4Ps applications are exclusively reviewed and approved by DSWD. MSWDO is only authorized to review and approve Senior Citizens and PWD applications.
                       </p>
                     </div>
                   ) : (

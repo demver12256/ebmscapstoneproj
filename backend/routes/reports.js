@@ -164,8 +164,22 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     }
 
     // ── Application counts ──
+    let pendingAppWhere = { ...beneficiaryWhere };
+    if (req.user.role === 'admin') {
+      // DSWD Admin strictly manages 4Ps applications
+      pendingAppWhere = {
+        [Op.or]: [
+          { category: { [Op.like]: '%4Ps%' } },
+          { category: { [Op.like]: '%Pantawid%' } }
+        ]
+      };
+    } else if (req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
+      // MSWDO does not manage applications
+      pendingAppWhere = { id: -1 };
+    }
+
     const pendingApplications = await Beneficiary.count({
-      where: { ...beneficiaryWhere, status: { [Op.in]: ['Pending Review', 'Under Review', 'pending', 'Pending'] } },
+      where: { ...pendingAppWhere, status: { [Op.in]: ['Pending Review', 'Under Review', 'pending', 'Pending'] } },
     });
 
     const underReviewCount = await Beneficiary.count({

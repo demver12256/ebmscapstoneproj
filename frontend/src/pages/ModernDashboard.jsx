@@ -43,7 +43,7 @@ export default function ModernDashboard() {
   const isMswdoStaff = user?.role === 'mswdo_staff';
   const isAnyMswdo = isMswdoAdmin || isMswdoStaff;
   const isSectorAdmin = isAnyMswdo || isSeniorAdmin || isPwdAdmin;
-  const canAccessPending = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(user?.role);
+  const canAccessPending = ['admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role);
 
   useEffect(() => {
     loadDashboard();
@@ -143,10 +143,11 @@ export default function ModernDashboard() {
       return c.includes('pwd') || c.includes('disabilit');
     }
     if (isAnyMswdo) {
-      const c = String(a.category || '').toLowerCase();
-      return (c.includes('senior') || c.includes('pwd') || c.includes('disabilit')) && !c.includes('4ps') && !c.includes('pantawid');
+      return false; // MSWDO does not manage applications
     }
-    return true;
+    // DSWD Admin (admin): strictly 4Ps applications
+    const c = String(a.category || '').toLowerCase();
+    return c.includes('4ps') || c.includes('pantawid');
   });
   const pendingCount = (summary?.pendingApplications !== undefined && summary?.pendingApplications > 0)
     ? summary.pendingApplications

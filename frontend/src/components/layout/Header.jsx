@@ -40,8 +40,12 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
   const [pwSuccess, setPwSuccess] = useState(null);
   const [showPwFields, setShowPwFields] = useState({ current: false, new: false, confirm: false });
 
-  const isAdmin = ['admin','mswdo_admin'].includes(user?.role);
-  const isMswdoAdmin = user?.role === 'mswdo_admin';
+  const isDswdAdmin = user?.role === 'admin';
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin';
+  const isPwdAdmin = user?.role === 'pwd_admin';
+  const isMswdoAdmin = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
+  const canReviewApps = isDswdAdmin || isSeniorAdmin || isPwdAdmin;
+  const isAdmin = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role);
   const isStaff = user?.role === 'staff' || user?.role === 'barangay';
 
   const filterPendingApps = useCallback((apps) => {
@@ -50,13 +54,21 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
         a.status === 'Pending Review' || a.status === 'pending_review' ||
         a.status === 'Under Review' || a.status === 'under_review';
       if (!isPendingStatus) return false;
-      if (isMswdoAdmin) {
+      if (user?.role === 'admin') {
         const cat = String(a.category || '').toLowerCase();
-        if (cat.includes('4ps') || cat.includes('pantawid')) return false;
+        return cat.includes('4ps') || cat.includes('pantawid');
       }
-      return true;
+      if (user?.role === 'senior_citizen_admin') {
+        const cat = String(a.category || '').toLowerCase();
+        return cat.includes('senior');
+      }
+      if (user?.role === 'pwd_admin') {
+        const cat = String(a.category || '').toLowerCase();
+        return cat.includes('pwd') || cat.includes('disabilit');
+      }
+      return false; // MSWDO and other roles do not manage applications
     });
-  }, [isMswdoAdmin]);
+  }, [user?.role]);
 
   // Time ago helper
   const timeAgo = (dateStr) => {
@@ -97,8 +109,8 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
   useEffect(() => {
     if (user) {
       fetchUnreadCount();
-      // Pre-fetch pending beneficiary applications for admin only
-      if (isAdmin) {
+      // Pre-fetch pending beneficiary applications for sector admins only
+      if (canReviewApps) {
         beneficiaryApi.listApplications().then(res => {
           const apps = res.data?.data || [];
           setPendingApplications(filterPendingApps(apps));
@@ -126,7 +138,7 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
       const interval = setInterval(() => {
         fetchUnreadCount();
         // Refresh counts periodically
-        if (isAdmin) {
+        if (canReviewApps) {
           beneficiaryApi.listApplications().then(res => {
             const apps = res.data?.data || [];
             setPendingApplications(filterPendingApps(apps));
@@ -174,8 +186,8 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
       const notifRes = await notificationApi.list();
       setNotifications(notifRes.data?.data || []);
 
-      // Pending beneficiary applications for admin only
-      if (isAdmin) {
+      // Pending beneficiary applications for sector admins only
+      if (canReviewApps) {
         try {
           const appRes = await beneficiaryApi.listApplications();
           const apps = appRes.data?.data || [];
@@ -480,10 +492,10 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
                 ) : (
                   <>
                     {/* ━━━ Pending Beneficiary Applications (Admin only) ━━━ */}
-                    {isAdmin && pendingApplications.length > 0 && (
+                    {canReviewApps && pendingApplications.length > 0 && (
                       <div className="py-1">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 py-2">
-                          🔔 {isMswdoAdmin ? 'Pending Senior / PWD Approvals' : 'Pending Beneficiary Approvals'} ({pendingApplications.length})
+                          🔔 {isSeniorAdmin ? 'Pending Senior Citizen Approvals' : isPwdAdmin ? 'Pending PWD Approvals' : 'Pending 4Ps Approvals'} ({pendingApplications.length})
                         </p>
                         {pendingApplications.slice(0, 5).map((app) => (
                           <button
