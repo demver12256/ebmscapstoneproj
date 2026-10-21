@@ -954,7 +954,7 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
     const itemDisplayName = event.item_name || nonCashDetails?.default_item || event.title || 'In-Kind Goods / Service';
 
     // Generate transactions WITH retroactive payment calculation (for cash only)
-    const models = { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay };
+    const models = { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay, Beneficiary };
     const transactions = [];
     let totalRetroAmount = 0;
 
@@ -963,11 +963,12 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       const beneficiaryId = beneficiary.id;
 
       let retro = { retro_amount: 0, retro_periods: 0, retro_details: [] };
-      if (!isNonCash && event.program_id) {
-        // Calculate retroactive payment for this beneficiary
+      if (!isNonCash) {
+        // Calculate retroactive payment for this beneficiary whenever cash/money is involved
         retro = await calculateRetroForBeneficiary({
           beneficiaryId,
-          programId: event.program_id,
+          programId: event.program_id || null,
+          targetCategory: activePublishCat || event.target_category || program?.eligibility_category || null,
           currentEventId: event.id,
           amountPerBeneficiary: parseFloat(event.amount_per_beneficiary),
           models,
@@ -1178,7 +1179,7 @@ router.get('/events/:id/retro-preview', authorize('admin', 'staff', 'barangay'),
       return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot preview DSWD distribution events.' });
     }
 
-    const models = { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay };
+    const models = { DistributionEvent, DistributionTransaction, Enrollment, BenefitProgram, Barangay, Beneficiary };
 
     // If transactions already exist for this event (already published)
     const existingTxns = await DistributionTransaction.findAll({
@@ -1239,68 +1240,87 @@ router.get('/events/:id/retro-preview', authorize('admin', 'staff', 'barangay'),
       });
     }
 
-    // Event is still in draft: calculate dynamically based on eligible enrollments
+    // Event is still in draft: calculate dynamically based on eligible beneficiaries
     const program = event.Program || (event.program_id ? await BenefitProgram.findByPk(event.program_id) : null);
+    const amountPerBeneficiary = parseFloat(event.amount_per_beneficiary || 0);
+    const hasCashAmount = !isNaN(amountPerBeneficiary) && amountPerBeneficiary > 0;
+    const isNonCash = !hasCashAmount || isNonCashProgram(program ? program.name : event.title, event.benefit_type) || event.benefit_type !== 'Cash';
 
-    if (!event.program_id) {
-      const bWhere = {
-        barangay_id: event.barangay_id,
-        status: 'Approved',
-      };
-      if (event.target_category) {
-        bWhere.category = { [Op.like]: `%${event.target_category}%` };
-      }
-      const eligibleCount = await Beneficiary.count({ where: bWhere });
-      const amountPerBeneficiary = parseFloat(event.amount_per_beneficiary || 0);
-      const grandTotal = amountPerBeneficiary * eligibleCount;
-      const rawBudget = parseFloat(event.budget || 0);
-      const availableBudget = rawBudget > 0 ? rawBudget : grandTotal;
-      return res.json({
-        success: true,
-        data: {
-          event_id: event.id,
-          total_eligible: eligibleCount,
-          beneficiaries_with_retro: 0,
-          total_regular_amount: grandTotal,
-          regular_total: grandTotal,
-          total_retro_amount: 0,
-          retro_total: 0,
-          grand_total_required: grandTotal,
-          grand_total: grandTotal,
-          available_budget: availableBudget,
-          budget_sufficient: grandTotal <= availableBudget,
-          deficit: grandTotal > availableBudget ? grandTotal - availableBudget : 0,
-          amount_per_beneficiary: amountPerBeneficiary,
-          retro_breakdown: [],
-        },
-      });
-    }
-    const enrollmentWhere = {
-      program_id: event.program_id,
-      status: 'active',
-    };
-
+    // Build beneficiary search criteria matching publish logic
+    const activeCat = event.target_category || (program ? program.eligibility_category : null);
     const beneficiaryWhere = {
       barangay_id: event.barangay_id,
       status: 'Approved',
     };
 
-    if (event.target_category) {
-      beneficiaryWhere.category = { [Op.like]: `%${event.target_category}%` };
-    } else if (program?.eligibility_category) {
-      beneficiaryWhere.category = { [Op.like]: `%${program.eligibility_category}%` };
+    if (activeCat && activeCat !== 'All' && activeCat !== 'All Categories') {
+      const catWhere = buildCategoryWhere(activeCat);
+      if (catWhere) {
+        beneficiaryWhere[Op.and] = beneficiaryWhere[Op.and] || [];
+        beneficiaryWhere[Op.and].push(catWhere);
+      }
     }
 
-    const enrollments = await Enrollment.findAll({
-      where: enrollmentWhere,
-      include: [{ model: Beneficiary, where: beneficiaryWhere }],
-    });
+    if (event.target_sitio && event.target_sitio !== 'all' && event.target_sitio !== 'All Sitios') {
+      const normSitio = normalizeSitioName(event.target_sitio);
+      beneficiaryWhere[Op.and] = beneficiaryWhere[Op.and] || [];
+      beneficiaryWhere[Op.and].push({
+        [Op.or]: [
+          { sitio: { [Op.like]: `%${event.target_sitio.trim()}%` } },
+          { sitio: { [Op.like]: `%${normSitio}%` } },
+        ]
+      });
+    }
+
+    let eligibleBeneficiaries = [];
+    if (event.program_id) {
+      const enrollments = await Enrollment.findAll({
+        where: {
+          program_id: event.program_id,
+          status: 'active',
+        },
+        include: [{ model: Beneficiary, where: beneficiaryWhere }],
+      });
+      eligibleBeneficiaries = enrollments.map(e => e.Beneficiary).filter(Boolean);
+    } else {
+      eligibleBeneficiaries = await Beneficiary.findAll({
+        where: beneficiaryWhere,
+      });
+    }
+
+    if (isNonCash || !hasCashAmount) {
+      const regularTotal = 0;
+      const rawBudget = parseFloat(event.budget || 0);
+      return res.json({
+        success: true,
+        data: {
+          event_id: event.id,
+          total_eligible: eligibleBeneficiaries.length,
+          total_beneficiaries: eligibleBeneficiaries.length,
+          beneficiaries_with_retro: 0,
+          beneficiaries_without_retro: eligibleBeneficiaries.length,
+          total_regular_amount: regularTotal,
+          regular_total: regularTotal,
+          total_retro_amount: 0,
+          retro_total: 0,
+          grand_total_required: regularTotal,
+          grand_total: regularTotal,
+          available_budget: rawBudget,
+          budget_sufficient: true,
+          deficit: 0,
+          amount_per_beneficiary: 0,
+          retro_breakdown: [],
+          is_published: false,
+        },
+      });
+    }
 
     const preview = await calculateRetroPreview({
       eventId: event.id,
-      programId: event.program_id,
-      enrollments,
-      amountPerBeneficiary: parseFloat(event.amount_per_beneficiary),
+      programId: event.program_id || null,
+      targetCategory: activeCat || null,
+      beneficiaries: eligibleBeneficiaries,
+      amountPerBeneficiary,
       models,
     });
 
@@ -1435,6 +1455,34 @@ router.post('/events/:id/start-session', authorize('admin', 'staff', 'barangay')
             payout_provider: provider,
             verification_method: 'digital_payout',
           });
+
+          // Cancel previous unclaimed transactions covered by this retroactive payment
+          if (txn.retro_details) {
+            try {
+              const retroItems = typeof txn.retro_details === 'string' ? JSON.parse(txn.retro_details) : txn.retro_details;
+              const originalTxnIds = (Array.isArray(retroItems) ? retroItems : [])
+                .filter(item => item.type === 'unclaimed' && item.original_transaction_id)
+                .map(item => item.original_transaction_id);
+
+              if (originalTxnIds.length > 0) {
+                console.log('[START SESSION AUTO-DISBURSE] Cancelling old unclaimed transactions covered by retro:', originalTxnIds);
+                await DistributionTransaction.update(
+                  {
+                    status: 'cancelled',
+                    notes: `Cancelled: Retroactive payment auto-disbursed digitally under transaction ${txn.transaction_number} (Event #${event.id})`,
+                  },
+                  {
+                    where: {
+                      id: { [Op.in]: originalTxnIds },
+                      status: 'pending',
+                    },
+                  }
+                );
+              }
+            } catch (e) {
+              console.error('[START SESSION AUTO-DISBURSE] Error parsing retro_details for cancellation:', e);
+            }
+          }
 
           if (beneficiary?.user_id) {
             const regularAmount = parseFloat(txn.amount || 0);
@@ -2816,6 +2864,35 @@ router.post('/events/:id/disburse-digital', authorize('admin'), async (req, res,
         payout_provider: provider,
         verification_method: 'digital_payout',
       }, { transaction: dbTransaction });
+
+      // Cancel previous unclaimed transactions covered by this retroactive payment
+      if (txn.retro_details) {
+        try {
+          const retroItems = typeof txn.retro_details === 'string' ? JSON.parse(txn.retro_details) : txn.retro_details;
+          const originalTxnIds = (Array.isArray(retroItems) ? retroItems : [])
+            .filter(item => item.type === 'unclaimed' && item.original_transaction_id)
+            .map(item => item.original_transaction_id);
+
+          if (originalTxnIds.length > 0) {
+            console.log('[DISBURSE DIGITAL] Cancelling old unclaimed transactions covered by retro:', originalTxnIds);
+            await DistributionTransaction.update(
+              {
+                status: 'cancelled',
+                notes: `Cancelled: Retroactive payment disbursed digitally under transaction ${txn.transaction_number} (Event #${event.id})`,
+              },
+              {
+                where: {
+                  id: { [Op.in]: originalTxnIds },
+                  status: 'pending',
+                },
+                transaction: dbTransaction,
+              }
+            );
+          }
+        } catch (e) {
+          console.error('[DISBURSE DIGITAL] Error parsing retro_details for cancellation:', e);
+        }
+      }
 
       totalAmount += totalPayout;
 
