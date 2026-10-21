@@ -74,6 +74,18 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: false,
         comment: 'If true, also sends notification notice to MSWDO Admin',
       },
+      notify_senior: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: 'If true, also sends notification notice to Senior Citizen Admin (OSCA)',
+      },
+      notify_pwd: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: 'If true, also sends notification notice to PWD Admin (PDAO)',
+      },
       assigned_staff_id: {
         type: DataTypes.INTEGER,
         allowNull: true,

@@ -142,6 +142,7 @@ async function removeHistoricalAnnouncementRecords(beneficiary, userId, recipien
 
 function isAnnouncementForSenior(a) {
   if (['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role)) return true;
+  if (Boolean(a.notify_senior)) return true;
   let targets = [];
   if (typeof a.target_programs === 'string') {
     try { targets = JSON.parse(a.target_programs); } catch (e) { targets = [a.target_programs]; }
@@ -157,6 +158,7 @@ function isAnnouncementForSenior(a) {
 
 function isAnnouncementForPwd(a) {
   if (['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role)) return true;
+  if (Boolean(a.notify_pwd)) return true;
   let targets = [];
   if (typeof a.target_programs === 'string') {
     try { targets = JSON.parse(a.target_programs); } catch (e) { targets = [a.target_programs]; }
@@ -432,21 +434,24 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
       });
     }
 
-  // OPTIONAL: NOTIFY MSWDO ADMIN IF notify_mswdo IS ENABLED BY DSWD ADMIN
+  // OPTIONAL: NOTIFY MSWDO ADMIN IF notify_mswdo IS ENABLED
   let mswdoCount = 0;
   if (announcement.notify_mswdo) {
     const mswdoUsers = await User.findAll({
       where: {
-        role: 'mswdo_admin',
+        role: { [Op.in]: ['mswdo_admin', 'mswdo_staff'] },
         status: 'active',
       },
       attributes: ['id', 'first_name', 'last_name', 'email'],
     });
 
+    const creatorUser = await User.findByPk(announcement.created_by_user_id || adminUserId, { attributes: ['id', 'role'] });
+    const creatorAgency = ['mswdo_admin', 'mswdo_staff'].includes(creatorUser?.role) ? 'MSWDO' : 'DSWD';
+
     const mswdoNotifications = mswdoUsers.map((mswdo) => ({
       user_id: mswdo.id,
       title: `📢 MSWDO Notice: ${announcement.title}`,
-      message: `DSWD has published a new activity: "${announcement.title}" scheduled for ${announcement.event_date || 'upcoming date'} at ${announcement.venue || 'designated venue'}.`,
+      message: `${creatorAgency} has published a new activity: "${announcement.title}" scheduled for ${announcement.event_date || 'upcoming date'} at ${announcement.venue || 'designated venue'}.`,
       type: 'system',
       reference_id: announcement.id,
       reference_type: 'announcement_mswdo',
@@ -468,10 +473,92 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
     });
   }
 
+  // OPTIONAL: NOTIFY SENIOR CITIZEN ADMIN (OSCA) IF notify_senior IS ENABLED
+  let seniorCount = 0;
+  if (announcement.notify_senior) {
+    const seniorUsers = await User.findAll({
+      where: {
+        role: { [Op.in]: ['senior_citizen_admin', 'senior_citizen_staff'] },
+        status: 'active',
+      },
+      attributes: ['id', 'first_name', 'last_name', 'email'],
+    });
+
+    const creatorUser = await User.findByPk(announcement.created_by_user_id || adminUserId, { attributes: ['id', 'role'] });
+    const creatorAgency = ['mswdo_admin', 'mswdo_staff'].includes(creatorUser?.role) ? 'MSWDO' : 'DSWD';
+
+    const seniorNotifications = seniorUsers.map((senior) => ({
+      user_id: senior.id,
+      title: `📢 OSCA / Senior Citizen Notice: ${announcement.title}`,
+      message: `${creatorAgency} has published a new activity: "${announcement.title}" scheduled for ${announcement.event_date || 'upcoming date'} at ${announcement.venue || 'designated venue'}.`,
+      type: 'system',
+      reference_id: announcement.id,
+      reference_type: 'announcement_senior',
+      is_read: false,
+    }));
+
+    if (seniorNotifications.length > 0) {
+      await Notification.bulkCreate(seniorNotifications, { ignoreDuplicates: true });
+      seniorCount = seniorNotifications.length;
+      console.log(`[ANNOUNCEMENT ${announcement.id}] Notified ${seniorCount} Senior Citizen administrators.`);
+    }
+  } else {
+    await Notification.destroy({
+      where: {
+        reference_id: announcement.id,
+        reference_type: 'announcement_senior',
+      },
+    });
+  }
+
+  // OPTIONAL: NOTIFY PWD ADMIN (PDAO) IF notify_pwd IS ENABLED
+  let pwdCount = 0;
+  if (announcement.notify_pwd) {
+    const pwdUsers = await User.findAll({
+      where: {
+        role: { [Op.in]: ['pwd_admin', 'pwd_staff'] },
+        status: 'active',
+      },
+      attributes: ['id', 'first_name', 'last_name', 'email'],
+    });
+
+    const creatorUser = await User.findByPk(announcement.created_by_user_id || adminUserId, { attributes: ['id', 'role'] });
+    const creatorAgency = ['mswdo_admin', 'mswdo_staff'].includes(creatorUser?.role) ? 'MSWDO' : 'DSWD';
+
+    const pwdNotifications = pwdUsers.map((pwd) => ({
+      user_id: pwd.id,
+      title: `📢 PDAO / PWD Notice: ${announcement.title}`,
+      message: `${creatorAgency} has published a new activity: "${announcement.title}" scheduled for ${announcement.event_date || 'upcoming date'} at ${announcement.venue || 'designated venue'}.`,
+      type: 'system',
+      reference_id: announcement.id,
+      reference_type: 'announcement_pwd',
+      is_read: false,
+    }));
+
+    if (pwdNotifications.length > 0) {
+      await Notification.bulkCreate(pwdNotifications, { ignoreDuplicates: true });
+      pwdCount = pwdNotifications.length;
+      console.log(`[ANNOUNCEMENT ${announcement.id}] Notified ${pwdCount} PWD administrators.`);
+    }
+  } else {
+    await Notification.destroy({
+      where: {
+        reference_id: announcement.id,
+        reference_type: 'announcement_pwd',
+      },
+    });
+  }
+
   // Audit log entry
+  const extraNotices = [];
+  if (mswdoCount > 0) extraNotices.push(`${mswdoCount} MSWDO`);
+  if (seniorCount > 0) extraNotices.push(`${seniorCount} Senior Admin`);
+  if (pwdCount > 0) extraNotices.push(`${pwdCount} PWD Admin`);
+  const extraNoticeStr = extraNotices.length > 0 ? `, ${extraNotices.join(', ')} notified` : '';
+
   await AuditLog.create({
     user_id: adminUserId,
-    action: `PUBLISHED_ANNOUNCEMENT: "${announcement.title}" (${matchingBeneficiaries.length} beneficiaries, ${staffUsers.length} staff notified${mswdoCount > 0 ? `, ${mswdoCount} MSWDO notified` : ''})`,
+    action: `PUBLISHED_ANNOUNCEMENT: "${announcement.title}" (${matchingBeneficiaries.length} beneficiaries, ${staffUsers.length} staff notified${extraNoticeStr})`,
     module: 'Announcements',
     timestamp: new Date(),
   });
@@ -1067,7 +1154,9 @@ router.get('/', async (req, res, next) => {
         [Op.or]: [
           { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
           { assigned_staff_id: req.user.id },
-          { notify_mswdo: true }
+          { notify_mswdo: true },
+          { notify_senior: true },
+          { notify_pwd: true }
         ]
       });
     } else if (req.user.role === 'admin') {
@@ -1233,10 +1322,30 @@ router.get('/:id', async (req, res, next) => {
       });
     }
 
-    // Security check: If MSWDO, cannot view direct-only announcements where MSWDO was not notified
-    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
+    // Security check: Office notification access
+    if (isSeniorRole(req.user.role)) {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_mswdo);
+      const isNotified = Boolean(announcement.notify_senior);
+      const isTargeted = isAnnouncementForSenior(announcement);
+      if (!isAuthor && !isNotified && !isTargeted) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: Senior Citizen Admin was not notified for this announcement.',
+        });
+      }
+    } else if (isPwdRole(req.user.role)) {
+      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
+      const isNotified = Boolean(announcement.notify_pwd);
+      const isTargeted = isAnnouncementForPwd(announcement);
+      if (!isAuthor && !isNotified && !isTargeted) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: PWD Admin was not notified for this announcement.',
+        });
+      }
+    } else if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
+      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
+      const isNotified = Boolean(announcement.notify_mswdo) || (isSeniorRole(req.user.role) && Boolean(announcement.notify_senior)) || (isPwdRole(req.user.role) && Boolean(announcement.notify_pwd));
       if (!isAuthor && !isNotified) {
         return res.status(403).json({
           success: false,
@@ -1289,7 +1398,7 @@ router.get('/:id', async (req, res, next) => {
     // For MSWDO Admin: if not author and not notified, strip the beneficiary attendance Recipients list
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_mswdo);
+      const isNotified = Boolean(announcement.notify_mswdo) || (isSeniorRole(req.user.role) && Boolean(announcement.notify_senior)) || (isPwdRole(req.user.role) && Boolean(announcement.notify_pwd));
       if (!isAuthor && !isNotified) {
         plain.Recipients = [];
       }
@@ -1364,6 +1473,8 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       target_barangays = [],
       target_sitios = [],
       notify_mswdo = false,
+      notify_senior = false,
+      notify_pwd = false,
     } = req.body;
 
     if (!title || !message) {
@@ -1422,6 +1533,8 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       target_barangays: parsedBarangays,
       target_sitios: parsedSitios,
       notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : false,
+      notify_senior: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && notify_senior !== undefined) ? !!notify_senior : false,
+      notify_pwd: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && notify_pwd !== undefined) ? !!notify_pwd : false,
       assigned_staff_id: req.body.assigned_staff_id ? Number(req.body.assigned_staff_id) : null,
       created_by_user_id: req.user.id,
       recipient_count: previewMatches.length,
@@ -1764,7 +1877,7 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
     // Security check: MSWDO Admin can access attendance stats for announcements created by MSWDO or where notify_mswdo is true
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_mswdo);
+      const isNotified = Boolean(announcement.notify_mswdo) || (isSeniorRole(req.user.role) && Boolean(announcement.notify_senior)) || (isPwdRole(req.user.role) && Boolean(announcement.notify_pwd));
       const isAssigned = announcement.assigned_staff_id === req.user.id;
       if (!isAuthor && !isNotified && !isAssigned) {
         return res.status(403).json({
@@ -1992,7 +2105,7 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
     // Security check: MSWDO Admin can export attendance for announcements created by MSWDO or where notify_mswdo is true
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_mswdo);
+      const isNotified = Boolean(announcement.notify_mswdo) || (isSeniorRole(req.user.role) && Boolean(announcement.notify_senior)) || (isPwdRole(req.user.role) && Boolean(announcement.notify_pwd));
       const isAssigned = announcement.assigned_staff_id === req.user.id;
       if (!isAuthor && !isNotified && !isAssigned) {
         return res.status(403).json({
@@ -2123,6 +2236,8 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
       target_barangays,
       target_sitios,
       notify_mswdo,
+      notify_senior,
+      notify_pwd,
     } = req.body;
 
     const isBarangayStaff = req.user.role === 'staff' || req.user.role === 'barangay';
@@ -2203,6 +2318,8 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
       recipient_count: nextStatus === 'pending_approval' ? previewMatches.length : announcement.recipient_count,
       beneficiary_visibility_at: new Date(),
       notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : announcement.notify_mswdo,
+      notify_senior: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && notify_senior !== undefined) ? !!notify_senior : announcement.notify_senior,
+      notify_pwd: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && notify_pwd !== undefined) ? !!notify_pwd : announcement.notify_pwd,
       assigned_staff_id: req.body.assigned_staff_id !== undefined ? (req.body.assigned_staff_id ? Number(req.body.assigned_staff_id) : null) : announcement.assigned_staff_id,
     });
 

@@ -208,6 +208,8 @@ const connectDatabase = async () => {
   // Ensure recent columns exist on announcements
   await ensureColumn('announcements', 'target_sitios', 'JSON NULL');
   await ensureColumn('announcements', 'assigned_staff_id', 'INT NULL');
+  await ensureColumn('announcements', 'notify_senior', 'TINYINT(1) NOT NULL DEFAULT 0');
+  await ensureColumn('announcements', 'notify_pwd', 'TINYINT(1) NOT NULL DEFAULT 0');
 
   // Ensure recent columns exist on distribution_events
   await ensureColumn('distribution_events', 'target_sitio', 'VARCHAR(255) NULL');

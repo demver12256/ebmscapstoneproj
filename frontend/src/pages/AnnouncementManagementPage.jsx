@@ -311,6 +311,8 @@ export default function AnnouncementManagementPage() {
     target_barangays: [],
     target_sitios: [],
     notify_mswdo: false,
+    notify_senior: false,
+    notify_pwd: false,
   });
 
   // Load programs & barangays for dropdowns/target options
@@ -361,7 +363,8 @@ export default function AnnouncementManagementPage() {
             const textMatch = targets.some((t) => String(t).toLowerCase().includes('senior'));
             const isSeniorAuthor = ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role);
             const titleMatch = (a.title || '').toLowerCase().includes('senior') || (a.title || '').toLowerCase().includes('osca');
-            return textMatch || isSeniorAuthor || titleMatch;
+            const isNotified = Boolean(a.notify_senior);
+            return textMatch || isSeniorAuthor || titleMatch || isNotified;
           });
         } else if (isPwdAdmin) {
           list = list.filter((a) => {
@@ -369,7 +372,8 @@ export default function AnnouncementManagementPage() {
             const textMatch = targets.some((t) => String(t).toLowerCase().includes('pwd') || String(t).toLowerCase().includes('disabil'));
             const isPwdAuthor = ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role);
             const titleMatch = (a.title || '').toLowerCase().includes('pwd') || (a.title || '').toLowerCase().includes('pdao');
-            return textMatch || isPwdAuthor || titleMatch;
+            const isNotified = Boolean(a.notify_pwd);
+            return textMatch || isPwdAuthor || titleMatch || isNotified;
           });
         } else {
           list = list.filter((a) =>
@@ -517,6 +521,8 @@ export default function AnnouncementManagementPage() {
       target_barangays: staffBarangayTarget,
       target_sitios: [],
       notify_mswdo: false,
+      notify_senior: false,
+      notify_pwd: false,
       assigned_staff_id: '',
     });
     setIsModalOpen(true);
@@ -574,6 +580,8 @@ export default function AnnouncementManagementPage() {
       target_barangays: parsedTargetBarangays,
       target_sitios: parsedTargetSitios,
       notify_mswdo: !!ann.notify_mswdo,
+      notify_senior: !!ann.notify_senior,
+      notify_pwd: !!ann.notify_pwd,
       assigned_staff_id: ann.assigned_staff_id || '',
     });
     setIsModalOpen(true);
@@ -1228,13 +1236,26 @@ export default function AnnouncementManagementPage() {
                               </span>
                             </div>
                           )}
-                          <div className="pt-0.5">
-                            {ann.notify_mswdo ? (
+                          <div className="pt-0.5 flex flex-wrap gap-1">
+                            {ann.notify_mswdo && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
                                 <BellRing className="w-2.5 h-2.5 text-indigo-600" />
-                                <span>+ MSWDO Notified</span>
+                                <span>+ MSWDO</span>
                               </span>
-                            ) : (
+                            )}
+                            {ann.notify_senior && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                                <BellRing className="w-2.5 h-2.5 text-blue-600" />
+                                <span>+ OSCA / Senior</span>
+                              </span>
+                            )}
+                            {ann.notify_pwd && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                                <BellRing className="w-2.5 h-2.5 text-amber-600" />
+                                <span>+ PDAO / PWD</span>
+                              </span>
+                            )}
+                            {!ann.notify_mswdo && !ann.notify_senior && !ann.notify_pwd && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
                                 Direct Only (Barangay & Beneficiary)
                               </span>
@@ -2221,79 +2242,111 @@ export default function AnnouncementManagementPage() {
                 </div>
               )}
 
-              {/* DSWD Publish Notification Options (Direct to Barangay/Beneficiary vs Include MSWDO) */}
-              {user?.role === 'admin' && formData.status === 'published' && (
-                <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-purple-50/80 border-2 border-blue-200 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
-                  <div className="flex items-center justify-between">
+              {/* Inter-Office Notification Scope Options (DSWD Admin & MSWDO Admin) */}
+              {(user?.role === 'admin' || user?.role === 'mswdo_admin') && formData.status === 'published' && (
+                <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-purple-50/80 border-2 border-blue-200 rounded-2xl p-4 space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <label className="text-xs font-black text-slate-900 uppercase flex items-center gap-1.5 tracking-wide">
-                      <BellRing className="w-4 h-4 text-dswd-blue shrink-0" />
-                      <span>Notification Scope & Distribution (DSWD Options)</span>
+                      <BellRing className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>Notification Scope & Inter-Office Coordination</span>
                     </label>
-                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-white shadow-xs text-slate-700">
-                      {formData.notify_mswdo ? '🔔 Option 2: + MSWDO' : '📢 Option 1: Direct'}
-                    </span>
+                    {(() => {
+                      const selectedCount = (formData.notify_mswdo ? 1 : 0) + (formData.notify_senior ? 1 : 0) + (formData.notify_pwd ? 1 : 0);
+                      return (
+                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border shadow-xs ${
+                          selectedCount > 0 
+                            ? 'bg-blue-600 text-white border-blue-600' 
+                            : 'bg-white text-slate-700 border-slate-200'
+                        }`}>
+                          {selectedCount > 0 ? `🔔 +${selectedCount} Tanggapan na Ma-nonotify` : '📢 Direct Lamang (Barangay + Benepisyaryo)'}
+                        </span>
+                      );
+                    })()}
                   </div>
-                  <p className="text-[11px] text-slate-600">
-                    Pumili kung nais mo bang direktang i-anunsyo lamang sa Barangay at Benepisyaryo, o isama rin si MSWDO sa abiso:
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    Pumili kung nais mong magpadala rin ng opisyal na abiso sa iba pang tanggapan para sa koordinasyon ng aktibidad (i-click ang mga nais i-notify):
                   </p>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
-                    {/* Option 1: Direct only */}
+                  <div className={`grid grid-cols-1 ${user?.role === 'admin' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-2.5 pt-1`}>
+                    {/* Option: Notify MSWDO (for DSWD Admin) */}
+                    {user?.role === 'admin' && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData((prev) => ({ ...prev, notify_mswdo: !prev.notify_mswdo }))}
+                        className={`flex items-start gap-3 p-3 rounded-2xl border-2 text-left transition select-none cursor-pointer ${
+                          formData.notify_mswdo
+                            ? 'bg-white border-indigo-600 shadow-md ring-2 ring-indigo-500/20'
+                            : 'bg-white/70 border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
+                            formData.notify_mswdo ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white'
+                          }`}>
+                            {formData.notify_mswdo && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                        </div>
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="text-xs font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
+                            <span>🏢 MSWDO Admin</span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-tight">
+                            Magpadala ng opisyal na abiso sa MSWDO para sa koordinasyon.
+                          </p>
+                        </div>
+                      </button>
+                    )}
+
+                    {/* Option: Notify Senior Citizen Admin (OSCA) */}
                     <button
                       type="button"
-                      onClick={() => setFormData((prev) => ({ ...prev, notify_mswdo: false }))}
-                      className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition select-none cursor-pointer ${
-                        !formData.notify_mswdo
+                      onClick={() => setFormData((prev) => ({ ...prev, notify_senior: !prev.notify_senior }))}
+                      className={`flex items-start gap-3 p-3 rounded-2xl border-2 text-left transition select-none cursor-pointer ${
+                        formData.notify_senior
                           ? 'bg-white border-blue-600 shadow-md ring-2 ring-blue-500/20'
                           : 'bg-white/70 border-slate-200 hover:border-slate-300 text-slate-600'
                       }`}
                     >
                       <div className="mt-0.5 shrink-0">
-                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                          !formData.notify_mswdo ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white'
+                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
+                          formData.notify_senior ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white'
                         }`}>
-                          {!formData.notify_mswdo && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                          {formData.notify_senior && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
                       </div>
-                      <div className="space-y-1">
+                      <div className="space-y-0.5 min-w-0">
                         <div className="text-xs font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
-                          <span>Direct Lamang</span>
-                          <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded border border-blue-200">
-                            Barangay + Benepisyaryo
-                          </span>
+                          <span>👴 Senior Admin (OSCA)</span>
                         </div>
-                        <p className="text-[11px] text-slate-600 leading-snug">
-                          Direktang ipapadala ang announcement sa mga benepisyaryo at Barangay Staff lamang. <strong className="text-slate-800">Hindi ma-nonotify si MSWDO.</strong>
+                        <p className="text-[10px] text-slate-500 leading-tight">
+                          Magpadala ng opisyal na abiso sa Office of Senior Citizens Affairs.
                         </p>
                       </div>
                     </button>
 
-                    {/* Option 2: Direct + Also Notify MSWDO */}
+                    {/* Option: Notify PWD Admin (PDAO) */}
                     <button
                       type="button"
-                      onClick={() => setFormData((prev) => ({ ...prev, notify_mswdo: true }))}
-                      className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition select-none cursor-pointer ${
-                        formData.notify_mswdo
-                          ? 'bg-white border-indigo-600 shadow-md ring-2 ring-indigo-500/20'
+                      onClick={() => setFormData((prev) => ({ ...prev, notify_pwd: !prev.notify_pwd }))}
+                      className={`flex items-start gap-3 p-3 rounded-2xl border-2 text-left transition select-none cursor-pointer ${
+                        formData.notify_pwd
+                          ? 'bg-white border-amber-600 shadow-md ring-2 ring-amber-500/20'
                           : 'bg-white/70 border-slate-200 hover:border-slate-300 text-slate-600'
                       }`}
                     >
                       <div className="mt-0.5 shrink-0">
-                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                          formData.notify_mswdo ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'
+                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
+                          formData.notify_pwd ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300 bg-white'
                         }`}>
-                          {formData.notify_mswdo && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                          {formData.notify_pwd && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
                       </div>
-                      <div className="space-y-1">
+                      <div className="space-y-0.5 min-w-0">
                         <div className="text-xs font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
-                          <span>Direct + Notify MSWDO</span>
-                          <span className="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded border border-indigo-200">
-                            + MSWDO Admin
-                          </span>
+                          <span>♿ PWD Admin (PDAO)</span>
                         </div>
-                        <p className="text-[11px] text-slate-600 leading-snug">
-                          Bukod sa mga benepisyaryo at Barangay Staff, <strong className="text-indigo-900">makakatanggap din ng abiso ang MSWDO</strong> para sa koordinasyon.
+                        <p className="text-[10px] text-slate-500 leading-tight">
+                          Magpadala ng opisyal na abiso sa Persons with Disability Affairs Office.
                         </p>
                       </div>
                     </button>
@@ -2365,7 +2418,15 @@ export default function AnnouncementManagementPage() {
                       : editingAnnouncement
                         ? 'Update Announcement'
                         : (formData.status === 'published'
-                            ? (formData.notify_mswdo ? 'Publish & Notify (+ MSWDO)' : 'Publish & Notify Direct')
+                            ? (() => {
+                                const extraNames = [];
+                                if (formData.notify_mswdo) extraNames.push('MSWDO');
+                                if (formData.notify_senior) extraNames.push('Senior');
+                                if (formData.notify_pwd) extraNames.push('PWD');
+                                return extraNames.length > 0
+                                  ? `Publish & Notify (+ ${extraNames.join(', ')})`
+                                  : 'Publish & Notify Direct';
+                              })()
                             : 'Save Draft')}
                   </button>
                 </div>
@@ -2414,6 +2475,29 @@ export default function AnnouncementManagementPage() {
                   <span>Absence SMS failed: <strong className="text-rose-700">{selectedAnnouncementStats.absence_sms_summary?.failed || 0}</strong></span>
                   <span>Announcement SMS no mobile: <strong className="text-slate-500">{selectedAnnouncementStats.sms_summary?.no_mobile || 0}</strong></span>
                   <span>Absence SMS no mobile: <strong className="text-slate-500">{selectedAnnouncementStats.absence_sms_summary?.no_mobile || 0}</strong></span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
+                  <span className="text-xs text-slate-500 font-bold">Inter-Office Notice:</span>
+                  {selectedAnnouncementStats.notify_mswdo && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      + MSWDO Admin Notified
+                    </span>
+                  )}
+                  {selectedAnnouncementStats.notify_senior && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                      + Senior Admin (OSCA) Notified
+                    </span>
+                  )}
+                  {selectedAnnouncementStats.notify_pwd && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">
+                      + PWD Admin (PDAO) Notified
+                    </span>
+                  )}
+                  {!selectedAnnouncementStats.notify_mswdo && !selectedAnnouncementStats.notify_senior && !selectedAnnouncementStats.notify_pwd && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                      Direct Lamang (Walang ibang tanggapan)
+                    </span>
+                  )}
                 </div>
               </div>
 
