@@ -269,7 +269,18 @@ router.get('/events/:id', authorize('admin', 'staff', 'barangay', 'beneficiary')
         : 0,
     };
 
-    res.json({ success: true, data: { ...event.toJSON(), stats } });
+    const eventJson = event.toJSON();
+    if (event.agency === 'MSWDO' || ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role)) {
+      if (eventJson.Transactions) {
+        eventJson.Transactions.forEach(t => {
+          if (t.disbursement_type === 'digital') {
+            t.disbursement_type = 'cash_otc';
+          }
+        });
+      }
+    }
+
+    res.json({ success: true, data: { ...eventJson, stats } });
   } catch (error) {
     next(error);
   }
@@ -867,7 +878,10 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       }
 
       // Determine disbursement type based on beneficiary's payout preference and verification
+      // Hybrid Digital disbursement is EXCLUSIVE to DSWD. MSWDO is strictly physical claiming via RFID/QR.
+      const isMswdoEvent = event.agency === 'MSWDO' || ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'].includes(req.user?.role);
       const isDigitalReady = !isNonCash
+        && !isMswdoEvent
         && beneficiary.payout_preference === 'digital'
         && beneficiary.account_verification_status === 'verified'
         && beneficiary.payout_provider
@@ -2508,6 +2522,34 @@ router.get('/events/:id/payout-summary', authorize('admin', 'staff', 'barangay',
       where: { distribution_event_id: event.id, disbursement_type: 'cash_otc', status: 'released' },
     })) || 0;
 
+    const isMswdoEventSummary = event.agency === 'MSWDO' || ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role);
+    if (isMswdoEventSummary) {
+      const allTotal = digitalTotal + cashTotal;
+      const allReleased = digitalReleased + cashReleased;
+      const allPending = digitalPending + cashPending;
+      const allAmount = parseFloat(digitalAmountReleased) + parseFloat(digitalRetroReleased) + parseFloat(cashAmountReleased) + parseFloat(cashRetroReleased);
+      return res.json({
+        success: true,
+        data: {
+          event_id: event.id,
+          event_status: event.status,
+          digital: { total: 0, released: 0, pending: 0, amount_released: 0 },
+          cash_otc: {
+            total: allTotal,
+            released: allReleased,
+            pending: allPending,
+            amount_released: allAmount,
+          },
+          overall: {
+            total: allTotal,
+            released: allReleased,
+            pending: allPending,
+            amount_released: allAmount,
+          },
+        },
+      });
+    }
+
     res.json({
       success: true,
       data: {
@@ -2537,9 +2579,9 @@ router.get('/events/:id/payout-summary', authorize('admin', 'staff', 'barangay',
   }
 });
 
-// ── POST /events/:id/disburse-digital ── Batch process all pending digital payout transactions (Admin only)
-// This is the SIMULATED GATEWAY — generates realistic reference numbers and marks transactions as released
-router.post('/events/:id/disburse-digital', authorize('admin', 'mswdo_admin'), async (req, res, next) => {
+// ── POST /events/:id/disburse-digital ── Batch process all pending digital payout transactions (DSWD Admin only)
+// Digital disbursement is EXCLUSIVE to DSWD. MSWDO is strictly physical claiming via RFID card or QR pass.
+router.post('/events/:id/disburse-digital', authorize('admin'), async (req, res, next) => {
   const dbTransaction = await sequelize.transaction();
 
   try {
@@ -2555,16 +2597,11 @@ router.post('/events/:id/disburse-digital', authorize('admin', 'mswdo_admin'), a
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
     }
 
-    if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
+    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff' || event.agency === 'MSWDO' || event.Program?.agency === 'MSWDO') {
       await dbTransaction.rollback();
-      return res.status(403).json({ success: false, message: 'Access Denied: MSWDO Admin cannot disburse for DSWD distribution events.' });
-    }
-
-    if (event.agency === 'MSWDO') {
-      await dbTransaction.rollback();
-      return res.status(400).json({
+      return res.status(403).json({
         success: false,
-        message: 'Ang MSWDO distribution ay walang digital disbursement. Lahat ng tulong ay pisikal na kinukuha (Physical Claiming) gamit ang RFID card o QR code.',
+        message: 'Ang Digital Disbursement ay eksklusibo lamang para sa DSWD. Ang MSWDO distribution ay para sa Physical Claiming gamit ang RFID Card o QR Pass.',
       });
     }
 
