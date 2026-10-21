@@ -105,29 +105,63 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     const totalDistributedFunds = parseFloat(regularFunds) + parseFloat(retroFunds);
 
     // ── Category counts ──
-    const fourPsCount = await Beneficiary.count({
-      where: {
-        ...beneficiaryWhere,
-        status: 'Approved',
-        category: { [Op.in]: ['4Ps Household Beneficiary', '4Ps Household Beneficiaries'] },
-      },
-    });
+    let fourPsCount = 0;
+    let seniorCitizensCount = 0;
+    let pwdCount = 0;
 
-    const seniorCitizensCount = await Beneficiary.count({
-      where: {
-        ...beneficiaryWhere,
-        status: 'Approved',
-        category: { [Op.in]: ['Senior Citizen (Social Pension)', 'Senior Citizens (Social Pension)'] },
-      },
-    });
-
-    const pwdCount = await Beneficiary.count({
-      where: {
-        ...beneficiaryWhere,
-        status: 'Approved',
-        category: { [Op.in]: ['Person with Disability (PWD)', 'Persons with Disabilities (PWD)'] },
-      },
-    });
+    if (req.user.role === 'senior_citizen_admin') {
+      fourPsCount = 0;
+      seniorCitizensCount = totalBeneficiaries;
+      pwdCount = 0;
+    } else if (req.user.role === 'pwd_admin') {
+      fourPsCount = 0;
+      seniorCitizensCount = 0;
+      pwdCount = totalBeneficiaries;
+    } else if (isMswdoRole(req.user.role)) {
+      fourPsCount = 0;
+      seniorCitizensCount = await Beneficiary.count({
+        where: {
+          ...beneficiaryWhere,
+          status: 'Approved',
+          category: { [Op.like]: '%Senior%' },
+        },
+      });
+      pwdCount = await Beneficiary.count({
+        where: {
+          ...beneficiaryWhere,
+          status: 'Approved',
+          [Op.or]: [
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } }
+          ],
+        },
+      });
+    } else {
+      fourPsCount = await Beneficiary.count({
+        where: {
+          ...beneficiaryWhere,
+          status: 'Approved',
+          category: { [Op.like]: '%4Ps%' },
+        },
+      });
+      seniorCitizensCount = await Beneficiary.count({
+        where: {
+          ...beneficiaryWhere,
+          status: 'Approved',
+          category: { [Op.like]: '%Senior%' },
+        },
+      });
+      pwdCount = await Beneficiary.count({
+        where: {
+          ...beneficiaryWhere,
+          status: 'Approved',
+          [Op.or]: [
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } }
+          ],
+        },
+      });
+    }
 
     // ── Application counts ──
     const pendingApplications = await Beneficiary.count({
@@ -255,7 +289,6 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
             { notify_mswdo: true },
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
           ],
         },
         attributes: ['id'],
@@ -291,7 +324,6 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
         { notify_mswdo: true },
         sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
         sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-        sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
       ];
     }
     const totalAnnouncements = await Announcement.count({ where: announceWhere });
@@ -1145,7 +1177,6 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
             { notify_mswdo: true },
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
           ],
         },
         attributes: ['id'],
@@ -1288,7 +1319,6 @@ router.get('/table/announcements', authorize('admin', 'staff', 'barangay'), asyn
           { notify_mswdo: true },
           sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
           sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
         ],
       });
     }
@@ -1489,7 +1519,6 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
             { notify_mswdo: true },
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
           ],
         },
         attributes: ['id'],
@@ -1623,7 +1652,6 @@ router.get('/export/announcements', authorize('admin', 'staff', 'barangay'), asy
           { notify_mswdo: true },
           sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
           sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%4Ps%' }),
         ],
       });
     }

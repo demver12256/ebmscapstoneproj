@@ -39,9 +39,10 @@ export default function ModernDashboard() {
   const [barangays, setBarangays] = useState([]);
   const isSeniorAdmin = user?.role === 'senior_citizen_admin';
   const isPwdAdmin = user?.role === 'pwd_admin';
-  const isMswdoAdmin = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
+  const isMswdoAdmin = user?.role === 'mswdo_admin';
   const isMswdoStaff = user?.role === 'mswdo_staff';
-  const isSectorAdmin = isMswdoAdmin || isSeniorAdmin || isPwdAdmin;
+  const isAnyMswdo = isMswdoAdmin || isMswdoStaff;
+  const isSectorAdmin = isAnyMswdo || isSeniorAdmin || isPwdAdmin;
   const canAccessPending = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(user?.role);
 
   useEffect(() => {
@@ -116,9 +117,15 @@ export default function ModernDashboard() {
     parseFloat(previousMonthData.total || 0)
   );
 
-  const totalBeneficiaries = summary
-    ? ((summary.fourPsCount || 0) + (summary.seniorCitizensCount || 0) + (summary.pwdCount || 0) || summary.totalBeneficiaries || 0)
-    : 0;
+  const totalBeneficiaries = isSeniorAdmin
+    ? (summary?.seniorCitizensCount || summary?.approvedCount || 0)
+    : isPwdAdmin
+      ? (summary?.pwdCount || summary?.approvedCount || 0)
+      : isAnyMswdo
+        ? ((summary?.seniorCitizensCount || 0) + (summary?.pwdCount || 0) || summary?.approvedCount || 0)
+        : summary
+          ? ((summary.fourPsCount || 0) + (summary.seniorCitizensCount || 0) + (summary.pwdCount || 0) || summary.totalBeneficiaries || 0)
+          : 0;
   const totalDistributedFunds = summary?.totalDistributedFunds || 0;
 
   const pendingApplicationsList = applications.filter(a => {
@@ -135,9 +142,9 @@ export default function ModernDashboard() {
       const c = String(a.category || '').toLowerCase();
       return c.includes('pwd') || c.includes('disabilit');
     }
-    if (isMswdoAdmin) {
+    if (isAnyMswdo) {
       const c = String(a.category || '').toLowerCase();
-      return !c.includes('4ps') && !c.includes('pantawid');
+      return (c.includes('senior') || c.includes('pwd') || c.includes('disabilit')) && !c.includes('4ps') && !c.includes('pantawid');
     }
     return true;
   });
@@ -146,24 +153,20 @@ export default function ModernDashboard() {
     : pendingApplicationsList.length;
 
   // Minimalist KPI Stat Cards Config
-  const stats = isSectorAdmin ? [
+  const stats = isSeniorAdmin ? [
     {
-      title: isSeniorAdmin ? 'Senior Citizens' : isPwdAdmin ? 'PWD Beneficiaries' : 'Total Beneficiaries',
-      value: isSeniorAdmin 
-        ? (summary?.seniorCitizensCount || summary?.approvedCount || 0) 
-        : isPwdAdmin 
-          ? (summary?.pwdCount || summary?.approvedCount || 0) 
-          : totalBeneficiaries,
-      badge: summary?.approvedCount !== undefined ? `${summary.approvedCount} approved` : '+0%',
+      title: 'Senior Citizens',
+      value: summary?.seniorCitizensCount || totalBeneficiaries,
+      badge: 'OSCA Pensioners',
       trend: 'up',
-      icon: Users,
-      iconBg: 'bg-blue-50 text-blue-600 border border-blue-100',
-      badgeBg: 'bg-blue-50 text-blue-700',
-      onClick: () => navigate('/dashboard/beneficiaries')
+      icon: Award,
+      iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
+      badgeBg: 'bg-rose-50 text-rose-700',
+      onClick: () => navigate('/dashboard/beneficiaries?category=senior')
     },
     {
       title: 'Covered Barangays',
-      value: barangays.length || 10,
+      value: barangays.length || 36,
       badge: 'Municipal Scope',
       trend: 'neutral',
       icon: MapPin,
@@ -172,7 +175,7 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/barangays')
     },
     {
-      title: 'Announcements',
+      title: 'OSCA Announcements',
       value: announcements.length,
       badge: `${announcements.filter(a => a.status === 'published' || a.status === 'active').length || announcements.length} active`,
       trend: 'up',
@@ -182,27 +185,176 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/announcements')
     },
     {
-      title: isSeniorAdmin ? 'Approved Seniors' : isPwdAdmin ? 'Approved PWDs' : 'Approved Beneficiaries',
-      value: isSeniorAdmin 
-        ? (summary?.seniorCitizensCount || summary?.approvedCount || 0) 
-        : isPwdAdmin 
-          ? (summary?.pwdCount || summary?.approvedCount || 0) 
-          : (summary?.approvedCount || totalBeneficiaries),
-      badge: 'Verified',
+      title: 'Pension Distributions',
+      value: summary?.totalDistributionEvents || 0,
+      badge: 'Social Pension',
       trend: 'up',
-      icon: CheckCircle,
-      iconBg: 'bg-teal-50 text-teal-600 border border-teal-100',
-      badgeBg: 'bg-teal-50 text-teal-700',
-      onClick: () => navigate('/dashboard/beneficiaries')
+      icon: Package,
+      iconBg: 'bg-blue-50 text-blue-600 border border-blue-100',
+      badgeBg: 'bg-blue-50 text-blue-700',
+      onClick: () => navigate('/dashboard/distributions')
     },
     {
-      title: isSeniorAdmin ? 'Pending Seniors' : isPwdAdmin ? 'Pending PWDs' : 'Pending Beneficiaries',
+      title: 'Pending Senior Apps',
       value: pendingCount,
       badge: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
       trend: 'neutral',
       icon: Clock,
       iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
       badgeBg: 'bg-amber-50 text-amber-700',
+      onClick: () => navigate('/dashboard/beneficiaries?pending=true&category=senior', { state: { openPending: true } })
+    }
+  ] : isPwdAdmin ? [
+    {
+      title: 'PWD Beneficiaries',
+      value: summary?.pwdCount || totalBeneficiaries,
+      badge: 'Verified PDAO',
+      trend: 'up',
+      icon: Users,
+      iconBg: 'bg-blue-50 text-blue-600 border border-blue-100',
+      badgeBg: 'bg-blue-50 text-blue-700',
+      onClick: () => navigate('/dashboard/beneficiaries?category=pwd')
+    },
+    {
+      title: 'Covered Barangays',
+      value: barangays.length || 36,
+      badge: 'Municipal Scope',
+      trend: 'neutral',
+      icon: MapPin,
+      iconBg: 'bg-purple-50 text-purple-600 border border-purple-100',
+      badgeBg: 'bg-purple-50 text-purple-700',
+      onClick: () => navigate('/dashboard/barangays')
+    },
+    {
+      title: 'PDAO Announcements',
+      value: announcements.length,
+      badge: `${announcements.filter(a => a.status === 'published' || a.status === 'active').length || announcements.length} active`,
+      trend: 'up',
+      icon: Megaphone,
+      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
+      badgeBg: 'bg-emerald-50 text-emerald-700',
+      onClick: () => navigate('/dashboard/announcements')
+    },
+    {
+      title: 'Disability Aid Events',
+      value: summary?.totalDistributionEvents || 0,
+      badge: 'PDAO Aid',
+      trend: 'up',
+      icon: Package,
+      iconBg: 'bg-teal-50 text-teal-600 border border-teal-100',
+      badgeBg: 'bg-teal-50 text-teal-700',
+      onClick: () => navigate('/dashboard/distributions')
+    },
+    {
+      title: 'Pending PWD Apps',
+      value: pendingCount,
+      badge: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
+      trend: 'neutral',
+      icon: Clock,
+      iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
+      badgeBg: 'bg-amber-50 text-amber-700',
+      onClick: () => navigate('/dashboard/beneficiaries?pending=true&category=pwd', { state: { openPending: true } })
+    }
+  ] : isMswdoAdmin ? [
+    {
+      title: 'Municipal Beneficiaries',
+      value: totalBeneficiaries,
+      badge: `${totalBeneficiaries} approved`,
+      trend: 'up',
+      icon: Users,
+      iconBg: 'bg-blue-50 text-blue-600 border border-blue-100',
+      badgeBg: 'bg-blue-50 text-blue-700',
+      onClick: () => navigate('/dashboard/beneficiaries')
+    },
+    {
+      title: 'Senior Citizens (OSCA)',
+      value: summary?.seniorCitizensCount || 0,
+      badge: 'OSCA Sector',
+      trend: 'up',
+      icon: Award,
+      iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
+      badgeBg: 'bg-rose-50 text-rose-700',
+      onClick: () => navigate('/dashboard/beneficiaries?category=senior')
+    },
+    {
+      title: 'PWD Sector (PDAO)',
+      value: summary?.pwdCount || 0,
+      badge: 'PDAO Sector',
+      trend: 'up',
+      icon: Target,
+      iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
+      badgeBg: 'bg-amber-50 text-amber-700',
+      onClick: () => navigate('/dashboard/beneficiaries?category=pwd')
+    },
+    {
+      title: 'Covered Barangays',
+      value: barangays.length || 36,
+      badge: 'Municipal Scope',
+      trend: 'neutral',
+      icon: MapPin,
+      iconBg: 'bg-purple-50 text-purple-600 border border-purple-100',
+      badgeBg: 'bg-purple-50 text-purple-700',
+      onClick: () => navigate('/dashboard/barangays')
+    },
+    {
+      title: 'Pending Applications',
+      value: pendingCount,
+      badge: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
+      trend: 'neutral',
+      icon: Clock,
+      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
+      badgeBg: 'bg-emerald-50 text-emerald-700',
+      onClick: () => navigate('/dashboard/beneficiaries?pending=true', { state: { openPending: true } })
+    }
+  ] : isMswdoStaff ? [
+    {
+      title: 'Municipal Beneficiaries',
+      value: totalBeneficiaries,
+      badge: `${totalBeneficiaries} verified`,
+      trend: 'up',
+      icon: Users,
+      iconBg: 'bg-blue-50 text-blue-600 border border-blue-100',
+      badgeBg: 'bg-blue-50 text-blue-700',
+      onClick: () => navigate('/dashboard/beneficiaries')
+    },
+    {
+      title: 'Covered Barangays',
+      value: barangays.length || 36,
+      badge: 'Municipal Scope',
+      trend: 'neutral',
+      icon: MapPin,
+      iconBg: 'bg-purple-50 text-purple-600 border border-purple-100',
+      badgeBg: 'bg-purple-50 text-purple-700',
+      onClick: () => navigate('/dashboard/barangays')
+    },
+    {
+      title: 'Active Announcements',
+      value: announcements.length,
+      badge: `${announcements.filter(a => a.status === 'published' || a.status === 'active').length || announcements.length} active`,
+      trend: 'up',
+      icon: Megaphone,
+      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
+      badgeBg: 'bg-emerald-50 text-emerald-700',
+      onClick: () => navigate('/dashboard/announcements')
+    },
+    {
+      title: 'Assistance Requests',
+      value: summary?.pendingAssistanceRequests || 0,
+      badge: 'Municipal Aid',
+      trend: 'neutral',
+      icon: HandHeart,
+      iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
+      badgeBg: 'bg-amber-50 text-amber-700',
+      onClick: () => navigate('/dashboard/assistance-requests')
+    },
+    {
+      title: 'Pending Verifications',
+      value: pendingCount,
+      badge: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
+      trend: 'neutral',
+      icon: Clock,
+      iconBg: 'bg-teal-50 text-teal-600 border border-teal-100',
+      badgeBg: 'bg-teal-50 text-teal-700',
       onClick: () => navigate('/dashboard/beneficiaries?pending=true', { state: { openPending: true } })
     }
   ] : [
@@ -273,6 +425,10 @@ export default function ModernDashboard() {
   ] : isPwdAdmin ? [
     { name: 'PWD Beneficiaries', value: summary?.pwdCount || summary?.approvedCount || 1, color: '#2563EB' },
     { name: 'Pending Applications', value: pendingApplicationsList.length, color: '#F59E0B' }
+  ] : isAnyMswdo ? [
+    { name: 'Senior Citizens (OSCA)', value: summary?.seniorCitizensCount || 0, color: '#E11D48' },
+    { name: 'Persons with Disabilities (PDAO)', value: summary?.pwdCount || 0, color: '#F59E0B' },
+    ...(pendingApplicationsList.length > 0 ? [{ name: 'Pending Applications', value: pendingApplicationsList.length, color: '#3B82F6' }] : [])
   ] : [
     { name: '4Ps Program', value: summary?.fourPsCount || 0, color: '#2563EB' },
     { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E11D48' },
@@ -281,8 +437,22 @@ export default function ModernDashboard() {
 
   const totalCategorySum = categoryData.reduce((acc, cur) => acc + cur.value, 0) || 1;
 
+  // Filtered applications by sector
+  const filteredAppsForActivity = applications.filter(app => {
+    if (isSeniorAdmin) return String(app.category || '').toLowerCase().includes('senior');
+    if (isPwdAdmin) {
+      const c = String(app.category || '').toLowerCase();
+      return c.includes('pwd') || c.includes('disabilit');
+    }
+    if (isAnyMswdo) {
+      const c = String(app.category || '').toLowerCase();
+      return (c.includes('senior') || c.includes('pwd') || c.includes('disabilit')) && !c.includes('4ps') && !c.includes('pantawid');
+    }
+    return true;
+  });
+
   // Recent applications activity
-  const recentActivity = applications.slice(0, 5).map(app => {
+  const recentActivity = filteredAppsForActivity.slice(0, 5).map(app => {
     if (app.status === 'Approved') {
       return {
         type: 'approval',
@@ -389,7 +559,7 @@ export default function ModernDashboard() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/60">
-              {isSeniorAdmin ? 'OSCA Focus' : isPwdAdmin ? 'PDAO Focus' : isMswdoAdmin ? (isMswdoStaff ? 'MSWDO Staff' : 'MSWDO Focus') : ['admin'].includes(user?.role) ? 'Admin Console' : 'Staff Portal'}
+              {isSeniorAdmin ? 'OSCA Focus' : isPwdAdmin ? 'PDAO Focus' : isMswdoStaff ? 'MSWDO Staff' : isMswdoAdmin ? 'MSWDO Focus' : ['admin'].includes(user?.role) ? 'Admin Console' : 'Staff Portal'}
             </span>
             <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
@@ -398,12 +568,14 @@ export default function ModernDashboard() {
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             {isSeniorAdmin
-              ? 'Office of Senior Citizens Affairs (OSCA) — Social Pension and beneficiary overview.'
+              ? 'Office of Senior Citizens Affairs (OSCA) — Social Pension, Welfare, and Assembly Overview.'
               : isPwdAdmin
-                ? 'Persons with Disability Affairs Office (PDAO) — Disability welfare and beneficiary overview.'
-                : isMswdoAdmin 
-                  ? 'Senior Citizens and Persons with Disabilities (PWD) social protection overview.' 
-                  : 'Real-time overview of municipal beneficiaries, programs, and aid distributions.'}
+                ? 'Persons with Disability Affairs Office (PDAO) — Disability Welfare, Inclusion, and Assistive Services.'
+                : isMswdoStaff
+                  ? 'Municipal Social Welfare Operations — Field verification, physical claiming & attendance.'
+                  : isMswdoAdmin 
+                    ? 'Senior Citizens and Persons with Disabilities (PWD) social protection overview.' 
+                    : 'Real-time overview of municipal beneficiaries, programs, and aid distributions.'}
           </p>
         </div>
 
@@ -497,8 +669,8 @@ export default function ModernDashboard() {
                   ? 'Senior Citizens Registry by Barangay' 
                   : isPwdAdmin 
                     ? 'PWD Registry by Barangay' 
-                    : isMswdoAdmin 
-                      ? 'Beneficiary Registry by Barangay' 
+                    : isAnyMswdo 
+                      ? 'Municipal Beneficiary Registry by Barangay' 
                       : 'Monthly Distribution Trend'}
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -506,8 +678,8 @@ export default function ModernDashboard() {
                   ? 'Verified senior citizen social pension beneficiaries across barangays'
                   : isPwdAdmin
                     ? 'Verified persons with disabilities across barangays'
-                    : isMswdoAdmin
-                      ? 'Verified municipal beneficiaries across barangays'
+                    : isAnyMswdo
+                      ? 'Verified Senior Citizen and PWD municipal beneficiaries across barangays'
                       : 'Disbursement volume and history over time'}
               </p>
             </div>
@@ -594,10 +766,10 @@ export default function ModernDashboard() {
         <div className="lg:col-span-4 p-5 rounded-xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-bold text-slate-900">
-              {isSeniorAdmin ? 'OSCA Sector Demographics' : isPwdAdmin ? 'PDAO Sector Demographics' : 'Category Distribution'}
+              {isSeniorAdmin ? 'OSCA Sector Demographics' : isPwdAdmin ? 'PDAO Sector Demographics' : isAnyMswdo ? 'MSWDO Sector Demographics' : 'Category Distribution'}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              {isSeniorAdmin ? 'Senior citizen registry status' : isPwdAdmin ? 'PWD registry status' : 'Beneficiary roster breakdown'}
+              {isSeniorAdmin ? 'Senior citizen social pension status' : isPwdAdmin ? 'PWD registry status' : isAnyMswdo ? 'Senior Citizen (OSCA) & PWD (PDAO) roster breakdown' : 'Beneficiary roster breakdown'}
             </p>
           </div>
 
@@ -712,12 +884,34 @@ export default function ModernDashboard() {
 
             <div className="grid grid-cols-2 gap-2 mt-3">
               {[
-                ...(isSectorAdmin ? [
-                  { label: 'Beneficiary Records', icon: Users, path: '/dashboard/beneficiaries' },
-                  { label: 'Review Pending', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' },
-                  { label: isSeniorAdmin ? 'Senior Aid Distributions' : isPwdAdmin ? 'PWD Aid Distributions' : 'Municipal Aid Distributions', icon: Package, path: '/dashboard/distributions' },
+                ...(isSeniorAdmin ? [
+                  { label: 'Senior Citizen Records', icon: Users, path: '/dashboard/beneficiaries?category=senior' },
+                  { label: 'Review Pending Seniors', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true&category=senior' },
+                  { label: 'Social Pension Distributions', icon: Package, path: '/dashboard/distributions' },
+                  { label: 'OSCA Announcements', icon: Megaphone, path: '/dashboard/announcements' },
                   { label: 'Barangays Directory', icon: MapPin, path: '/dashboard/barangays' },
-                  { label: isSeniorAdmin ? 'OSCA Reports' : isPwdAdmin ? 'PDAO Reports' : 'Municipal Reports', icon: FileText, path: '/dashboard/reports' }
+                  { label: 'OSCA Reports', icon: FileText, path: '/dashboard/reports' }
+                ] : isPwdAdmin ? [
+                  { label: 'PWD Beneficiary Records', icon: Users, path: '/dashboard/beneficiaries?category=pwd' },
+                  { label: 'Review Pending PWDs', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true&category=pwd' },
+                  { label: 'PWD Aid Distributions', icon: Package, path: '/dashboard/distributions' },
+                  { label: 'PDAO Announcements', icon: Megaphone, path: '/dashboard/announcements' },
+                  { label: 'Barangays Directory', icon: MapPin, path: '/dashboard/barangays' },
+                  { label: 'PDAO Reports', icon: FileText, path: '/dashboard/reports' }
+                ] : isMswdoStaff ? [
+                  { label: 'Physical Claiming (RFID)', icon: Smartphone, path: '/dashboard/rfid-scanner' },
+                  { label: 'Assembly RFID Attendance', icon: Award, path: '/dashboard/rfid-attendance' },
+                  { label: 'Municipal Beneficiaries', icon: Users, path: '/dashboard/beneficiaries' },
+                  { label: 'Municipal Distributions', icon: Package, path: '/dashboard/distributions' },
+                  { label: 'Assistance Requests', icon: HandHeart, path: '/dashboard/assistance-requests' },
+                  { label: 'Active Announcements', icon: Megaphone, path: '/dashboard/announcements' }
+                ] : isMswdoAdmin ? [
+                  { label: 'Municipal Beneficiaries', icon: Users, path: '/dashboard/beneficiaries' },
+                  { label: 'Review Pending', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' },
+                  { label: 'Municipal Aid Distributions', icon: Package, path: '/dashboard/distributions' },
+                  { label: 'Assistance Requests', icon: HandHeart, path: '/dashboard/assistance-requests' },
+                  { label: 'Announcements Management', icon: Megaphone, path: '/dashboard/announcements' },
+                  { label: 'Municipal Reports', icon: FileText, path: '/dashboard/reports' }
                 ] : [
                   { label: 'New Distribution', icon: PesoIcon, path: '/dashboard/distributions' },
                   ...(['admin'].includes(user?.role) ? [

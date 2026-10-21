@@ -10,14 +10,12 @@ const isPwdRole = (role) => role === 'pwd_admin';
 const isMswdoStaff = (role) => role === 'mswdo_staff';
 const isAdminOr = (role, ...others) => isAdminRole(role) || others.includes(role);
 
-// MSWDO category filter for beneficiaries: includes 4Ps, Senior Citizens & PWD for municipal registry oversight
+// MSWDO category filter for beneficiaries: includes Senior Citizens & PWD for municipal registry oversight (4Ps is strictly DSWD)
 const MSWDO_CATEGORY_FILTER = {
   [Op.or]: [
     { category: { [Op.like]: '%Senior%' } },
     { category: { [Op.like]: '%PWD%' } },
     { category: { [Op.like]: '%Disabilit%' } },
-    { category: { [Op.like]: '%4Ps%' } },
-    { category: { [Op.like]: '%Pantawid%' } },
   ]
 };
 
@@ -32,14 +30,12 @@ const PWD_CATEGORY_FILTER = {
   ]
 };
 
-// MSWDO program eligibility filter — includes 4Ps, Senior Citizens, and PWD
+// MSWDO program eligibility filter — includes Senior Citizens and PWD
 const MSWDO_ELIGIBILITY_FILTER = {
   [Op.or]: [
     { eligibility_category: { [Op.like]: '%Senior%' } },
     { eligibility_category: { [Op.like]: '%PWD%' } },
     { eligibility_category: { [Op.like]: '%Disabilit%' } },
-    { eligibility_category: { [Op.like]: '%4Ps%' } },
-    { eligibility_category: { [Op.like]: '%Pantawid%' } },
   ]
 };
 
@@ -55,7 +51,7 @@ const isMswdoCategory = (category, role) => {
   const c = String(category).toLowerCase();
   if (role === 'senior_citizen_admin') return c.includes('senior');
   if (role === 'pwd_admin') return c.includes('pwd') || c.includes('disabilit');
-  return c.includes('senior') || c.includes('pwd') || c.includes('disabilit') || c.includes('4ps') || c.includes('pantawid');
+  return c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
 };
 
 const isMswdoEligibility = (category, role) => {
@@ -63,7 +59,7 @@ const isMswdoEligibility = (category, role) => {
   const c = String(category).toLowerCase();
   if (role === 'senior_citizen_admin') return c.includes('senior');
   if (role === 'pwd_admin') return c.includes('pwd') || c.includes('disabilit');
-  return c.includes('senior') || c.includes('pwd') || c.includes('disabilit') || c.includes('4ps') || c.includes('pantawid');
+  return c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
 };
 
 
