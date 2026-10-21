@@ -1377,7 +1377,6 @@ router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay')
       });
     }
 
-    const is4Ps = (beneficiary.category || '').toLowerCase().includes('4ps');
     let customId;
     if (is4Ps) {
       // For 4Ps beneficiaries, their beneficiary number is their Household Number
