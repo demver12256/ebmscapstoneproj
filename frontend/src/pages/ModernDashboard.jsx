@@ -194,16 +194,6 @@ export default function ModernDashboard() {
       iconBg: 'bg-purple-50 text-purple-600 border border-purple-100',
       badgeBg: 'bg-purple-50 text-purple-700',
       onClick: () => navigate('/dashboard/barangays')
-    },
-    {
-      title: 'Senior Assistance',
-      value: summary?.totalAssistanceRequests || 0,
-      badge: summary?.pendingAssistanceRequests > 0 ? `${summary.pendingAssistanceRequests} pending` : 'OSCA Aid',
-      trend: 'neutral',
-      icon: HandHeart,
-      iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
-      badgeBg: 'bg-amber-50 text-amber-700',
-      onClick: () => navigate('/dashboard/assistance-requests')
     }
   ] : isPwdAdmin ? [
     {
@@ -245,16 +235,6 @@ export default function ModernDashboard() {
       iconBg: 'bg-purple-50 text-purple-600 border border-purple-100',
       badgeBg: 'bg-purple-50 text-purple-700',
       onClick: () => navigate('/dashboard/barangays')
-    },
-    {
-      title: 'PWD Assistance',
-      value: summary?.totalAssistanceRequests || 0,
-      badge: summary?.pendingAssistanceRequests > 0 ? `${summary.pendingAssistanceRequests} pending` : 'PDAO Aid',
-      trend: 'neutral',
-      icon: HandHeart,
-      iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
-      badgeBg: 'bg-amber-50 text-amber-700',
-      onClick: () => navigate('/dashboard/assistance-requests')
     }
   ] : isMswdoAdmin ? [
     {
@@ -624,7 +604,7 @@ export default function ModernDashboard() {
       )}
 
       {/* ━━━ Minimalist KPI Metric Cards ━━━ */}
-      <div className="grid grid-cols-1 min-[360px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+      <div className={`grid grid-cols-1 min-[360px]:grid-cols-2 sm:grid-cols-3 ${stats.length === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-5'} gap-3 sm:gap-4`}>
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (

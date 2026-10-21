@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Megaphone,
@@ -243,8 +243,8 @@ export default function AnnouncementManagementPage() {
   const isBarangayStaff = user?.role === 'staff' || user?.role === 'barangay';
   const isMswdoAdmin = user?.role === 'mswdo_admin';
   const isMswdoStaff = user?.role === 'mswdo_staff';
-  const isSeniorAdmin = user?.role === 'senior_citizen_admin';
-  const isPwdAdmin = user?.role === 'pwd_admin';
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff';
+  const isPwdAdmin = user?.role === 'pwd_admin' || user?.role === 'pwd_staff';
   const isSectorAdmin = isMswdoAdmin || isMswdoStaff || isSeniorAdmin || isPwdAdmin;
   const [announcements, setAnnouncements] = useState([]);
   const [programs, setPrograms] = useState([]);
@@ -274,8 +274,19 @@ export default function AnnouncementManagementPage() {
   // Recipient Stats / Audit Modal
   const [selectedAnnouncementStats, setSelectedAnnouncementStats] = useState(null);
 
-  const activeAllowedCategories = TARGET_CATEGORIES;
-  const availablePresets = OFFICIAL_MEETING_PRESETS;
+  const activeAllowedCategories = useMemo(() => {
+    if (isSeniorAdmin) return ['Senior Citizens (Social Pension)'];
+    if (isPwdAdmin) return ['Persons with Disabilities (PWD)'];
+    if (isMswdoAdmin || isMswdoStaff) return ['Senior Citizens (Social Pension)', 'Persons with Disabilities (PWD)'];
+    return TARGET_CATEGORIES;
+  }, [isSeniorAdmin, isPwdAdmin, isMswdoAdmin, isMswdoStaff]);
+
+  const availablePresets = useMemo(() => {
+    if (isSeniorAdmin) return OFFICIAL_MEETING_PRESETS.filter((p) => p.program === 'Senior' || p.sector.includes('Senior'));
+    if (isPwdAdmin) return OFFICIAL_MEETING_PRESETS.filter((p) => p.program === 'PWD' || p.sector.includes('PWD') || p.sector.includes('Disabilit'));
+    if (isMswdoAdmin || isMswdoStaff) return OFFICIAL_MEETING_PRESETS.filter((p) => p.program !== '4Ps');
+    return OFFICIAL_MEETING_PRESETS;
+  }, [isSeniorAdmin, isPwdAdmin, isMswdoAdmin, isMswdoStaff]);
 
   // Form State
   const [bgySelectionMode, setBgySelectionMode] = useState('single'); // 'single' | 'multiple'
@@ -343,13 +354,31 @@ export default function AnnouncementManagementPage() {
 
       const res = await announcementApi.list(params);
       let list = res.data?.data || [];
-      if (['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(user?.role)) {
-        list = list.filter((a) =>
-          a.created_by_user_id === user.id ||
-          ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(a.CreatedBy?.role) ||
-          Boolean(a.notify_mswdo) ||
-          a.assigned_staff_id === user.id
-        );
+      if (['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role)) {
+        if (isSeniorAdmin) {
+          list = list.filter((a) => {
+            const targets = Array.isArray(a.target_programs) ? a.target_programs : [];
+            const textMatch = targets.some((t) => String(t).toLowerCase().includes('senior'));
+            const isSeniorAuthor = ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role);
+            const titleMatch = (a.title || '').toLowerCase().includes('senior') || (a.title || '').toLowerCase().includes('osca');
+            return textMatch || isSeniorAuthor || titleMatch;
+          });
+        } else if (isPwdAdmin) {
+          list = list.filter((a) => {
+            const targets = Array.isArray(a.target_programs) ? a.target_programs : [];
+            const textMatch = targets.some((t) => String(t).toLowerCase().includes('pwd') || String(t).toLowerCase().includes('disabil'));
+            const isPwdAuthor = ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role);
+            const titleMatch = (a.title || '').toLowerCase().includes('pwd') || (a.title || '').toLowerCase().includes('pdao');
+            return textMatch || isPwdAuthor || titleMatch;
+          });
+        } else {
+          list = list.filter((a) =>
+            a.created_by_user_id === user.id ||
+            ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(a.CreatedBy?.role) ||
+            Boolean(a.notify_mswdo) ||
+            a.assigned_staff_id === user.id
+          );
+        }
       }
       setAnnouncements(list);
     } catch (err) {
@@ -357,7 +386,7 @@ export default function AnnouncementManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterProgram, filterBarangay, filterPriority, filterStatus, searchQuery, user]);
+  }, [filterProgram, filterBarangay, filterPriority, filterStatus, searchQuery, user, isSeniorAdmin, isPwdAdmin]);
 
   useEffect(() => {
     fetchMetadata();
@@ -643,7 +672,12 @@ export default function AnnouncementManagementPage() {
   // Submit announcement
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const activeCats = formData.target_categories || [];
+    const rawCats = formData.target_categories || [];
+    const activeCats = isSeniorAdmin
+      ? ['Senior Citizens (Social Pension)']
+      : isPwdAdmin
+      ? ['Persons with Disabilities (PWD)']
+      : rawCats;
     if (activeCats.length === 0) {
       alert('Please select at least one target category');
       return;
@@ -914,7 +948,7 @@ export default function AnnouncementManagementPage() {
             <span>Archived ({announcements.filter((a) => a.status === 'archived').length})</span>
           </button>
 
-          {['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'barangay'].includes(user?.role) && (
+          {['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'staff', 'barangay'].includes(user?.role) && (
             <button
               type="button"
               onClick={handleOpenCreateModal}
@@ -1033,11 +1067,19 @@ export default function AnnouncementManagementPage() {
               className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             >
               <option value="">All Programs</option>
-              {programs.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.code || p.eligibility_category})
-                </option>
-              ))}
+              {programs
+                .filter((p) => {
+                  const cat = (p.eligibility_category || p.category || p.name || '').toLowerCase();
+                  if (isSeniorAdmin) return cat.includes('senior');
+                  if (isPwdAdmin) return cat.includes('pwd') || cat.includes('disabil');
+                  if (isMswdoAdmin || isMswdoStaff) return !cat.includes('4ps');
+                  return true;
+                })
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.code || p.eligibility_category})
+                  </option>
+                ))}
             </select>
           </div>
 
@@ -1430,7 +1472,15 @@ export default function AnnouncementManagementPage() {
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-black text-dswd-blue uppercase flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
-                    <span>Pumili sa DSWD / MSWDO Official Meeting Templates:</span>
+                    <span>
+                      {isSeniorAdmin
+                        ? 'Pumili sa OSCA Official Meeting Templates:'
+                        : isPwdAdmin
+                        ? 'Pumili sa PDAO Official Meeting Templates:'
+                        : isMswdoAdmin || isMswdoStaff
+                        ? 'Pumili sa MSWDO Official Meeting Templates:'
+                        : 'Pumili sa DSWD / MSWDO Official Meeting Templates:'}
+                    </span>
                   </label>
                   <span className="text-[11px] text-slate-500 font-semibold">
                     Auto-fill details & target audience
@@ -1471,8 +1521,8 @@ export default function AnnouncementManagementPage() {
                     const groupLabel = sec.includes('4Ps')
                       ? '🔵 DSWD 4Ps Meetings'
                       : sec.includes('Senior')
-                      ? '👵 OSCA / MSWDO Senior Citizens Meetings'
-                      : '♿ PDAO / MSWDO PWD Assemblies & Meetings';
+                      ? (isSeniorAdmin ? '👵 OSCA Senior Citizens Meetings' : '👵 OSCA / MSWDO Senior Citizens Meetings')
+                      : (isPwdAdmin ? '♿ PDAO PWD Assemblies & Meetings' : '♿ PDAO / MSWDO PWD Assemblies & Meetings');
                     return (
                       <optgroup key={sec} label={groupLabel}>
                         {presetsInSec.map((p) => (

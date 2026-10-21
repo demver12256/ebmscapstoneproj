@@ -15,7 +15,7 @@ const {
   Barangay,
   Attendance,
 } = require('../db');
-const { isMswdoRole, getOfficeBrand, getOfficeName } = require('../utils/roles');
+const { isMswdoRole, isSeniorRole, isPwdRole, getOfficeBrand, getOfficeName } = require('../utils/roles');
 const { parseDateTime, autoCompleteExpiredAnnouncements } = require('../utils/announcementScheduler');
 
 const router = express.Router();
@@ -138,6 +138,39 @@ async function removeHistoricalAnnouncementRecords(beneficiary, userId, recipien
   }
 
   return new Set(recipientIds);
+}
+
+function isAnnouncementForSenior(a) {
+  if (['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role)) return true;
+  let targets = [];
+  if (typeof a.target_programs === 'string') {
+    try { targets = JSON.parse(a.target_programs); } catch (e) { targets = [a.target_programs]; }
+  } else if (Array.isArray(a.target_programs)) {
+    targets = a.target_programs;
+  }
+  const textMatches = targets.some((t) => String(t).toLowerCase().includes('senior'));
+  if (textMatches) return true;
+  const titleLower = (a.title || '').toLowerCase();
+  if (titleLower.includes('senior') || titleLower.includes('osca')) return true;
+  return false;
+}
+
+function isAnnouncementForPwd(a) {
+  if (['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role)) return true;
+  let targets = [];
+  if (typeof a.target_programs === 'string') {
+    try { targets = JSON.parse(a.target_programs); } catch (e) { targets = [a.target_programs]; }
+  } else if (Array.isArray(a.target_programs)) {
+    targets = a.target_programs;
+  }
+  const textMatches = targets.some((t) => {
+    const s = String(t).toLowerCase();
+    return s.includes('pwd') || s.includes('disabil');
+  });
+  if (textMatches) return true;
+  const titleLower = (a.title || '').toLowerCase();
+  if (titleLower.includes('pwd') || titleLower.includes('pdao') || titleLower.includes('disabilit')) return true;
+  return false;
 }
 
 // Helper function to find target matching beneficiaries directly by Barangay, Category & optional Sitio (Approved beneficiaries)
@@ -527,7 +560,12 @@ async function syncEditedCompletedAnnouncementRecipients(announcement) {
 router.get('/preview-count', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const { target_programs, target_categories, target_barangays, target_sitios } = req.query;
-    const catsInput = target_categories || target_programs;
+    let catsInput = target_categories || target_programs;
+    if (isSeniorRole(req.user.role)) {
+      catsInput = ['Senior Citizens (Social Pension)'];
+    } else if (isPwdRole(req.user.role)) {
+      catsInput = ['Persons with Disabilities (PWD)'];
+    }
     const allBarangayMatches = await getMatchingBeneficiaries(catsInput, target_barangays, []);
 
     const sitioMap = new Map();
@@ -1091,13 +1129,16 @@ router.get('/', async (req, res, next) => {
       }
     }
 
-    // Filter MSWDO view: If DSWD Admin did NOT notify MSWDO (notify_mswdo is false),
-    // then the announcement is direct-only for Barangay Staff & Beneficiary, and MUST NOT appear to MSWDO!
-    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
+    // Filter view for Senior / PWD / MSWDO roles
+    if (isSeniorRole(req.user.role)) {
+      announcements = announcements.filter(isAnnouncementForSenior);
+    } else if (isPwdRole(req.user.role)) {
+      announcements = announcements.filter(isAnnouncementForPwd);
+    } else if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       announcements = announcements.filter((a) => {
         const isAuthor = a.created_by_user_id === req.user.id || a.CreatedBy?.id === req.user.id;
         const isAssigned = a.assigned_staff_id === req.user.id;
-        const isMswdoAgency = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(a.CreatedBy?.role);
+        const isMswdoAgency = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(a.CreatedBy?.role);
         const isNotified = Boolean(a.notify_mswdo);
         return isAuthor || isAssigned || isMswdoAgency || isNotified;
       });
@@ -1329,7 +1370,12 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       return res.status(400).json({ success: false, message: 'Title and description message are required' });
     }
 
-    const targetCatsOrProgs = req.body.target_categories || target_programs;
+    let targetCatsOrProgs = req.body.target_categories || target_programs;
+    if (isSeniorRole(req.user.role)) {
+      targetCatsOrProgs = ['Senior Citizens (Social Pension)'];
+    } else if (isPwdRole(req.user.role)) {
+      targetCatsOrProgs = ['Persons with Disabilities (PWD)'];
+    }
     if (!Array.isArray(targetCatsOrProgs) || targetCatsOrProgs.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one target category must be selected' });
     }
@@ -2100,7 +2146,12 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
     }
 
     const previousStatus = announcement.status;
-    const targetCatsOrProgs = target_categories || target_programs || announcement.target_programs;
+    let targetCatsOrProgs = target_categories || target_programs || announcement.target_programs;
+    if (isSeniorRole(req.user.role)) {
+      targetCatsOrProgs = ['Senior Citizens (Social Pension)'];
+    } else if (isPwdRole(req.user.role)) {
+      targetCatsOrProgs = ['Persons with Disabilities (PWD)'];
+    }
 
     if (req.user.role === 'mswdo_admin') {
       const existingHas4Ps = Array.isArray(announcement.target_programs) && announcement.target_programs.some(cat => String(cat).toLowerCase().includes('4ps'));

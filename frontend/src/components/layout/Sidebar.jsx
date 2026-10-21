@@ -20,7 +20,7 @@ const staffNavItems = [
   { path: '/dashboard/distributions', label: 'Distributions', icon: Package, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
   { path: '/dashboard/rfid-scanner', label: 'Distribution Scanner', icon: Smartphone, roles: ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
   { path: '/dashboard/rfid-attendance', label: 'Attendance Scanner', icon: Smartphone, roles: ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
-  { path: '/dashboard/assistance-requests', label: 'Assistance Requests', icon: HandHeart, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
+  { path: '/dashboard/assistance-requests', label: 'Assistance Requests', icon: HandHeart, roles: ['admin', 'mswdo_admin', 'mswdo_staff', 'staff', 'barangay'] },
   { path: '/dashboard/interventions-management', label: 'Interventions', icon: FileHeart, roles: ['admin', 'staff', 'barangay'] },
 
   // ── Communication & Community ──
