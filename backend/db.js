@@ -215,6 +215,7 @@ const connectDatabase = async () => {
   await ensureColumn('distribution_events', 'target_sitio', 'VARCHAR(255) NULL');
   await ensureColumn('distribution_events', 'target_category', 'VARCHAR(100) NULL');
   await ensureColumn('distribution_events', 'benefit_type', 'VARCHAR(100) NULL');
+  await ensureColumn('distribution_events', 'claiming_mode', "VARCHAR(30) NOT NULL DEFAULT 'physical_rfid'");
   await ensureColumn('distribution_events', 'package_items', 'TEXT NULL');
 
   try {

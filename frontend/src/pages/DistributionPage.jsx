@@ -61,7 +61,8 @@ export default function DistributionPage() {
     item_name: '',
     item_quantity: '1',
     item_unit: 'package',
-    benefit_type: 'Cash'
+    benefit_type: 'Cash',
+    claiming_mode: 'physical_rfid',
   });
   
   // Reference data
@@ -347,6 +348,7 @@ export default function DistributionPage() {
           : formData.target_category,
         amount_per_beneficiary: amountPerBen,
         budget: computedBudget,
+        claiming_mode: (isSectorAdmin || isAnyMswdo) ? 'physical_rfid' : (formData.claiming_mode || 'physical_rfid'),
         benefit_type: isNonCash ? (formData.benefit_type || nonCashDetails?.type || 'In-Kind') : 'Cash',
         item_name: isNonCash ? (formData.item_name || nonCashDetails?.default_item || formData.title || 'In-Kind Package') : null,
         item_quantity: isNonCash ? (parseInt(formData.item_quantity, 10) || 1) : 1,
@@ -369,7 +371,8 @@ export default function DistributionPage() {
         item_name: '',
         item_quantity: '1',
         item_unit: 'package',
-        benefit_type: 'Cash'
+        benefit_type: 'Cash',
+        claiming_mode: 'physical_rfid',
       });
       await loadEvents();
       await loadDashboardStats();
@@ -868,7 +871,8 @@ export default function DistributionPage() {
                   item_name: '',
                   item_quantity: '1',
                   item_unit: 'package',
-                  benefit_type: 'Cash'
+                  benefit_type: 'Cash',
+                  claiming_mode: 'physical_rfid',
                 });
                 setShowCreateModal(true);
               }}
@@ -1041,7 +1045,8 @@ export default function DistributionPage() {
                         item_name: '',
                         item_quantity: '1',
                         item_unit: 'package',
-                        benefit_type: 'Cash'
+                        benefit_type: 'Cash',
+                        claiming_mode: 'physical_rfid',
                       });
                       setShowCreateModal(true);
                     }}
@@ -1099,6 +1104,19 @@ export default function DistributionPage() {
                               <MapPin className="w-3 h-3" />
                               {event.Barangay?.barangay_name || 'All Barangays'}{event.target_sitio ? ` (Sitio ${event.target_sitio})` : ''}
                             </div>
+                            {!isNonCashProgram(event.Program?.name || event.title, event.benefit_type) && (
+                              <div className="mt-1">
+                                {event.claiming_mode === 'direct_ewallet' ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200" title="Direct E-Wallet & RFID OTC">
+                                    📱 Direct E-Wallet
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200" title="Physical Claiming using RFID Card / QR Pass">
+                                    💳 Physical RFID
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -1193,8 +1211,8 @@ export default function DistributionPage() {
                               </button>
                             )}
                             
-                            {/* Quick Disburse Digital on event card - DSWD Exclusive */}
-                            {!isSectorAdmin && user?.role === 'admin' && event.agency !== 'MSWDO' && event.Program?.agency !== 'MSWDO' && ['scheduled', 'ongoing'].includes(event.status) && event.Transactions?.some(t => (t.disbursement_type === 'digital' || t.Beneficiary?.payout_preference === 'digital') && t.status === 'pending') && (
+                            {/* Quick Disburse Digital on event card - DSWD Exclusive (Direct E-Wallet only) */}
+                            {!isSectorAdmin && user?.role === 'admin' && event.agency !== 'MSWDO' && event.Program?.agency !== 'MSWDO' && event.claiming_mode === 'direct_ewallet' && ['scheduled', 'ongoing'].includes(event.status) && event.Transactions?.some(t => (t.disbursement_type === 'digital' || t.Beneficiary?.payout_preference === 'digital') && t.status === 'pending') && (
                               <button
                                 onClick={() => handleDisburseDigital(event.id)}
                                 disabled={disbursingDigital}
@@ -1582,6 +1600,99 @@ export default function DistributionPage() {
                 );
               })()}
 
+              {/* Claiming Mode Selector for DSWD Cash Distributions */}
+              {!isSectorAdmin && !isAnyMswdo && (() => {
+                const currentProg = programs.find(p => p.id === parseInt(formData.program_id));
+                const isFormNonCash = isNonCashProgram(currentProg?.name, formData.benefit_type || currentProg?.benefit_type);
+                const hasCash = !isFormNonCash && (parseFloat(formData.amount_per_beneficiary || 0) > 0 || formData.benefit_type === 'Cash');
+
+                if (!hasCash) return null;
+
+                return (
+                  <div className="md:col-span-2 bg-gradient-to-r from-purple-50/80 via-indigo-50/50 to-slate-50 border-2 border-purple-200 rounded-2xl p-4.5 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <label className="block text-sm font-bold text-slate-900 flex items-center gap-2">
+                          <span>Paraan ng Pag-claim / Claiming Mode *</span>
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                            DSWD Cash Distribution
+                          </span>
+                        </label>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          Piliin kung personal na kukunin gamit ang RFID Card sa venue o direktang ipapasok sa verified E-Wallet (GCash/Maya).
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                      {/* Option 1: Physical Claiming using RFID Card */}
+                      <label
+                        className={`relative flex items-start gap-3.5 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                          formData.claiming_mode === 'physical_rfid'
+                            ? 'bg-white border-purple-600 ring-2 ring-purple-500/20 shadow-xs'
+                            : 'bg-white/70 border-slate-200 hover:border-purple-300 hover:bg-white'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="claiming_mode"
+                          value="physical_rfid"
+                          checked={formData.claiming_mode === 'physical_rfid'}
+                          onChange={(e) => setFormData({ ...formData, claiming_mode: e.target.value })}
+                          className="mt-1 h-4 w-4 text-purple-600 focus:ring-purple-500 border-slate-300 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">💳</span>
+                            <span className="font-bold text-sm text-slate-900">
+                              Physical Claiming using RFID Card
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                            Lahat ng benepisyaryo ay personal na magki-claim sa venue sa pamamagitan ng pag-tap ng kanilang <strong>RFID Card</strong> o QR Pass. <strong>Hindi ito didiretso sa e-wallet</strong>.
+                          </p>
+                          <span className="inline-flex items-center gap-1 mt-2.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                            ✓ Over-The-Counter Cash via RFID Tap
+                          </span>
+                        </div>
+                      </label>
+
+                      {/* Option 2: Direct in E-Wallet */}
+                      <label
+                        className={`relative flex items-start gap-3.5 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                          formData.claiming_mode === 'direct_ewallet'
+                            ? 'bg-white border-purple-600 ring-2 ring-purple-500/20 shadow-xs'
+                            : 'bg-white/70 border-slate-200 hover:border-purple-300 hover:bg-white'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="claiming_mode"
+                          value="direct_ewallet"
+                          checked={formData.claiming_mode === 'direct_ewallet'}
+                          onChange={(e) => setFormData({ ...formData, claiming_mode: e.target.value })}
+                          className="mt-1 h-4 w-4 text-purple-600 focus:ring-purple-500 border-slate-300 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">📱</span>
+                            <span className="font-bold text-sm text-slate-900">
+                              Direct in E-Wallet (Digital & OTC)
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                            Awtomatikong direktang maipapasok sa <strong>E-Wallet (GCash / Maya)</strong> ng mga benepisyaryong may verified account. Ang mga walang e-wallet ay magki-claim via RFID Card.
+                          </p>
+                          <span className="inline-flex items-center gap-1 mt-2.5 text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                            ⚡ Hybrid Direct Digital Disbursement
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Venue */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
@@ -1753,7 +1864,7 @@ export default function DistributionPage() {
                   </div>
                 </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <Package className="w-4 h-4 text-purple-600" />
@@ -1785,7 +1896,27 @@ export default function DistributionPage() {
                   })}
                 </p>
               </div>
+
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <CreditCard className="w-4 h-4 text-purple-600" />
+                  <p className="text-sm font-semibold text-slate-700">Claiming Mode</p>
                 </div>
+                {isNonCashProgram(selectedEvent.Program?.name || selectedEvent.title, selectedEvent.benefit_type) ? (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
+                    📦 In-Kind Goods
+                  </span>
+                ) : selectedEvent.claiming_mode === 'direct_ewallet' ? (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
+                    📱 Direct in E-Wallet
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    💳 Physical RFID Card
+                  </span>
+                )}
+              </div>
+            </div>
               </div>
 
               {/* Statistics Cards */}
@@ -1965,8 +2096,10 @@ export default function DistributionPage() {
                   return null;
                 }
 
-                // MSWDO Disbursement: Strictly Physical Aid Claiming via RFID Card / QR Pass (NO Digital Crediting)
-                if (isEventMswdo) {
+                // Physical Aid Claiming via RFID Card / QR Pass:
+                // For MSWDO OR events with claiming_mode === 'physical_rfid'
+                const isPhysicalClaimingOnly = isEventMswdo || selectedEvent.claiming_mode === 'physical_rfid';
+                if (isPhysicalClaimingOnly) {
                   const txns = selectedEvent.Transactions || [];
                   const rfidCount = txns.filter(t => t.Beneficiary?.RFID_number || t.Beneficiary?.rfid_card_number || t.rfid_scanned).length;
                   const qrCount = Math.max(0, txns.length - rfidCount);
@@ -1991,7 +2124,7 @@ export default function DistributionPage() {
                               </span>
                             </h3>
                             <p className="text-xs text-slate-600">
-                              MSWDO Standard: Exclusive on-site physical claiming. Beneficiaries claim their aid on-site using their official <strong>RFID Card</strong> or <strong>QR Pass</strong> (if no RFID card issued yet).
+                              {isEventMswdo ? 'MSWDO Standard: Exclusive on-site physical claiming.' : 'DSWD Physical Claiming Mode: On-site cash distribution.'} Beneficiaries claim their aid on-site using their official <strong>RFID Card</strong> or <strong>QR Pass</strong> (if no RFID card issued yet).
                             </p>
                           </div>
                         </div>
@@ -2066,8 +2199,8 @@ export default function DistributionPage() {
                   );
                 }
 
-                // DSWD Standard: Hybrid Disbursement Channels (Digital vs. Cash OTC) - DSWD Exclusive
-                if (selectedEvent.payoutSummary || selectedEvent.Transactions?.some(t => t.disbursement_type === 'digital' || t.Beneficiary?.payout_preference === 'digital')) {
+                // DSWD Standard: Hybrid Disbursement Channels (Digital vs. Cash OTC) - DSWD Direct E-Wallet
+                if (selectedEvent.claiming_mode === 'direct_ewallet' && (selectedEvent.payoutSummary || selectedEvent.Transactions?.some(t => t.disbursement_type === 'digital' || t.Beneficiary?.payout_preference === 'digital'))) {
                   return (
                     <div className="bg-gradient-to-r from-purple-50 via-slate-50 to-blue-50 rounded-2xl p-6 border border-purple-200/80 shadow-xs space-y-4">
                       <div className="flex items-center justify-between flex-wrap gap-3">

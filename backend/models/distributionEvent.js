@@ -102,6 +102,12 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 'Cash',
         comment: 'Cash, In-Kind, Service',
       },
+      claiming_mode: {
+        type: DataTypes.STRING(30),
+        allowNull: false,
+        defaultValue: 'physical_rfid',
+        comment: 'physical_rfid (Physical claiming using RFID card / QR pass), direct_ewallet (Direct in E-Wallet / Digital Payout)',
+      },
       item_name: {
         type: DataTypes.STRING,
         allowNull: true,

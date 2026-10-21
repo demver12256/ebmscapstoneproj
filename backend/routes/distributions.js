@@ -705,6 +705,7 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
       target_sitio: (target_sitio && target_sitio !== 'all' && target_sitio !== 'All Sitios') ? target_sitio.trim() : null,
       agency,
       created_by: req.user.id,
+      claiming_mode: isMswdoRole(req.user.role) ? 'physical_rfid' : (req.body.claiming_mode || 'physical_rfid'),
       benefit_type: (hasValidAmount && (!reqBenefitType || reqBenefitType === 'Cash')) ? 'Cash' : (reqBenefitType || (isNonCash ? (nonCashDetails?.type || 'In-Kind') : 'In-Kind')),
       item_name: isNonCash ? (reqItemName || nonCashDetails?.default_item || nonCashDetails?.assistance_type || title || 'In-Kind Package') : null,
       item_quantity: isNonCash ? (parseInt(reqItemQuantity, 10) || 1) : 1,
@@ -977,11 +978,14 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
         totalRetroAmount += retro.retro_amount;
       }
 
-      // Determine disbursement type based on beneficiary's payout preference and verification
-      // Hybrid Digital disbursement is EXCLUSIVE to DSWD. MSWDO is strictly physical claiming via RFID/QR.
+      // Determine disbursement type based on beneficiary's payout preference, verification, and event claiming mode
+      // If event.claiming_mode === 'physical_rfid', ALL beneficiaries must physically claim via RFID/QR (cash_otc).
+      // If event.claiming_mode === 'direct_ewallet', verified digital beneficiaries receive direct digital payout, others cash_otc.
       const isMswdoEvent = event.agency === 'MSWDO' || ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'].includes(req.user?.role);
+      const isPhysicalOnlyEvent = isMswdoEvent || event.claiming_mode === 'physical_rfid';
       const isDigitalReady = !isNonCash
-        && !isMswdoEvent
+        && !isPhysicalOnlyEvent
+        && event.claiming_mode === 'direct_ewallet'
         && beneficiary.payout_preference === 'digital'
         && beneficiary.account_verification_status === 'verified'
         && beneficiary.payout_provider
@@ -2808,6 +2812,14 @@ router.post('/events/:id/disburse-digital', authorize('admin'), async (req, res,
       return res.status(403).json({
         success: false,
         message: 'Ang Digital Disbursement ay eksklusibo lamang para sa DSWD. Ang MSWDO distribution ay para sa Physical Claiming gamit ang RFID Card o QR Pass.',
+      });
+    }
+
+    if (event.claiming_mode === 'physical_rfid') {
+      await dbTransaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Ang event na ito ay naka-set para sa Physical Claiming gamit ang RFID Card lamang, hindi para sa Direct E-Wallet disbursement.',
       });
     }
 
