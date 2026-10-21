@@ -1239,7 +1239,7 @@ export default function BeneficiaryListPage() {
                   }`}
                 >
                   <Calendar className="w-4 h-4" />
-                  {isMswdoAdmin ? 'MSWDO Attendance' : (isSeniorAdmin || isPwdAdmin) ? 'PWD and Senior Attendance' : 'DSWD Attendance'}
+                  {isSeniorAdmin ? 'Senior Citizen Attendance' : isPwdAdmin ? 'PWD Attendance' : isMswdoAdmin ? 'MSWDO Attendance' : 'DSWD Attendance'}
                   {attendanceData?.stats ? (
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                       attendanceData.stats.compliance_rate >= 80 
@@ -1264,7 +1264,7 @@ export default function BeneficiaryListPage() {
                   }`}
                 >
                   <Package className="w-4 h-4" />
-                  {isMswdoAdmin ? 'MSWDO Distributions' : (isSeniorAdmin || isPwdAdmin) ? 'PWD and Senior Distributions' : 'DSWD Distributions'}
+                  {isSeniorAdmin ? 'Senior Citizen Distributions' : isPwdAdmin ? 'PWD Distributions' : isMswdoAdmin ? 'MSWDO Distributions' : 'DSWD Distributions'}
                       {distributionsData?.stats ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
                           ₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH')} ({distributionsData.stats.released_count})
@@ -1322,13 +1322,15 @@ export default function BeneficiaryListPage() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <h5 className="font-bold text-sm text-slate-900">
-                            {isMswdoAdmin ? 'MSWDO Attendance Compliance Record' : (isSeniorAdmin || isPwdAdmin) ? 'PWD and Senior Attendance Compliance Record' : 'DSWD Attendance Compliance Record'}
+                            {isSeniorAdmin ? 'Senior Citizen Attendance Compliance Record' : isPwdAdmin ? 'PWD Attendance Compliance Record' : isMswdoAdmin ? 'MSWDO Attendance Compliance Record' : 'DSWD Attendance Compliance Record'}
                           </h5>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                            (user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff') ? 'text-purple-700 bg-purple-100/70 border-purple-200'
+                            isSeniorAdmin ? 'text-blue-700 bg-blue-100/70 border-blue-200'
+                              : isPwdAdmin ? 'text-amber-700 bg-amber-100/70 border-amber-200'
+                              : isMswdoAdmin ? 'text-purple-700 bg-purple-100/70 border-purple-200'
                               : 'text-blue-700 bg-blue-100/70 border-blue-200'
                           }`}>
-                            {isMswdoAdmin ? 'MSWDO Announcements & Meetings' : (isSeniorAdmin || isPwdAdmin) ? 'PWD and Senior Meetings' : 'DSWD Meetings Only'}
+                            {isSeniorAdmin ? 'Senior Citizen Announcements & Meetings' : isPwdAdmin ? 'PWD Announcements & Meetings' : isMswdoAdmin ? 'MSWDO Announcements & Meetings' : 'DSWD Meetings Only'}
                           </span>
                           {attendanceData?.stats && (
                             <span className={`px-2 py-0.5 text-xs font-black rounded-full ${
@@ -1367,54 +1369,61 @@ export default function BeneficiaryListPage() {
                     </button>
                   </div>
 
+                  {/* Claimed Distributions Quick KPI Banner inside Profile Tab */}
+                  <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-cyan-50 rounded-2xl p-4 border border-emerald-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs shrink-0">
+                        <Package className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h5 className="font-bold text-sm text-slate-900">
+                            {isSeniorAdmin
+                              ? 'Claimed Senior Citizen Ayuda & Distributions'
+                              : isPwdAdmin
+                              ? 'Claimed PWD Ayuda & Distributions'
+                              : isMswdoAdmin
+                              ? 'Claimed MSWDO Ayuda & Distributions'
+                              : 'Claimed DSWD Ayuda & Distributions'}
+                          </h5>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-teal-700 bg-teal-100/70 border-teal-200">
+                            {isSeniorAdmin ? 'OSCA Released Only' : isPwdAdmin ? 'PDAO Released Only' : isMswdoAdmin ? 'MSWDO Released Only' : 'DSWD Released Only'}
+                          </span>
+                          {distributionsData?.stats && (
+                            <span className="px-2 py-0.5 text-xs font-black rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              ₱{Number(distributionsData.stats.total_amount_claimed || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} Na-claim
+                            </span>
+                          )}
+                        </div>
+                        {distributionsLoading ? (
+                          <p className="text-xs text-emerald-600 font-medium flex items-center gap-1 mt-0.5">
+                            <RefreshCw className="w-3 h-3 animate-spin" /> Kinukuha ang mga talaan ng ayuda...
+                          </p>
+                        ) : distributionsData?.stats ? (
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            Na-claim: <strong className="text-emerald-700">{distributionsData.stats.released_count}</strong> • 
+                            Pending: <strong className="text-amber-700">{distributionsData.stats.pending_count}</strong> • 
+                            Kabuuang Halaga: <strong className="text-emerald-700">₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
+                            {distributionsData.stats.last_claim_date && (
+                              <> (Huling Claim: <strong>{formatEventDate(distributionsData.stats.last_claim_date)}</strong>)</>
+                            )}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-500 mt-0.5">Walang nakatalang distribution claims.</p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('distributions')}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                    >
+                      Tingnan Buong Ayuda →
+                    </button>
+                  </div>
+
                   {!isSectorAdmin && (
                     <>
-                      {/* Claimed Distributions Quick KPI Banner inside Profile Tab */}
-                      <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-cyan-50 rounded-2xl p-4 border border-emerald-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs shrink-0">
-                            <Package className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h5 className="font-bold text-sm text-slate-900">
-                                Claimed DSWD Ayuda & Distributions
-                              </h5>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-teal-700 bg-teal-100/70 border-teal-200">
-                                DSWD Released Only
-                              </span>
-                              {distributionsData?.stats && (
-                                <span className="px-2 py-0.5 text-xs font-black rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                  ₱{Number(distributionsData.stats.total_amount_claimed || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} Na-claim
-                                </span>
-                              )}
-                            </div>
-                            {distributionsLoading ? (
-                              <p className="text-xs text-emerald-600 font-medium flex items-center gap-1 mt-0.5">
-                                <RefreshCw className="w-3 h-3 animate-spin" /> Kinukuha ang mga talaan ng ayuda...
-                              </p>
-                            ) : distributionsData?.stats ? (
-                              <p className="text-xs text-slate-600 mt-0.5">
-                                Na-claim: <strong className="text-emerald-700">{distributionsData.stats.released_count}</strong> • 
-                                Pending: <strong className="text-amber-700">{distributionsData.stats.pending_count}</strong> • 
-                                Kabuuang Halaga: <strong className="text-emerald-700">₱{Number(distributionsData.stats.total_amount_claimed).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
-                                {distributionsData.stats.last_claim_date && (
-                                  <> (Huling Claim: <strong>{formatEventDate(distributionsData.stats.last_claim_date)}</strong>)</>
-                                )}
-                              </p>
-                            ) : (
-                              <p className="text-xs text-slate-500 mt-0.5">Walang nakatalang distribution claims.</p>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setModalTab('distributions')}
-                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
-                        >
-                          Tingnan Buong Ayuda →
-                        </button>
-                      </div>
 
                       {/* Enrolled Programs Quick KPI Banner inside Profile Tab */}
                       <div className="bg-gradient-to-r from-purple-50 via-indigo-50/60 to-blue-50 rounded-2xl p-4 border border-purple-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
@@ -1990,13 +1999,21 @@ export default function BeneficiaryListPage() {
                           <div>
                             <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                               <Calendar className="w-4 h-4 text-blue-600" />
-                              {isMswdoAdmin ? 'Talaan ng mga Pabatid at Pulong ng MSWDO' : (isSeniorAdmin || isPwdAdmin) ? 'Talaan ng mga Pulong para sa PWD at Senior' : 'Talaan ng Lahat ng Meetings'} ({attendanceData?.records?.length || 0})
+                              {isSeniorAdmin
+                                ? 'Talaan ng mga Pulong para sa Senior Citizen'
+                                : isPwdAdmin
+                                ? 'Talaan ng mga Pulong para sa PWD'
+                                : isMswdoAdmin
+                                ? 'Talaan ng mga Pabatid at Pulong ng MSWDO'
+                                : 'Talaan ng Lahat ng Meetings'} ({attendanceData?.records?.length || 0})
                             </h4>
                             <p className="text-xs text-slate-500 mt-0.5">
-                              {isMswdoAdmin
+                              {isSeniorAdmin
+                                ? 'Ipinapakita ang mga opisyal na pagpupulong para sa mga Senior Citizens na nilikha ng OSCA / Senior Citizen Admin.'
+                                : isPwdAdmin
+                                ? 'Ipinapakita ang mga opisyal na pagpupulong para sa PWD na nilikha ng PDAO / PWD Admin.'
+                                : isMswdoAdmin
                                 ? 'Ipinapakita ang mga opisyal na anunsyo at pagpupulong mula sa MSWDO para sa benepisyaryong ito.'
-                                : (isSeniorAdmin || isPwdAdmin)
-                                ? 'Ipinapakita ang mga opisyal na pagpupulong para sa PWD at Senior Citizens sa munisipyo at barangay.'
                                 : <>Listahan ng mga opisyal na pagpupulong para sa kategoryang <strong>{viewingBeneficiary.category}</strong></>}
                             </p>
                           </div>
@@ -2006,10 +2023,21 @@ export default function BeneficiaryListPage() {
                           <div className="p-8 text-center">
                             <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                             <p className="text-sm font-bold text-slate-700">
-                              {['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role) ? 'Walang Nakatalang Pulong' : 'Walang Nakatalang Meetings'}
+                              {isSeniorAdmin
+                                ? 'Walang Nakatalang Pulong sa Senior Citizen'
+                                : isPwdAdmin
+                                ? 'Walang Nakatalang Pulong sa PWD'
+                                : isMswdoAdmin
+                                ? 'Walang Nakatalang Pulong sa MSWDO'
+                                : 'Walang Nakatalang Meetings'}
                             </p>
                             <p className="text-xs text-slate-500 mt-1">
-                              {(user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff') ? 'Wala pang nai-publish na pulong ang MSWDO o pabatid mula sa DSWD para sa benepisyaryong ito.'
+                              {isSeniorAdmin
+                                ? 'Wala pang nai-publish na pulong ang Senior Citizen Admin para sa benepisyaryong ito.'
+                                : isPwdAdmin
+                                ? 'Wala pang nai-publish na pulong ang PWD Admin para sa benepisyaryong ito.'
+                                : isMswdoAdmin
+                                ? 'Wala pang nai-publish na pulong ang MSWDO para sa benepisyaryong ito.'
                                 : 'Wala pang nai-publish na pulong na tumutugma sa barangay at kategorya ng benepisyaryong ito.'}
                             </p>
                           </div>
@@ -2205,7 +2233,13 @@ export default function BeneficiaryListPage() {
                         <div className="flex items-center justify-between">
                           <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                             <Package className="w-4 h-4 text-emerald-600" />
-                            {isMswdoAdmin ? 'Talaan ng Na-claim na Ayuda sa MSWDO' : (isSeniorAdmin || isPwdAdmin) ? 'Talaan ng Na-claim na Ayuda sa PWD at Senior' : 'Talaan ng Na-claim na Ayuda sa DSWD'} ({distributionsData?.transactions?.length || 0})
+                            {isSeniorAdmin
+                              ? 'Talaan ng Na-claim na Ayuda sa Senior Citizen'
+                              : isPwdAdmin
+                              ? 'Talaan ng Na-claim na Ayuda sa PWD'
+                              : isMswdoAdmin
+                              ? 'Talaan ng Na-claim na Ayuda sa MSWDO'
+                              : 'Talaan ng Na-claim na Ayuda sa DSWD'} ({distributionsData?.transactions?.length || 0})
                           </h4>
                           <span className="text-xs text-slate-400">
                             Beneficiary: <strong className="text-slate-700">{viewingBeneficiary.beneficiary_id_code}</strong>
@@ -2216,7 +2250,15 @@ export default function BeneficiaryListPage() {
                           <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-2xl">
                             <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                             <p className="text-sm font-bold text-slate-700">Walang Nakatalang Claimed Distributions</p>
-                            <p className="text-xs text-slate-400 mt-0.5">Hindi pa nakakatanggap ng ayuda o relief distribution ang benepisyaryong ito.</p>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {isSeniorAdmin
+                                ? 'Hindi pa nakakatanggap ng ayuda mula sa Senior Citizen Admin ang benepisyaryong ito.'
+                                : isPwdAdmin
+                                ? 'Hindi pa nakakatanggap ng ayuda mula sa PWD Admin ang benepisyaryong ito.'
+                                : isMswdoAdmin
+                                ? 'Hindi pa nakakatanggap ng ayuda mula sa MSWDO ang benepisyaryong ito.'
+                                : 'Hindi pa nakakatanggap ng ayuda o relief distribution ang benepisyaryong ito.'}
+                            </p>
                           </div>
                         ) : (
                           <div className="space-y-3">
@@ -3282,7 +3324,7 @@ export default function BeneficiaryListPage() {
 
             {/* Modal Actions */}
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
-              {['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff'].includes(user?.role) && qrPassData && (
+              {['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role) && qrPassData && (
                 <button
                   type="button"
                   onClick={handleRegenerateQrPass}

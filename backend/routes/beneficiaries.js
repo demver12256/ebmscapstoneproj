@@ -880,7 +880,7 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async
 });
 
 // ── GET /:id/attendance ── Beneficiary Meeting Attendance History & Summary Stats (Admin / Staff)
-router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff'), async (req, res, next) => {
+router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id, {
       include: [
@@ -906,17 +906,30 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
       return res.status(403).json({ success: false, message: 'PWD Admin / Staff access restricted to PWD beneficiaries.' });
     }
 
-    // Two-way agency isolation: identify all MSWDO admin users
+    // User role groups for scoped attendance
+    const seniorUsers = await User.findAll({ where: { role: { [Op.in]: ['senior_citizen_admin', 'senior_citizen_staff'] } }, attributes: ['id'] });
+    const seniorUserIds = seniorUsers.map(u => u.id);
+
+    const pwdUsers = await User.findAll({ where: { role: { [Op.in]: ['pwd_admin', 'pwd_staff'] } }, attributes: ['id'] });
+    const pwdUserIds = pwdUsers.map(u => u.id);
+
     const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'] } }, attributes: ['id'] });
     const mswdoUserIds = mswdoUsers.map(u => u.id);
+
+    const isSenior = isSeniorRole(req.user.role);
+    const isPwd = isPwdRole(req.user.role);
     const isMswdo = isMswdoRole(req.user.role);
 
     // Auto-link any published or completed announcements targeting this beneficiary
-    // MSWDO sees announcements created by MSWDO OR where notify_mswdo is true
-    // DSWD sees announcements created by DSWD
     const announcementWhere = { status: { [Op.in]: ['published', 'completed'] } };
-    if (isMswdo) {
-      // MSWDO sees ONLY announcements created by MSWDO users
+    if (isSenior) {
+      // Senior Admin / Staff sees ONLY announcements created by Senior Admin / Staff
+      announcementWhere.created_by_user_id = { [Op.in]: seniorUserIds.length ? seniorUserIds : [-1] };
+    } else if (isPwd) {
+      // PWD Admin / Staff sees ONLY announcements created by PWD Admin / Staff
+      announcementWhere.created_by_user_id = { [Op.in]: pwdUserIds.length ? pwdUserIds : [-1] };
+    } else if (isMswdo) {
+      // MSWDO sees announcements created by MSWDO users
       announcementWhere.created_by_user_id = { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] };
     } else if (req.user.role !== 'beneficiary') {
       announcementWhere.created_by_user_id = { [Op.notIn]: mswdoUserIds.length ? mswdoUserIds : [-1] };
@@ -1022,7 +1035,7 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
             {
               model: User,
               as: 'CreatedBy',
-              attributes: ['id', 'first_name', 'last_name', 'email'],
+              attributes: ['id', 'first_name', 'last_name', 'email', 'role'],
             },
           ],
         },
@@ -1040,15 +1053,31 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
       if (!r.Announcement || !['published', 'completed'].includes(r.Announcement.status)) continue;
 
       // Attendance scoping:
-      // If MSWDO: can see attendance STRICTLY for announcements created by MSWDO
-      if (isMswdo) {
+      // Senior Citizen Admin / Staff: ONLY announcements created by Senior Admin / Staff
+      if (isSenior) {
+        const isSeniorCreated = (r.Announcement.created_by_user_id && seniorUserIds.includes(r.Announcement.created_by_user_id)) ||
+                                ['senior_citizen_admin', 'senior_citizen_staff'].includes(r.Announcement.CreatedBy?.role);
+        if (!isSeniorCreated) {
+          continue;
+        }
+      }
+      // PWD Admin / Staff: ONLY announcements created by PWD Admin / Staff
+      else if (isPwd) {
+        const isPwdCreated = (r.Announcement.created_by_user_id && pwdUserIds.includes(r.Announcement.created_by_user_id)) ||
+                             ['pwd_admin', 'pwd_staff'].includes(r.Announcement.CreatedBy?.role);
+        if (!isPwdCreated) {
+          continue;
+        }
+      }
+      // MSWDO Admin / Staff: can see attendance for announcements created by MSWDO
+      else if (isMswdo) {
         const isMswdoCreated = r.Announcement.created_by_user_id && mswdoUserIds.includes(r.Announcement.created_by_user_id);
         if (!isMswdoCreated) {
           continue;
         }
       }
       // DSWD Admin & Staff can ONLY see attendance for announcements created by DSWD (NOT MSWDO)
-      if (!isMswdo && req.user.role !== 'beneficiary' && mswdoUserIds.includes(r.Announcement.created_by_user_id)) {
+      else if (req.user.role !== 'beneficiary' && mswdoUserIds.includes(r.Announcement.created_by_user_id)) {
         continue;
       }
 
@@ -1139,7 +1168,7 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
 });
 
 // ── GET /:id/distributions ── Beneficiary Claimed Distributions History & Stats
-router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'beneficiary'), async (req, res, next) => {
+router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff', 'beneficiary'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id, {
       include: [
@@ -1173,11 +1202,29 @@ router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_
       return res.status(403).json({ success: false, message: 'PWD Admin / Staff access restricted to PWD beneficiaries.' });
     }
 
-    // Agency-level scoping:
-    // MSWDO Admin can ONLY access distributions created under MSWDO
-    // DSWD Admin & Staff can ONLY access distributions created under DSWD
+    const seniorUsers = await User.findAll({ where: { role: { [Op.in]: ['senior_citizen_admin', 'senior_citizen_staff'] } }, attributes: ['id'] });
+    const seniorUserIds = seniorUsers.map(u => u.id);
+
+    const pwdUsers = await User.findAll({ where: { role: { [Op.in]: ['pwd_admin', 'pwd_staff'] } }, attributes: ['id'] });
+    const pwdUserIds = pwdUsers.map(u => u.id);
+
+    const isSenior = isSeniorRole(req.user.role);
+    const isPwd = isPwdRole(req.user.role);
+    const isMswdo = isMswdoRole(req.user.role);
+
+    // Agency-level & Sector scoping:
+    // Senior Admin / Staff ONLY accesses distributions created under Senior Admin / Staff
+    // PWD Admin / Staff ONLY accesses distributions created under PWD Admin / Staff
+    // MSWDO Admin can access distributions created under MSWDO
+    // DSWD Admin & Staff can access distributions created under DSWD
     const eventWhere = {};
-    if (isMswdoRole(req.user.role)) {
+    if (isSenior) {
+      eventWhere.agency = 'MSWDO';
+      eventWhere.created_by = { [Op.in]: seniorUserIds.length ? seniorUserIds : [-1] };
+    } else if (isPwd) {
+      eventWhere.agency = 'MSWDO';
+      eventWhere.created_by = { [Op.in]: pwdUserIds.length ? pwdUserIds : [-1] };
+    } else if (isMswdo) {
       eventWhere.agency = 'MSWDO';
     } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
       eventWhere.agency = 'DSWD';
@@ -1201,6 +1248,11 @@ router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_
               model: Barangay,
               attributes: ['id', 'barangay_name'],
             },
+            {
+              model: User,
+              as: 'CreatedBy',
+              attributes: ['id', 'first_name', 'last_name', 'email', 'role'],
+            },
           ],
         },
         {
@@ -1212,16 +1264,35 @@ router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_
       order: [['created_at', 'DESC']],
     });
 
-    const releasedList = transactions.filter((t) => t.status === 'released');
-    const pendingList = transactions.filter((t) => t.status === 'pending');
+    let filteredTransactions = transactions;
+    if (isSenior) {
+      filteredTransactions = transactions.filter((t) => {
+        const e = t.Event;
+        if (!e) return false;
+        const isSeniorCreator = ['senior_citizen_admin', 'senior_citizen_staff'].includes(e.CreatedBy?.role) ||
+                                (e.created_by && seniorUserIds.includes(e.created_by));
+        return isSeniorCreator;
+      });
+    } else if (isPwd) {
+      filteredTransactions = transactions.filter((t) => {
+        const e = t.Event;
+        if (!e) return false;
+        const isPwdCreator = ['pwd_admin', 'pwd_staff'].includes(e.CreatedBy?.role) ||
+                             (e.created_by && pwdUserIds.includes(e.created_by));
+        return isPwdCreator;
+      });
+    }
+
+    const releasedList = filteredTransactions.filter((t) => t.status === 'released');
+    const pendingList = filteredTransactions.filter((t) => t.status === 'pending');
     const totalAmountClaimed = releasedList.reduce((sum, t) => sum + parseFloat(t.amount || 0) + parseFloat(t.retro_amount || 0), 0);
     const totalAmountPending = pendingList.reduce((sum, t) => sum + parseFloat(t.amount || 0) + parseFloat(t.retro_amount || 0), 0);
 
     const stats = {
-      total_claims: transactions.length,
+      total_claims: filteredTransactions.length,
       released_count: releasedList.length,
       pending_count: pendingList.length,
-      failed_count: transactions.filter((t) => t.status === 'failed' || t.status === 'cancelled').length,
+      failed_count: filteredTransactions.filter((t) => t.status === 'failed' || t.status === 'cancelled').length,
       total_amount_claimed: totalAmountClaimed,
       total_amount_pending: totalAmountPending,
       last_claim_date: releasedList[0]?.released_at || releasedList[0]?.created_at || null,
@@ -1230,7 +1301,7 @@ router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_
     res.json({
       success: true,
       data: {
-        transactions,
+        transactions: filteredTransactions,
         stats,
       },
     });
