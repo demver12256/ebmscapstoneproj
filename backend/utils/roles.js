@@ -55,15 +55,15 @@ const isMswdoCategory = (category, role) => {
   const c = String(category).toLowerCase();
   if (isSeniorRole(role)) return c.includes('senior');
   if (isPwdRole(role)) return c.includes('pwd') || c.includes('disabilit');
-  return c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
+  return c.includes('senior') || c.includes('pwd') || c.includes('disabilit') || c.includes('4ps') || c.includes('pantawid');
 };
 
 const isMswdoEligibility = (category, role) => {
   if (!category) return true;
   const c = String(category).toLowerCase();
-  if (role === 'senior_citizen_admin') return c.includes('senior');
-  if (role === 'pwd_admin') return c.includes('pwd') || c.includes('disabilit');
-  return c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
+  if (isSeniorRole(role)) return c.includes('senior');
+  if (isPwdRole(role)) return c.includes('pwd') || c.includes('disabilit');
+  return c.includes('senior') || c.includes('pwd') || c.includes('disabilit') || c.includes('4ps') || c.includes('pantawid');
 };
 
 

@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { sequelize, Beneficiary, BenefitProgram, DistributionEvent, DistributionTransaction, Barangay, Enrollment, AssistanceRequest, Attendance, Announcement, AnnouncementRecipient, AuditLog, User } = require('../db');
-const { isMswdoRole, MSWDO_CATEGORY_FILTER, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory } = require('../utils/roles');
+const { isMswdoRole, MSWDO_CATEGORY_FILTER, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory, isSeniorRole, isPwdRole } = require('../utils/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -40,7 +40,16 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     if (isBarangayScoped && barangayId) {
       programWhere.barangay_id = barangayId;
     }
-    if (isMswdoRole(req.user.role)) {
+    if (isSeniorRole(req.user.role)) {
+      programWhere.agency = 'MSWDO';
+      programWhere.eligibility_category = { [Op.like]: '%Senior%' };
+    } else if (isPwdRole(req.user.role)) {
+      programWhere.agency = 'MSWDO';
+      programWhere[Op.or] = [
+        { eligibility_category: { [Op.like]: '%PWD%' } },
+        { eligibility_category: { [Op.like]: '%Disabilit%' } }
+      ];
+    } else if (isMswdoRole(req.user.role)) {
       programWhere.agency = 'MSWDO';
       programWhere[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
     } else if (req.user.role === 'admin') {
@@ -109,16 +118,25 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     let seniorCitizensCount = 0;
     let pwdCount = 0;
 
-    if (req.user.role === 'senior_citizen_admin') {
+    if (isSeniorRole(req.user.role)) {
       fourPsCount = 0;
       seniorCitizensCount = totalBeneficiaries;
       pwdCount = 0;
-    } else if (req.user.role === 'pwd_admin') {
+    } else if (isPwdRole(req.user.role)) {
       fourPsCount = 0;
       seniorCitizensCount = 0;
       pwdCount = totalBeneficiaries;
     } else if (isMswdoRole(req.user.role)) {
-      fourPsCount = 0;
+      fourPsCount = await Beneficiary.count({
+        where: {
+          ...beneficiaryWhere,
+          status: 'Approved',
+          [Op.or]: [
+            { category: { [Op.like]: '%4Ps%' } },
+            { category: { [Op.like]: '%Pantawid%' } },
+          ],
+        },
+      });
       seniorCitizensCount = await Beneficiary.count({
         where: {
           ...beneficiaryWhere,
@@ -331,7 +349,7 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     // ── Announcement stats ──
     let announceWhere = {};
     if (isMswdoRole(req.user.role)) {
-      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'] } }, attributes: ['id'] });
+      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'] } }, attributes: ['id'] });
       const mswdoUserIds = mswdoUsers.map(u => u.id);
       announceWhere[Op.or] = [
         { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
@@ -447,7 +465,16 @@ router.get('/beneficiaries-by-program', authorize('admin', 'staff', 'barangay'),
     if (isBarangayScoped && barangayId) {
       programWhere.barangay_id = barangayId;
     }
-    if (isMswdoRole(req.user.role)) {
+    if (isSeniorRole(req.user.role)) {
+      programWhere.agency = 'MSWDO';
+      programWhere.eligibility_category = { [Op.like]: '%Senior%' };
+    } else if (isPwdRole(req.user.role)) {
+      programWhere.agency = 'MSWDO';
+      programWhere[Op.or] = [
+        { eligibility_category: { [Op.like]: '%PWD%' } },
+        { eligibility_category: { [Op.like]: '%Disabilit%' } }
+      ];
+    } else if (isMswdoRole(req.user.role)) {
       programWhere.agency = 'MSWDO';
       programWhere[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
     } else if (req.user.role === 'admin') {
@@ -710,9 +737,9 @@ router.get('/export/beneficiaries', authorize('admin', 'staff', 'barangay'), asy
     const where = { status: 'Approved' };
     if (isBarangayScoped && barangayId) where.barangay_id = barangayId;
     else if (qBarangay) where.barangay_id = qBarangay;
-    if (req.user.role === 'senior_citizen_admin') {
+    if (isSeniorRole(req.user.role)) {
       where.category = { [Op.like]: '%Senior%' };
-    } else if (req.user.role === 'pwd_admin') {
+    } else if (isPwdRole(req.user.role)) {
       where[Op.or] = [
         { category: { [Op.like]: '%PWD%' } },
         { category: { [Op.like]: '%Disabilit%' } }
@@ -823,7 +850,16 @@ router.get('/export/programs', authorize('admin', 'staff', 'barangay'), async (r
 
     const programWhere = {};
     if (isBarangayScoped && barangayId) programWhere.barangay_id = barangayId;
-    if (isMswdoRole(req.user.role)) {
+    if (isSeniorRole(req.user.role)) {
+      programWhere.agency = 'MSWDO';
+      programWhere.eligibility_category = { [Op.like]: '%Senior%' };
+    } else if (isPwdRole(req.user.role)) {
+      programWhere.agency = 'MSWDO';
+      programWhere[Op.or] = [
+        { eligibility_category: { [Op.like]: '%PWD%' } },
+        { eligibility_category: { [Op.like]: '%Disabilit%' } }
+      ];
+    } else if (isMswdoRole(req.user.role)) {
       programWhere.agency = 'MSWDO';
       programWhere[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
     } else if (req.user.role === 'admin') {
@@ -928,9 +964,9 @@ router.get('/table/beneficiaries', authorize('admin', 'staff', 'barangay'), asyn
     const where = { status: 'Approved' };
     if (isBarangayScoped && barangayId) where.barangay_id = barangayId;
     else if (qBarangay) where.barangay_id = qBarangay;
-    if (req.user.role === 'senior_citizen_admin') {
+    if (isSeniorRole(req.user.role)) {
       where.category = { [Op.like]: '%Senior%' };
-    } else if (req.user.role === 'pwd_admin') {
+    } else if (isPwdRole(req.user.role)) {
       where[Op.or] = [
         { category: { [Op.like]: '%PWD%' } },
         { category: { [Op.like]: '%Disabilit%' } }
@@ -1005,7 +1041,16 @@ router.get('/table/programs', authorize('admin', 'staff', 'barangay'), async (re
     const programWhere = { status: { [Op.ne]: 'archived' } };
     if (isBarangayScoped && barangayId) programWhere.barangay_id = barangayId;
     else if (qBarangay) programWhere.barangay_id = qBarangay;
-    if (isMswdoRole(req.user.role)) {
+    if (isSeniorRole(req.user.role)) {
+      programWhere.agency = 'MSWDO';
+      programWhere.eligibility_category = { [Op.like]: '%Senior%' };
+    } else if (isPwdRole(req.user.role)) {
+      programWhere.agency = 'MSWDO';
+      programWhere[Op.or] = [
+        { eligibility_category: { [Op.like]: '%PWD%' } },
+        { eligibility_category: { [Op.like]: '%Disabilit%' } }
+      ];
+    } else if (isMswdoRole(req.user.role)) {
       programWhere.agency = 'MSWDO';
       programWhere[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
     } else if (req.user.role === 'admin') {

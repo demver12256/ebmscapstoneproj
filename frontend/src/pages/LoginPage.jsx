@@ -300,6 +300,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [googleError, setGoogleError] = useState(null);
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(() => {
+    return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('expired') === '1';
+  });
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -341,7 +344,19 @@ export default function LoginPage() {
         <img src="/beniaid-logo.png" alt="BeniAid logo" className="mb-5 h-16 w-16 rounded-full bg-white object-contain shadow-md" />
         <h1 className="text-3xl font-semibold">BeniAid Login</h1>
         <p className="mt-2 text-sm text-slate-400">Sign in to access the beneficiary management system.</p>
-        <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+        {sessionExpiredNotice && (
+          <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 flex items-center justify-between">
+            <span>Your session has expired. Please log in again to continue.</span>
+            <button
+              type="button"
+              onClick={() => setSessionExpiredNotice(false)}
+              className="text-amber-300 hover:text-white text-xs font-bold ml-2"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <Input
             label="Username or Email"
             type="text"

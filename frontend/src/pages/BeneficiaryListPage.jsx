@@ -25,9 +25,9 @@ export default function BeneficiaryListPage() {
   const pendingPagination = usePagination(pendingApplications, 10);
   const [selectedBarangayId, setSelectedBarangayId] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(
-    user?.role === 'senior_citizen_admin' 
+    (user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff')
       ? 'Senior Citizens (Social Pension)' 
-      : user?.role === 'pwd_admin' 
+      : (user?.role === 'pwd_admin' || user?.role === 'pwd_staff')
         ? 'Persons with Disabilities (PWD)' 
         : ''
   );
@@ -105,7 +105,11 @@ export default function BeneficiaryListPage() {
     'Senior Citizens (Social Pension)',
     'Persons with Disabilities (PWD)'
   ];
-  const displayCategories = CATEGORIES;
+  const displayCategories = isSeniorAdmin
+    ? ['Senior Citizens (Social Pension)']
+    : isPwdAdmin
+      ? ['Persons with Disabilities (PWD)']
+      : CATEGORIES;
 
   const is4PsCategory = (cat) => {
     if (!cat) return false;
@@ -182,6 +186,23 @@ export default function BeneficiaryListPage() {
       setSelectedPayoutStatus(payoutParam);
     }
   }, [location, user, isMswdoAdmin, isSeniorAdmin, isPwdAdmin]);
+
+  useEffect(() => {
+    if (user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff') {
+      setSelectedCategory('Senior Citizens (Social Pension)');
+    } else if (user?.role === 'pwd_admin' || user?.role === 'pwd_staff') {
+      setSelectedCategory('Persons with Disabilities (PWD)');
+    }
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (location.state?.selectedBeneficiaryId && beneficiaries.length > 0) {
+      const target = beneficiaries.find(b => b.id === Number(location.state.selectedBeneficiaryId));
+      if (target) {
+        handleViewBeneficiary(target);
+      }
+    }
+  }, [location.state?.selectedBeneficiaryId, beneficiaries]);
 
   const openPendingModal = async () => {
     if (!canManageApplications) return;
@@ -321,7 +342,13 @@ export default function BeneficiaryListPage() {
       if (!fresh) return;
       setViewingBeneficiary((prev) => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
       setBeneficiaries((prev) => prev.map((b) => (b.id === fresh.id ? { ...b, ...fresh } : b)));
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('Failed to refresh beneficiary details:', err?.response?.data?.message || err?.message);
+      if (err?.response?.status === 403) {
+        setViewingBeneficiary(null);
+        setError(err.response?.data?.message || 'Access restricted: You do not have permission to view this beneficiary.');
+      }
+    });
   };
 
   const handleSaveRfidDirect = async (e) => {
@@ -978,9 +1005,12 @@ export default function BeneficiaryListPage() {
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              disabled={isSeniorAdmin || isPwdAdmin}
+              className={`w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200 ${
+                (isSeniorAdmin || isPwdAdmin) ? 'bg-slate-50 cursor-not-allowed text-slate-500' : ''
+              }`}
             >
-              <option value="">All Categories</option>
+              {!isSeniorAdmin && !isPwdAdmin && <option value="">All Categories</option>}
               {displayCategories.map((category) => (
                 <option key={category} value={category}>
                   {category}

@@ -18,7 +18,7 @@ const ALL_PAGES = [
     path: '/dashboard',
     icon: Home,
     category: 'Navigation',
-    roles: ['admin', 'mswdo_admin', 'staff', 'barangay', 'beneficiary'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay', 'beneficiary'],
     keywords: ['home', 'overview', 'summary', 'main', 'stats']
   },
   {
@@ -27,7 +27,7 @@ const ALL_PAGES = [
     path: '/dashboard/beneficiaries',
     icon: Users,
     category: 'Navigation',
-    roles: ['admin', 'mswdo_admin', 'staff', 'barangay'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'],
     keywords: ['beneficiaries', 'records', 'seniors', 'pwd', '4ps', 'members', 'citizens', 'registry']
   },
   {
@@ -36,7 +36,7 @@ const ALL_PAGES = [
     path: '/dashboard/programs',
     icon: Package,
     category: 'Navigation',
-    roles: ['admin', 'mswdo_admin', 'staff', 'barangay'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'],
     keywords: ['programs', 'benefits', 'ayuda', 'grants', 'cash', 'non-cash', 'subsidies']
   },
   {
@@ -45,7 +45,7 @@ const ALL_PAGES = [
     path: '/dashboard/distributions',
     icon: Package,
     category: 'Navigation',
-    roles: ['admin', 'staff', 'barangay'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'],
     keywords: ['distribution', 'events', 'payout', 'ayuda', 'release', 'cash assistance', 'venues']
   },
   {
@@ -72,7 +72,7 @@ const ALL_PAGES = [
     path: '/dashboard/barangays',
     icon: MapPin,
     category: 'Navigation',
-    roles: ['admin', 'mswdo_admin'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'],
     keywords: ['barangays', 'barangay list', 'demographics', 'locations', 'areas']
   },
   {
@@ -81,7 +81,7 @@ const ALL_PAGES = [
     path: '/dashboard/announcements',
     icon: Megaphone,
     category: 'Navigation',
-    roles: ['admin', 'mswdo_admin', 'staff', 'barangay'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'],
     keywords: ['announcements', 'broadcast', 'notices', 'alerts', 'advisories', 'news']
   },
   {
@@ -90,7 +90,7 @@ const ALL_PAGES = [
     path: '/dashboard/rfid-scanner',
     icon: Smartphone,
     category: 'Navigation',
-    roles: ['staff', 'barangay'],
+    roles: ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'],
     keywords: ['rfid', 'scanner', 'tap card', 'claim', 'distribution scanner']
   },
   {
@@ -99,7 +99,7 @@ const ALL_PAGES = [
     path: '/dashboard/rfid-attendance',
     icon: Smartphone,
     category: 'Navigation',
-    roles: ['staff', 'barangay'],
+    roles: ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'],
     keywords: ['attendance scanner', 'rfid attendance', 'meeting scanner']
   },
   {
@@ -108,7 +108,7 @@ const ALL_PAGES = [
     path: '/dashboard/reports',
     icon: BarChart3,
     category: 'Navigation',
-    roles: ['admin', 'mswdo_admin', 'staff', 'barangay'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'],
     keywords: ['reports', 'analytics', 'charts', 'exports', 'audit', 'summary']
   },
   {
@@ -117,7 +117,7 @@ const ALL_PAGES = [
     path: '/dashboard/users',
     icon: UserCog,
     category: 'Navigation',
-    roles: ['admin', 'mswdo_admin', 'staff'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff'],
     keywords: ['users', 'accounts', 'staff', 'roles', 'credentials', 'password']
   },
   {
@@ -126,7 +126,7 @@ const ALL_PAGES = [
     path: '/dashboard/messages',
     icon: MessageSquare,
     category: 'Navigation',
-    roles: ['admin', 'mswdo_admin', 'staff', 'barangay', 'beneficiary'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay', 'beneficiary'],
     keywords: ['messages', 'chat', 'inbox', 'conversations', 'inquiries']
   },
   {
@@ -135,7 +135,7 @@ const ALL_PAGES = [
     path: '/dashboard/notifications',
     icon: Bell,
     category: 'Navigation',
-    roles: ['admin', 'mswdo_admin', 'staff', 'barangay', 'beneficiary'],
+    roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay', 'beneficiary'],
     keywords: ['notifications', 'alerts', 'updates', 'unread']
   },
   // Beneficiary-specific routes
@@ -214,7 +214,21 @@ export default function GlobalSearch() {
   const dropdownRef = useRef(null);
   const resultsContainerRef = useRef(null);
 
-  const isAdminOrStaff = ['admin', 'mswdo_admin', 'staff', 'barangay'].includes(user?.role);
+  const isAdminOrStaff = [
+    'admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin',
+    'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'
+  ].includes(user?.role);
+
+  // Invalidate search cache when user switches accounts or roles
+  useEffect(() => {
+    dataCacheRef.current = {
+      beneficiaries: null,
+      programs: null,
+      assistance: null,
+      interventions: null,
+      lastFetched: 0,
+    };
+  }, [user?.id, user?.role]);
 
   // Filter allowed navigation pages based on user's role
   const allowedPages = useMemo(() => {

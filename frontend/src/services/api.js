@@ -28,9 +28,19 @@ if (storedToken) {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Preserve the full error structure for better error handling
-    if (error.response) {
-      return Promise.reject(error);
+    // Gracefully handle 401 Unauthorized (expired or invalid token)
+    if (error.response && error.response.status === 401) {
+      const url = error.config?.url || '';
+      // Exclude authentication endpoints so wrong credentials errors display properly
+      if (!url.includes('/auth/login') && !url.includes('/auth/verify-otp') && !url.includes('/auth/google')) {
+        console.warn('[API Interceptor] 401 Unauthorized detected. Clearing session.');
+        localStorage.removeItem('ebms_token');
+        localStorage.removeItem('ebms_user');
+        setAuthToken(null);
+        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          window.location.href = '/login?expired=1';
+        }
+      }
     }
     return Promise.reject(error);
   }
@@ -84,7 +94,7 @@ export const barangayApi = {
 };
 
 export const beneficiaryApi = {
-  list: () => apiClient.get('/beneficiaries'),
+  list: (params) => apiClient.get('/beneficiaries', { params }),
   getMe: () => apiClient.get('/beneficiaries/me'),
   getById: (id) => apiClient.get(`/beneficiaries/${id}`),
   updateMe: (data) => apiClient.put('/beneficiaries/me', data),

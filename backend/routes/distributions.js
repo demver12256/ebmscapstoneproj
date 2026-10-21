@@ -199,8 +199,8 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
       where.status = req.query.status;
     }
 
-    // Apply barangay filter if provided (admin only)
-    if (req.query.barangay_id && req.query.barangay_id !== 'all' && ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role)) {
+    // Apply barangay filter if provided (admin and sector staff)
+    if (req.query.barangay_id && req.query.barangay_id !== 'all' && ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff', 'mswdo_staff'].includes(req.user.role)) {
       where.barangay_id = parseInt(req.query.barangay_id);
     }
 
@@ -332,7 +332,7 @@ router.get('/events/:id', authorize('admin', 'staff', 'barangay', 'beneficiary')
     };
 
     const eventJson = event.toJSON();
-    if (event.agency === 'MSWDO' || ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role)) {
+    if (event.agency === 'MSWDO' || ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(req.user.role)) {
       if (eventJson.Transactions) {
         eventJson.Transactions.forEach(t => {
           if (t.disbursement_type === 'digital') {
@@ -2387,7 +2387,7 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
           total_amount_pending: parseFloat(transactionStats.total_amount_pending).toFixed(2),
           release_percentage: parseFloat(releasePercentage),
         },
-        scope: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role) ? 'all_barangays' : 'assigned_barangay',
+        scope: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff', 'mswdo_staff'].includes(req.user.role) ? 'all_barangays' : 'assigned_barangay',
         generated_at: new Date().toISOString(),
       },
     });
@@ -2680,7 +2680,7 @@ router.get('/events/:id/payout-summary', authorize('admin', 'staff', 'barangay',
       where: { distribution_event_id: event.id, disbursement_type: 'cash_otc', status: 'released' },
     })) || 0;
 
-    const isMswdoEventSummary = event.agency === 'MSWDO' || ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role);
+    const isMswdoEventSummary = event.agency === 'MSWDO' || ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(req.user.role);
     if (isMswdoEventSummary) {
       const allTotal = digitalTotal + cashTotal;
       const allReleased = digitalReleased + cashReleased;

@@ -6,7 +6,7 @@ const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { Beneficiary, Barangay, User, BeneficiaryDocument, AuditLog, SMSNotification, Notification, Message, AnnouncementRecipient, Announcement, Attendance, DistributionTransaction, DistributionEvent, BenefitProgram, Enrollment } = require('../db');
-const { isMswdoRole, MSWDO_CATEGORY_FILTER, isMswdoCategory, getOfficeBrand } = require('../utils/roles');
+const { isMswdoRole, MSWDO_CATEGORY_FILTER, isMswdoCategory, isSeniorRole, isPwdRole, getOfficeBrand } = require('../utils/roles');
 const QRCode = require('qrcode');
 
 const router = express.Router();
@@ -52,20 +52,27 @@ const upload = multer({
 router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
     const where = {};
+    const { category, barangay_id } = req.query;
+
     if (req.user.role === 'staff' || req.user.role === 'barangay') {
       where.barangay_id = req.user.barangay_id;
       console.log(`[Beneficiaries] Fetching for ${req.user.role}: barangay_id=${req.user.barangay_id}`);
+    } else if (barangay_id) {
+      where.barangay_id = barangay_id;
+      console.log(`[Beneficiaries] Fetching for ${req.user.role}: barangay_id=${barangay_id}`);
     } else {
       console.log(`[Beneficiaries] Fetching for ${req.user.role}: all barangays`);
     }
     where.status = 'Approved';
-    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
+    if (isSeniorRole(req.user.role)) {
       where.category = { [Op.like]: '%Senior%' };
-    } else if (['pwd_admin', 'pwd_staff'].includes(req.user.role)) {
+    } else if (isPwdRole(req.user.role)) {
       where[Op.or] = [
         { category: { [Op.like]: '%PWD%' } },
         { category: { [Op.like]: '%Disabilit%' } }
       ];
+    } else if (category) {
+      where.category = { [Op.like]: `%${category}%` };
     }
     const beneficiaries = await Beneficiary.findAll({ where, include: [Barangay, User] });
     console.log(`[Beneficiaries] Found ${beneficiaries.length} records`);
@@ -856,14 +863,14 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async
     }
 
     // Sector Admin scope: Senior / PWD / MSWDO
-    if (req.user.role === 'senior_citizen_admin' && !isMswdoCategory(beneficiary.category, 'senior_citizen_admin')) {
-      return res.status(403).json({ success: false, message: 'Senior Citizen Admin access restricted to Senior Citizens beneficiaries.' });
+    if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Senior Citizen Admin / Staff access restricted to Senior Citizens beneficiaries.' });
     }
-    if (req.user.role === 'pwd_admin' && !isMswdoCategory(beneficiary.category, 'pwd_admin')) {
-      return res.status(403).json({ success: false, message: 'PWD Admin access restricted to PWD beneficiaries.' });
+    if (isPwdRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'PWD Admin / Staff access restricted to PWD beneficiaries.' });
     }
     if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role) && !isMswdoCategory(beneficiary.category, 'mswdo_admin')) {
-      return res.status(403).json({ success: false, message: 'MSWDO access restricted to Senior Citizens and PWD beneficiaries. 4Ps beneficiaries are managed by DSWD.' });
+      return res.status(403).json({ success: false, message: 'MSWDO access restricted to municipal roster (Senior Citizens, PWD, and 4Ps).' });
     }
 
     res.json({ success: true, data: beneficiary });
@@ -891,8 +898,16 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
       return res.status(403).json({ success: false, message: 'Unauthorized: You can only view attendance for beneficiaries in your own Barangay' });
     }
 
+    // Sector scoping check
+    if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Senior Citizen Admin / Staff access restricted to Senior Citizens beneficiaries.' });
+    }
+    if (isPwdRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'PWD Admin / Staff access restricted to PWD beneficiaries.' });
+    }
+
     // Two-way agency isolation: identify all MSWDO admin users
-    const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'] } }, attributes: ['id'] });
+    const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'] } }, attributes: ['id'] });
     const mswdoUserIds = mswdoUsers.map(u => u.id);
     const isMswdo = isMswdoRole(req.user.role);
 
@@ -1150,6 +1165,14 @@ router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_
       return res.status(403).json({ success: false, message: 'Unauthorized: You can only view distributions for beneficiaries in your own Barangay' });
     }
 
+    // Sector scoping check
+    if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Senior Citizen Admin / Staff access restricted to Senior Citizens beneficiaries.' });
+    }
+    if (isPwdRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'PWD Admin / Staff access restricted to PWD beneficiaries.' });
+    }
+
     // Agency-level scoping:
     // MSWDO Admin can ONLY access distributions created under MSWDO
     // DSWD Admin & Staff can ONLY access distributions created under DSWD
@@ -1241,6 +1264,14 @@ router.get('/:id/enrollments', authorize('admin', 'staff', 'barangay', 'mswdo_ad
     // Barangay verification scoping check
     if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
       return res.status(403).json({ success: false, message: 'Unauthorized: You can only view enrollments for beneficiaries in your own Barangay' });
+    }
+
+    // Sector scoping check
+    if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Senior Citizen Admin / Staff access restricted to Senior Citizens beneficiaries.' });
+    }
+    if (isPwdRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'PWD Admin / Staff access restricted to PWD beneficiaries.' });
     }
 
     // Agency-level scoping:
@@ -1655,14 +1686,14 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
       return res.status(403).json({ success: false, message: 'Unauthorized: You can only edit beneficiaries from your own Barangay' });
     }
     // Sector Admin scope: Senior/PWD/MSWDO
-    if (req.user.role === 'senior_citizen_admin' && !isMswdoCategory(beneficiary.category, 'senior_citizen_admin')) {
-      return res.status(403).json({ success: false, message: 'Senior Citizen Admin can only edit Senior Citizens beneficiaries.' });
+    if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Senior Citizen Admin / Staff can only edit Senior Citizens beneficiaries.' });
     }
-    if (req.user.role === 'pwd_admin' && !isMswdoCategory(beneficiary.category, 'pwd_admin')) {
-      return res.status(403).json({ success: false, message: 'PWD Admin can only edit PWD beneficiaries.' });
+    if (isPwdRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
+      return res.status(403).json({ success: false, message: 'PWD Admin / Staff can only edit PWD beneficiaries.' });
     }
     if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role) && !isMswdoCategory(beneficiary.category, 'mswdo_admin')) {
-      return res.status(403).json({ success: false, message: 'MSWDO can only edit Senior Citizens and PWD beneficiaries. 4Ps beneficiaries are managed by DSWD.' });
+      return res.status(403).json({ success: false, message: 'MSWDO can only edit municipal beneficiaries (Senior Citizens, PWD, and 4Ps).' });
     }
 
     const { status, inactivation_reason, ...otherUpdates } = req.body;
