@@ -847,7 +847,7 @@ router.post('/me/submit', authorize('beneficiary'), async (req, res, next) => {
 });
 
 // Get single application details
-router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (req, res, next) => {
+router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id, {
       include: [Barangay, User, { model: BeneficiaryDocument, as: 'Documents' }]
@@ -1624,7 +1624,7 @@ router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay'),
 });
 
 // ── GET /:id/qr-pass ── Get printable Digital QR Pass for approved beneficiary
-router.get('/:id/qr-pass', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (req, res, next) => {
+router.get('/:id/qr-pass', authorize('admin', 'staff', 'barangay', 'beneficiary', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id, {
       include: [Barangay, User],

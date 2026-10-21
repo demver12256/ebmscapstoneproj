@@ -12,6 +12,7 @@ export default function Pagination({
   startIndex = 0,
   endIndex = 0,
   alwaysShow = false,
+  itemLabel = 'tala',
 }) {
   const safeTotalPages = Math.max(1, totalPages || 1);
 
@@ -73,7 +74,7 @@ export default function Pagination({
         <div className="text-xs sm:text-sm">
           Ipinapakita ang <span className="font-bold text-slate-900">{startDisplay}</span> hanggang{' '}
           <span className="font-bold text-slate-900">{endDisplay}</span> ng{' '}
-          <span className="font-bold text-slate-900">{totalItems}</span> anunsyo
+          <span className="font-bold text-slate-900">{totalItems}</span> {itemLabel}
         </div>
 
         {onItemsPerPageChange && (

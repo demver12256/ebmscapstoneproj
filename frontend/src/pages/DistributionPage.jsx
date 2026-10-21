@@ -33,7 +33,7 @@ export default function DistributionPage() {
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   
   // Filters
   const [statusFilter, setStatusFilter] = useState('all');
@@ -1257,40 +1257,23 @@ export default function DistributionPage() {
           </div>
 
           {/* Pagination */}
-          {!loading && events.length > itemsPerPage && (
-            <div className="flex items-center justify-between px-6 py-4 bg-white rounded-xl shadow-sm border border-slate-200">
-              <div className="text-sm text-slate-600">
-                Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, events.length)} of {events.length} events
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => paginate(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Previous
-                </button>
-                {[...Array(totalPages)].map((_, index) => (
-                  <button
-                    key={index + 1}
-                    onClick={() => paginate(index + 1)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      currentPage === index + 1
-                        ? 'bg-purple-600 text-white'
-                        : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {index + 1}
-                  </button>
-                ))}
-                <button
-                  onClick={() => paginate(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
-              </div>
+          {!loading && events.length > 0 && (
+            <div className="border border-slate-200 px-6 py-4 bg-white rounded-xl shadow-sm">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={(page) => setCurrentPage(page)}
+                totalItems={events.length}
+                itemsPerPage={itemsPerPage}
+                onItemsPerPageChange={(newSize) => {
+                  setItemsPerPage(newSize);
+                  setCurrentPage(1);
+                }}
+                startIndex={indexOfFirstItem}
+                endIndex={indexOfLastItem}
+                alwaysShow={true}
+                itemLabel="pamamahagi"
+              />
             </div>
           )}
         </div>

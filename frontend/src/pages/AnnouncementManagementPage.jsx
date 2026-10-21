@@ -1480,6 +1480,7 @@ export default function AnnouncementManagementPage() {
                 startIndex={announcementPagination.startIndex}
                 endIndex={announcementPagination.endIndex}
                 alwaysShow={true}
+                itemLabel="anunsyo"
               />
             </div>
           </div>
@@ -2740,6 +2741,7 @@ export default function AnnouncementManagementPage() {
                       startIndex={archivedPagination.startIndex}
                       endIndex={archivedPagination.endIndex}
                       alwaysShow={true}
+                itemLabel="anunsyo"
                     />
                   </div>
                 </div>

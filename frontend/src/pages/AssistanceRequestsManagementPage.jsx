@@ -270,7 +270,8 @@ export default function AssistanceRequestsManagementPage() {
     const matchesPriority = filterPriority === 'all' || req.priority === filterPriority;
     return matchesSearch && matchesStatus && matchesType && matchesPriority;
   });
-  const requestPagination = usePagination(filteredRequests, 10);
+  const [pageSize, setPageSize] = useState(10);
+  const requestPagination = usePagination(filteredRequests, pageSize);
 
   // Filter beneficiaries in Create Modal
   const filteredBeneficiaries = beneficiaries.filter(b => {
@@ -621,7 +622,13 @@ export default function AssistanceRequestsManagementPage() {
               totalPages={requestPagination.totalPages}
               onPageChange={requestPagination.goToPage}
               totalItems={requestPagination.totalItems}
-              itemsPerPage={10}
+              itemsPerPage={pageSize}
+              onItemsPerPageChange={(newSize) => {
+                setPageSize(newSize);
+                requestPagination.goToPage(1);
+              }}
+              alwaysShow={true}
+              itemLabel="kahilingan"
               startIndex={requestPagination.startIndex}
               endIndex={requestPagination.endIndex}
             />
