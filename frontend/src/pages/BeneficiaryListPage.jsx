@@ -91,12 +91,12 @@ export default function BeneficiaryListPage() {
     return `${backendUrl}/${clean}`;
   };
 
-  const isSeniorAdmin = user?.role === 'senior_citizen_admin';
-  const isPwdAdmin = user?.role === 'pwd_admin';
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff';
+  const isPwdAdmin = user?.role === 'pwd_admin' || user?.role === 'pwd_staff';
   const isMswdoAdmin = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
   const isDswdAdmin = user?.role === 'admin';
   const isSectorAdmin = isMswdoAdmin || isSeniorAdmin || isPwdAdmin;
-  const isAdminOrSector = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(user?.role);
+  const isAdminOrSector = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
   // Applications approval is strictly delegated by sector: DSWD Admin (4Ps only), Senior Admin (Senior Citizens only), PWD Admin (PWD only).
   // MSWDO Admin / Staff does NOT approve applications.
   const canManageApplications = (isDswdAdmin || isSeniorAdmin || isPwdAdmin) && !isMswdoAdmin;

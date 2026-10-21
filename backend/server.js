@@ -264,6 +264,24 @@ const createDefaultAccounts = async () => {
       role: 'pwd_admin',
       status: 'active',
     },
+    {
+      first_name: 'Senior Citizen',
+      last_name: 'Staff',
+      username: 'senior_staff',
+      email: 'seniorstaff@ebms.local',
+      password: 'Admin@123',
+      role: 'senior_citizen_staff',
+      status: 'active',
+    },
+    {
+      first_name: 'PWD',
+      last_name: 'Staff',
+      username: 'pwd_staff',
+      email: 'pwdstaff@ebms.local',
+      password: 'Admin@123',
+      role: 'pwd_staff',
+      status: 'active',
+    },
   ];
 
   for (const acc of defaultAccounts) {

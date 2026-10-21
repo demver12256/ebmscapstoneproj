@@ -74,7 +74,7 @@ router.use(authenticate);
 const restrictToAssignedBarangay = async (req, res, next) => {
   console.log('[RESTRICT_BARANGAY] Checking access for user:', req.user.role, req.user.id);
 
-  if (['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(req.user.role)) {
+  if (['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(req.user.role)) {
     console.log('[RESTRICT_BARANGAY] Admin - access granted');
     return next(); // Admins have full access
   }

@@ -30,6 +30,14 @@ router.get('/', async (req, res, next) => {
       whereClause = {
         role: { [Op.in]: ['mswdo_staff', 'beneficiary'] },
       };
+    } else if (req.user.role === 'senior_citizen_staff') {
+      whereClause = {
+        role: { [Op.in]: ['senior_citizen_staff', 'beneficiary'] },
+      };
+    } else if (req.user.role === 'pwd_staff') {
+      whereClause = {
+        role: { [Op.in]: ['pwd_staff', 'beneficiary'] },
+      };
     } else if (req.user.role === 'mswdo_admin') {
       // MSWDO Admin strictly manages MSWDO Staff & Municipal Sector Admins
       whereClause = {
@@ -41,12 +49,14 @@ router.get('/', async (req, res, next) => {
         role: { [Op.in]: ['staff', 'barangay'] },
       };
     } else if (req.user.role === 'senior_citizen_admin') {
+      // Senior Citizen Admin manages Senior Citizen Staff
       whereClause = {
-        role: { [Op.in]: ['mswdo_staff', 'senior_citizen_admin'] },
+        role: { [Op.in]: ['senior_citizen_staff', 'senior_citizen_admin'] },
       };
     } else if (req.user.role === 'pwd_admin') {
+      // PWD Admin manages PWD Staff
       whereClause = {
-        role: { [Op.in]: ['mswdo_staff', 'pwd_admin'] },
+        role: { [Op.in]: ['pwd_staff', 'pwd_admin'] },
       };
     }
 
@@ -64,7 +74,15 @@ router.post('/', async (req, res, next) => {
   try {
     let { first_name, last_name, username, email, password, contact_number, address, barangay_id, role, category, household_id_number } = req.body;
 
-    if (req.user.role === 'mswdo_admin') {
+    if (req.user.role === 'senior_citizen_admin') {
+      // Senior Citizen Admin creates Senior Citizen Staff (OSCA scope)
+      role = 'senior_citizen_staff';
+      barangay_id = null;
+    } else if (req.user.role === 'pwd_admin') {
+      // PWD Admin creates PWD Staff (PDAO scope)
+      role = 'pwd_staff';
+      barangay_id = null;
+    } else if (req.user.role === 'mswdo_admin') {
       // MSWDO Admin creates MSWDO staff (all barangays coverage, barangay_id = null)
       if (!role || role === 'staff') {
         role = 'mswdo_staff';
@@ -76,7 +94,7 @@ router.post('/', async (req, res, next) => {
       if (!role || role === 'mswdo_staff') {
         role = 'staff';
       }
-    } else if (req.user.role === 'staff' || req.user.role === 'mswdo_staff') {
+    } else if (['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(req.user.role)) {
       role = 'beneficiary';
       if (req.user.barangay_id) {
         barangay_id = req.user.barangay_id;
@@ -136,7 +154,7 @@ router.post('/', async (req, res, next) => {
       password,
       contact_number,
       address,
-      barangay_id: role === 'mswdo_staff' ? null : barangay_id,
+      barangay_id: ['mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(role) ? null : barangay_id,
       role
     });
 

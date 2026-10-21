@@ -1,12 +1,16 @@
 // Central role helpers — mswdo_admin, senior_citizen_admin, pwd_admin manage municipal programs
 const { Op } = require('sequelize');
 const ADMIN_ROLES = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'];
-const MSWDO_ROLES = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'];
-const STAFF_ROLES = ['staff', 'mswdo_staff'];
+const MSWDO_ROLES = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'];
+const SENIOR_ROLES = ['senior_citizen_admin', 'senior_citizen_staff'];
+const PWD_ROLES = ['pwd_admin', 'pwd_staff'];
+const STAFF_ROLES = ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'];
 const isAdminRole = (role) => ADMIN_ROLES.includes(role);
 const isMswdoRole = (role) => MSWDO_ROLES.includes(role);
-const isSeniorRole = (role) => role === 'senior_citizen_admin';
-const isPwdRole = (role) => role === 'pwd_admin';
+const isSeniorRole = (role) => SENIOR_ROLES.includes(role);
+const isPwdRole = (role) => PWD_ROLES.includes(role);
+const isSeniorStaff = (role) => role === 'senior_citizen_staff';
+const isPwdStaff = (role) => role === 'pwd_staff';
 const isMswdoStaff = (role) => role === 'mswdo_staff';
 const isAdminOr = (role, ...others) => isAdminRole(role) || others.includes(role);
 
@@ -40,8 +44,8 @@ const MSWDO_ELIGIBILITY_FILTER = {
 };
 
 const getCategoryFilterForRole = (role) => {
-  if (role === 'senior_citizen_admin') return SENIOR_CATEGORY_FILTER;
-  if (role === 'pwd_admin') return PWD_CATEGORY_FILTER;
+  if (isSeniorRole(role)) return SENIOR_CATEGORY_FILTER;
+  if (isPwdRole(role)) return PWD_CATEGORY_FILTER;
   if (isMswdoRole(role)) return MSWDO_CATEGORY_FILTER;
   return null;
 };
@@ -49,8 +53,8 @@ const getCategoryFilterForRole = (role) => {
 const isMswdoCategory = (category, role) => {
   if (!category) return false;
   const c = String(category).toLowerCase();
-  if (role === 'senior_citizen_admin') return c.includes('senior');
-  if (role === 'pwd_admin') return c.includes('pwd') || c.includes('disabilit');
+  if (isSeniorRole(role)) return c.includes('senior');
+  if (isPwdRole(role)) return c.includes('pwd') || c.includes('disabilit');
   return c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
 };
 
@@ -82,10 +86,10 @@ const getOfficeBrand = (source, fallbackAgency = 'DSWD') => {
   // If source is a string (e.g. role name or agency name)
   if (typeof source === 'string') {
     const s = source.toLowerCase();
-    if (s === 'senior_citizen_admin' || s === 'osca') {
+    if (s === 'senior_citizen_admin' || s === 'senior_citizen_staff' || s === 'osca') {
       return 'BeniAid OSCA Bongabong';
     }
-    if (s === 'pwd_admin' || s === 'pwdo' || s === 'pdao') {
+    if (s === 'pwd_admin' || s === 'pwd_staff' || s === 'pwdo' || s === 'pdao') {
       return 'BeniAid PWDO Bongabong';
     }
     if (s === 'mswdo_admin' || s === 'mswdo_staff' || s === 'mswdo') {
@@ -98,8 +102,8 @@ const getOfficeBrand = (source, fallbackAgency = 'DSWD') => {
 
   // If source is a user or entity object
   const role = source.role || source.User?.role || source.CreatedBy?.role || source.Creator?.role || source.Reviewer?.role || source.created_by_role;
-  if (role === 'senior_citizen_admin') return 'BeniAid OSCA Bongabong';
-  if (role === 'pwd_admin') return 'BeniAid PWDO Bongabong';
+  if (role === 'senior_citizen_admin' || role === 'senior_citizen_staff') return 'BeniAid OSCA Bongabong';
+  if (role === 'pwd_admin' || role === 'pwd_staff') return 'BeniAid PWDO Bongabong';
   if (role === 'mswdo_admin' || role === 'mswdo_staff') return 'BeniAid MSWDO Bongabong';
   if (role === 'admin' || role === 'staff' || role === 'barangay') return 'BeniAid DSWD Bongabong';
 

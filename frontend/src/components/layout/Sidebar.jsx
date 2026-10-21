@@ -9,27 +9,27 @@ import {
 
 const staffNavItems = [
   // ── Overview ──
-  { path: '/dashboard', label: 'Dashboard', icon: Home, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'barangay'] },
+  { path: '/dashboard', label: 'Dashboard', icon: Home, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
 
   // ── Community Master Records ──
-  { path: '/dashboard/beneficiaries', label: 'Beneficiaries', icon: Users, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'barangay'] },
-  { path: '/dashboard/barangays', label: 'Barangays', icon: MapPin, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'] },
+  { path: '/dashboard/beneficiaries', label: 'Beneficiaries', icon: Users, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
+  { path: '/dashboard/barangays', label: 'Barangays', icon: MapPin, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'] },
 
   // ── Social Welfare & Assistance Services ──
   { path: '/dashboard/programs', label: 'Programs', icon: ListChecks, roles: ['admin', 'staff', 'barangay'] },
-  { path: '/dashboard/distributions', label: 'Distributions', icon: Package, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'barangay'] },
-  { path: '/dashboard/rfid-scanner', label: 'Distribution Scanner', icon: Smartphone, roles: ['staff', 'mswdo_staff', 'barangay'] },
-  { path: '/dashboard/rfid-attendance', label: 'Attendance Scanner', icon: Smartphone, roles: ['staff', 'mswdo_staff', 'barangay'] },
-  { path: '/dashboard/assistance-requests', label: 'Assistance Requests', icon: HandHeart, roles: ['admin', 'mswdo_admin', 'staff', 'mswdo_staff', 'barangay'] },
+  { path: '/dashboard/distributions', label: 'Distributions', icon: Package, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
+  { path: '/dashboard/rfid-scanner', label: 'Distribution Scanner', icon: Smartphone, roles: ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
+  { path: '/dashboard/rfid-attendance', label: 'Attendance Scanner', icon: Smartphone, roles: ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
+  { path: '/dashboard/assistance-requests', label: 'Assistance Requests', icon: HandHeart, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
   { path: '/dashboard/interventions-management', label: 'Interventions', icon: FileHeart, roles: ['admin', 'staff', 'barangay'] },
 
   // ── Communication & Community ──
-  { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'barangay'] },
-  { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, badge: 'messages', roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'barangay'] },
+  { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
+  { path: '/dashboard/messages', label: 'Messages', icon: MessageSquare, badge: 'messages', roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
 
   // ── Analytics & System Administration ──
-  { path: '/dashboard/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'barangay'] },
-  { path: '/dashboard/users', label: 'Users', icon: UserCog, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff'] },
+  { path: '/dashboard/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
+  { path: '/dashboard/users', label: 'Users', icon: UserCog, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'] },
   { 
     path: '/dashboard/logs', 
     label: 'Logs', 

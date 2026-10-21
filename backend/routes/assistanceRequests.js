@@ -64,8 +64,11 @@ router.get('/stats', async (req, res, next) => {
       } else {
         whereClause.user_id = currentUser.id;
       }
-    } else if (currentUser.role === 'mswdo_admin') {
-      // MSWDO Admin strictly accesses requests directed to MSWDO
+    } else if (['senior_citizen_admin', 'senior_citizen_staff'].includes(currentUser.role)) {
+      whereClause[Op.or] = [{ agency: 'OSCA' }, { agency: 'MSWDO' }];
+    } else if (['pwd_admin', 'pwd_staff'].includes(currentUser.role)) {
+      whereClause[Op.or] = [{ agency: 'PWDO' }, { agency: 'PDAO' }, { agency: 'MSWDO' }];
+    } else if (currentUser.role === 'mswdo_admin' || currentUser.role === 'mswdo_staff') {
       whereClause.agency = 'MSWDO';
     } else if (currentUser.role === 'admin') {
       if (req.query.agency && req.query.agency !== 'all') {
@@ -117,8 +120,11 @@ router.get('/', async (req, res, next) => {
       if (req.query.agency && req.query.agency !== 'all') {
         whereClause.agency = req.query.agency;
       }
-    } else if (currentUser.role === 'mswdo_admin') {
-      // MSWDO Admin strictly accesses requests directed to MSWDO
+    } else if (['senior_citizen_admin', 'senior_citizen_staff'].includes(currentUser.role)) {
+      whereClause[Op.or] = [{ agency: 'OSCA' }, { agency: 'MSWDO' }];
+    } else if (['pwd_admin', 'pwd_staff'].includes(currentUser.role)) {
+      whereClause[Op.or] = [{ agency: 'PWDO' }, { agency: 'PDAO' }, { agency: 'MSWDO' }];
+    } else if (currentUser.role === 'mswdo_admin' || currentUser.role === 'mswdo_staff') {
       whereClause.agency = 'MSWDO';
     } else if (currentUser.role === 'admin') {
       if (req.query.agency && req.query.agency !== 'all') {

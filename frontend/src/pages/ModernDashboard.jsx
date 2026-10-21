@@ -37,13 +37,13 @@ export default function ModernDashboard() {
   const [applications, setApplications] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [barangays, setBarangays] = useState([]);
-  const isSeniorAdmin = user?.role === 'senior_citizen_admin';
-  const isPwdAdmin = user?.role === 'pwd_admin';
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff';
+  const isPwdAdmin = user?.role === 'pwd_admin' || user?.role === 'pwd_staff';
   const isMswdoAdmin = user?.role === 'mswdo_admin';
   const isMswdoStaff = user?.role === 'mswdo_staff';
   const isAnyMswdo = isMswdoAdmin || isMswdoStaff;
   const isSectorAdmin = isAnyMswdo || isSeniorAdmin || isPwdAdmin;
-  const canAccessPending = ['admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role);
+  const canAccessPending = ['admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
 
   useEffect(() => {
     loadDashboard();

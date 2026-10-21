@@ -20,9 +20,9 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
       beneficiaryWhere.barangay_id = barangayId;
     }
     // Scope based on sector role
-    if (req.user.role === 'senior_citizen_admin') {
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
       beneficiaryWhere.category = { [Op.like]: '%Senior%' };
-    } else if (req.user.role === 'pwd_admin') {
+    } else if (['pwd_admin', 'pwd_staff'].includes(req.user.role)) {
       beneficiaryWhere[Op.or] = [
         { category: { [Op.like]: '%PWD%' } },
         { category: { [Op.like]: '%Disabilit%' } }
@@ -294,7 +294,7 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     let announcementScopeIds = null;
     let attendanceWhere = {};
     if (isMswdoRole(req.user.role)) {
-      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'] } }, attributes: ['id'] });
+      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'] } }, attributes: ['id'] });
       const mswdoUserIds = mswdoUsers.map(u => u.id);
       const mswdoAnnouncements = await Announcement.findAll({
         where: {

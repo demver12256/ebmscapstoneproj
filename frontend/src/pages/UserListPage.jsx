@@ -72,7 +72,25 @@ export default function UserListPage() {
 
   // Pre-fill form details depending on role
   useEffect(() => {
-    if (currentUser?.role === 'staff') {
+    if (currentUser?.role === 'senior_citizen_admin') {
+      setForm((prev) => ({
+        ...prev,
+        role: 'senior_citizen_staff',
+        barangay_id: '',
+      }));
+    } else if (currentUser?.role === 'pwd_admin') {
+      setForm((prev) => ({
+        ...prev,
+        role: 'pwd_staff',
+        barangay_id: '',
+      }));
+    } else if (currentUser?.role === 'mswdo_admin') {
+      setForm((prev) => ({
+        ...prev,
+        role: 'mswdo_staff',
+        barangay_id: '',
+      }));
+    } else if (['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(currentUser?.role)) {
       setForm((prev) => ({
         ...prev,
         role: 'beneficiary',
@@ -169,6 +187,11 @@ export default function UserListPage() {
     { header: 'Role', accessor: 'role', cell: (row) => (
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
         ['admin','mswdo_admin'].includes(row.role) ? 'bg-purple-100 text-purple-800' :
+        row.role === 'senior_citizen_admin' ? 'bg-rose-100 text-rose-800 font-bold' :
+        row.role === 'senior_citizen_staff' ? 'bg-rose-50 text-rose-700 border border-rose-200 font-bold' :
+        row.role === 'pwd_admin' ? 'bg-blue-100 text-blue-800 font-bold' :
+        row.role === 'pwd_staff' ? 'bg-blue-50 text-blue-700 border border-blue-200 font-bold' :
+        row.role === 'mswdo_staff' ? 'bg-indigo-100 text-indigo-800 font-bold' :
         row.role === 'staff' ? 'bg-blue-100 text-blue-800' :
         row.role === 'barangay' ? 'bg-green-100 text-green-800' :
         'bg-slate-100 text-slate-700'
@@ -195,30 +218,51 @@ export default function UserListPage() {
   ];
 
   // Filter display lists based on user role
-  const isStaffView = currentUser?.role === 'staff' || currentUser?.role === 'mswdo_staff';
+  const isSeniorAdmin = currentUser?.role === 'senior_citizen_admin';
+  const isPwdAdmin = currentUser?.role === 'pwd_admin';
+  const isMswdoAdmin = currentUser?.role === 'mswdo_admin';
+  const isStaffView = ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(currentUser?.role);
   const displayUsers = isStaffView
-    ? users // Backend already filtered it to only show their beneficiaries
+    ? users
     : users.filter((user) => user.role !== 'beneficiary');
 
   const pageTitle = isStaffView 
     ? 'Beneficiary Accounts' 
-    : (currentUser?.role === 'mswdo_admin' ? 'MSWDO Staff Accounts' : 'Staff Accounts');
+    : isSeniorAdmin
+      ? 'Senior Citizen (OSCA) Staff Accounts'
+      : isPwdAdmin
+        ? 'PWD (PDAO) Staff Accounts'
+        : isMswdoAdmin
+          ? 'MSWDO Staff Accounts'
+          : 'Staff Accounts';
+
   const pageDescription = isStaffView 
     ? 'Manage beneficiary accounts.' 
-    : (currentUser?.role === 'mswdo_admin' ? 'Manage MSWDO staff and municipal accounts.' : 'Manage DSWD staff and user accounts.');
+    : isSeniorAdmin
+      ? 'Manage OSCA senior staff accounts.'
+      : isPwdAdmin
+        ? 'Manage PDAO disability staff accounts.'
+        : isMswdoAdmin
+          ? 'Manage MSWDO staff and municipal accounts.'
+          : 'Manage DSWD staff and user accounts.';
+
   const loadingLabel = isStaffView ? 'Loading beneficiary accounts...' : 'Loading staff accounts...';
   const emptyLabel = isStaffView ? 'No beneficiary accounts found' : 'No staff accounts found';
 
-  const availableRoles = currentUser?.role === 'mswdo_admin'
-    ? [
-        { value: 'mswdo_staff', label: 'MSWDO Staff' },
-        { value: 'senior_citizen_admin', label: 'Senior Citizen Admin (OSCA)' },
-        { value: 'pwd_admin', label: 'PWD Admin (PDAO)' },
-      ]
-    : [
-        { value: 'staff', label: 'DSWD Staff' },
-        { value: 'barangay', label: 'Barangay Staff' },
-      ];
+  const availableRoles = isSeniorAdmin
+    ? [{ value: 'senior_citizen_staff', label: 'Senior Citizen Staff (OSCA)' }]
+    : isPwdAdmin
+      ? [{ value: 'pwd_staff', label: 'PWD Staff (PDAO)' }]
+      : isMswdoAdmin
+        ? [
+            { value: 'mswdo_staff', label: 'MSWDO Staff' },
+            { value: 'senior_citizen_admin', label: 'Senior Citizen Admin (OSCA)' },
+            { value: 'pwd_admin', label: 'PWD Admin (PDAO)' },
+          ]
+        : [
+            { value: 'staff', label: 'DSWD Staff' },
+            { value: 'barangay', label: 'Barangay Staff' },
+          ];
 
   return (
     <div className="space-y-6">

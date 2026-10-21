@@ -41,8 +41,8 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
   const [showPwFields, setShowPwFields] = useState({ current: false, new: false, confirm: false });
 
   const isDswdAdmin = user?.role === 'admin';
-  const isSeniorAdmin = user?.role === 'senior_citizen_admin';
-  const isPwdAdmin = user?.role === 'pwd_admin';
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff';
+  const isPwdAdmin = user?.role === 'pwd_admin' || user?.role === 'pwd_staff';
   const isMswdoAdmin = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
   const canReviewApps = isDswdAdmin || isSeniorAdmin || isPwdAdmin;
   const isAdmin = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role);

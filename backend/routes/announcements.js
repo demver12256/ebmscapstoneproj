@@ -1019,7 +1019,7 @@ router.get('/', async (req, res, next) => {
     }
 
     // Two-way agency isolation: identify all MSWDO users
-    const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'] } }, attributes: ['id'] });
+    const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'] } }, attributes: ['id'] });
     const mswdoUserIds = mswdoUsers.map(u => u.id);
 
     // Filter MSWDO view at DB level: MSWDO strictly sees announcements created by MSWDO, assigned to staff, or where MSWDO was notified

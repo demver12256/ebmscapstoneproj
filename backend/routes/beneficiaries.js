@@ -59,7 +59,14 @@ router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) 
       console.log(`[Beneficiaries] Fetching for ${req.user.role}: all barangays`);
     }
     where.status = 'Approved';
-    // Both MSWDO and DSWD view the full municipal registry of approved beneficiaries (4Ps, Senior Citizens, PWD)
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
+      where.category = { [Op.like]: '%Senior%' };
+    } else if (['pwd_admin', 'pwd_staff'].includes(req.user.role)) {
+      where[Op.or] = [
+        { category: { [Op.like]: '%PWD%' } },
+        { category: { [Op.like]: '%Disabilit%' } }
+      ];
+    }
     const beneficiaries = await Beneficiary.findAll({ where, include: [Barangay, User] });
     console.log(`[Beneficiaries] Found ${beneficiaries.length} records`);
     res.json({ success: true, data: beneficiaries });
@@ -86,14 +93,14 @@ router.get('/applications', authorize('admin', 'staff', 'barangay'), async (req,
       }
     };
 
-    if (req.user.role === 'senior_citizen_admin') {
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
       where[Op.and] = [
         { category: { [Op.like]: '%Senior%' } },
         { category: { [Op.notLike]: '%4Ps%' } },
         { category: { [Op.notLike]: '%Pantawid%' } }
       ];
       console.log('[Applications] Senior Citizen Admin filter: Senior only');
-    } else if (req.user.role === 'pwd_admin') {
+    } else if (['pwd_admin', 'pwd_staff'].includes(req.user.role)) {
       where[Op.and] = [
         {
           [Op.or]: [
@@ -1305,10 +1312,10 @@ router.put('/applications/:id/review', authorize('admin'), async (req, res, next
     const isSenior = cat.includes('senior');
     const isPwd = cat.includes('pwd') || cat.includes('disabilit');
 
-    if (req.user.role === 'senior_citizen_admin' && !isSenior) {
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role) && !isSenior) {
       return res.status(403).json({ success: false, message: 'Senior Citizen Admin (OSCA) can only review Senior Citizens applications.' });
     }
-    if (req.user.role === 'pwd_admin' && !isPwd) {
+    if (['pwd_admin', 'pwd_staff'].includes(req.user.role) && !isPwd) {
       return res.status(403).json({ success: false, message: 'PWD Admin (PDAO) can only review Persons with Disabilities (PWD) applications.' });
     }
     if (req.user.role === 'admin' && !is4Ps) {
@@ -1364,11 +1371,11 @@ router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay')
     const isSenior = cat.includes('senior');
     const isPwd = cat.includes('pwd') || cat.includes('disabilit');
 
-    if (req.user.role === 'senior_citizen_admin' && !isSenior) {
-      return res.status(403).json({ success: false, message: 'Senior Citizen Admin (OSCA) can only approve Senior Citizens (Social Pension) applications.' });
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role) && !isSenior) {
+      return res.status(403).json({ success: false, message: 'Senior Citizen (OSCA) staff/admin can only approve Senior Citizens (Social Pension) applications.' });
     }
-    if (req.user.role === 'pwd_admin' && !isPwd) {
-      return res.status(403).json({ success: false, message: 'PWD Admin (PDAO) can only approve Persons with Disabilities (PWD) applications.' });
+    if (['pwd_admin', 'pwd_staff'].includes(req.user.role) && !isPwd) {
+      return res.status(403).json({ success: false, message: 'PWD (PDAO) staff/admin can only approve Persons with Disabilities (PWD) applications.' });
     }
     if (['admin', 'staff', 'barangay'].includes(req.user.role) && !is4Ps) {
       return res.status(403).json({
@@ -1466,11 +1473,11 @@ router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay'),
     const isSenior = cat.includes('senior');
     const isPwd = cat.includes('pwd') || cat.includes('disabilit');
 
-    if (req.user.role === 'senior_citizen_admin' && !isSenior) {
-      return res.status(403).json({ success: false, message: 'Senior Citizen Admin (OSCA) can only reject Senior Citizens (Social Pension) applications.' });
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role) && !isSenior) {
+      return res.status(403).json({ success: false, message: 'Senior Citizen (OSCA) staff/admin can only reject Senior Citizens (Social Pension) applications.' });
     }
-    if (req.user.role === 'pwd_admin' && !isPwd) {
-      return res.status(403).json({ success: false, message: 'PWD Admin (PDAO) can only reject Persons with Disabilities (PWD) applications.' });
+    if (['pwd_admin', 'pwd_staff'].includes(req.user.role) && !isPwd) {
+      return res.status(403).json({ success: false, message: 'PWD (PDAO) staff/admin can only reject Persons with Disabilities (PWD) applications.' });
     }
     if (['admin', 'staff', 'barangay'].includes(req.user.role) && !is4Ps) {
       return res.status(403).json({

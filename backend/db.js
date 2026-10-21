@@ -224,7 +224,7 @@ const connectDatabase = async () => {
   try {
     // Ensure users.role ENUM includes mswdo_staff and all sector admin roles
     await sequelize.query(
-      "ALTER TABLE users MODIFY COLUMN role ENUM('admin','mswdo_admin','senior_citizen_admin','pwd_admin','staff','mswdo_staff','barangay','beneficiary') NOT NULL DEFAULT 'beneficiary'"
+      "ALTER TABLE users MODIFY COLUMN role ENUM('admin','mswdo_admin','senior_citizen_admin','pwd_admin','staff','mswdo_staff','senior_citizen_staff','pwd_staff','barangay','beneficiary') NOT NULL DEFAULT 'beneficiary'"
     );
   } catch (err) {
     console.warn('[DB Migration] users.role ENUM migration skipped:', err.message);

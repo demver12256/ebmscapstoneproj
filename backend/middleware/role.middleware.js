@@ -1,5 +1,5 @@
 const ADMIN_ROLES = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'];
-const STAFF_ROLES = ['staff', 'mswdo_staff'];
+const STAFF_ROLES = ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'];
 
 const expandRoles = (roles) => {
   const expanded = new Set(roles);
