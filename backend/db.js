@@ -224,7 +224,10 @@ const connectDatabase = async () => {
 
   try {
     // Allow barangay_id to be NULL for municipality-wide MSWDO/Senior/PWD distributions
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
     await sequelize.query('ALTER TABLE distribution_events MODIFY COLUMN barangay_id INT NULL');
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
+    console.log('[DB Migration] distribution_events.barangay_id successfully set to NULL');
   } catch (err) {
     console.warn('[DB Migration] distribution_events.barangay_id NULL skipped:', err.message);
   }

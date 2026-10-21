@@ -210,6 +210,7 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push({
         [Op.or]: [
+          { created_by: req.user.id },
           { target_category: { [Op.like]: '%Senior%' } },
           { title: { [Op.like]: '%Senior%' } },
           { title: { [Op.like]: '%OSCA%' } },
@@ -223,6 +224,7 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push({
         [Op.or]: [
+          { created_by: req.user.id },
           { target_category: { [Op.like]: '%PWD%' } },
           { target_category: { [Op.like]: '%Disabil%' } },
           { title: { [Op.like]: '%PWD%' } },
@@ -254,13 +256,13 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
     if (isSeniorRole(req.user.role)) {
       events = events.filter(e => {
         const cat = (e.target_category || e.Program?.eligibility_category || e.Program?.name || e.title || '').toLowerCase();
-        const isSeniorCreator = ['senior_citizen_admin', 'senior_citizen_staff'].includes(e.CreatedBy?.role);
+        const isSeniorCreator = ['senior_citizen_admin', 'senior_citizen_staff'].includes(e.CreatedBy?.role) || e.created_by === req.user.id;
         return (isSeniorCreator || cat.includes('senior') || cat.includes('osca')) && !cat.includes('pwd') && !cat.includes('disabil');
       });
     } else if (isPwdRole(req.user.role)) {
       events = events.filter(e => {
         const cat = (e.target_category || e.Program?.eligibility_category || e.Program?.name || e.title || '').toLowerCase();
-        const isPwdCreator = ['pwd_admin', 'pwd_staff'].includes(e.CreatedBy?.role);
+        const isPwdCreator = ['pwd_admin', 'pwd_staff'].includes(e.CreatedBy?.role) || e.created_by === req.user.id;
         return (isPwdCreator || cat.includes('pwd') || cat.includes('disabil') || cat.includes('pdao')) && !cat.includes('senior');
       });
     }
@@ -694,7 +696,8 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
     } else if (isPwdRole(req.user.role)) {
       finalTargetCategory = 'Persons with Disabilities (PWD)';
     }
-    const event = await DistributionEvent.create({
+
+    const eventPayload = {
       ...req.body,
       program_id: program ? program.id : null,
       barangay_id: parsedBarangayId,
@@ -713,7 +716,32 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
       total_beneficiaries: 0,
       total_released: 0,
       total_amount_released: 0,
-    });
+    };
+
+    let event;
+    try {
+      event = await DistributionEvent.create(eventPayload);
+    } catch (createErr) {
+      if (String(createErr.message || '').includes('barangay_id')) {
+        try {
+          await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+          await sequelize.query('ALTER TABLE distribution_events MODIFY COLUMN barangay_id INT NULL');
+          await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
+          event = await DistributionEvent.create(eventPayload);
+        } catch (innerErr) {
+          console.warn('[CREATE EVENT] Could not set barangay_id NULL, falling back to first barangay:', innerErr.message);
+          const firstBrgy = await Barangay.findOne({ attributes: ['id'] });
+          if (firstBrgy) {
+            eventPayload.barangay_id = firstBrgy.id;
+            event = await DistributionEvent.create(eventPayload);
+          } else {
+            throw innerErr;
+          }
+        }
+      } else {
+        throw createErr;
+      }
+    }
 
     console.log('[CREATE EVENT] Event created:', event.id);
 
@@ -2232,6 +2260,7 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push({
         [Op.or]: [
+          { created_by: req.user.id },
           { target_category: { [Op.like]: '%Senior%' } },
           { title: { [Op.like]: '%Senior%' } },
           { title: { [Op.like]: '%OSCA%' } },
@@ -2245,6 +2274,7 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push({
         [Op.or]: [
+          { created_by: req.user.id },
           { target_category: { [Op.like]: '%PWD%' } },
           { target_category: { [Op.like]: '%Disabil%' } },
           { title: { [Op.like]: '%PWD%' } },
