@@ -140,38 +140,21 @@ async function removeHistoricalAnnouncementRecords(beneficiary, userId, recipien
   return new Set(recipientIds);
 }
 
-function isAnnouncementForSenior(a) {
-  if (['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role)) return true;
-  if (Boolean(a.notify_senior)) return true;
-  let targets = [];
-  if (typeof a.target_programs === 'string') {
-    try { targets = JSON.parse(a.target_programs); } catch (e) { targets = [a.target_programs]; }
-  } else if (Array.isArray(a.target_programs)) {
-    targets = a.target_programs;
-  }
-  const textMatches = targets.some((t) => String(t).toLowerCase().includes('senior'));
-  if (textMatches) return true;
-  const titleLower = (a.title || '').toLowerCase();
-  if (titleLower.includes('senior') || titleLower.includes('osca')) return true;
+function isAnnouncementForSenior(a, userRole = null, userId = null) {
+  const isAuthor = (userId && a.created_by_user_id === userId) || ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role);
+  if (isAuthor) return true;
+  if (userId && a.assigned_staff_id === userId) return true;
+  // External notification from DSWD/MSWDO: STRICTLY for Senior Citizen Admin only (NOT Senior Staff)
+  if (userRole === 'senior_citizen_admin' && Boolean(a.notify_senior)) return true;
   return false;
 }
 
-function isAnnouncementForPwd(a) {
-  if (['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role)) return true;
-  if (Boolean(a.notify_pwd)) return true;
-  let targets = [];
-  if (typeof a.target_programs === 'string') {
-    try { targets = JSON.parse(a.target_programs); } catch (e) { targets = [a.target_programs]; }
-  } else if (Array.isArray(a.target_programs)) {
-    targets = a.target_programs;
-  }
-  const textMatches = targets.some((t) => {
-    const s = String(t).toLowerCase();
-    return s.includes('pwd') || s.includes('disabil');
-  });
-  if (textMatches) return true;
-  const titleLower = (a.title || '').toLowerCase();
-  if (titleLower.includes('pwd') || titleLower.includes('pdao') || titleLower.includes('disabilit')) return true;
+function isAnnouncementForPwd(a, userRole = null, userId = null) {
+  const isAuthor = (userId && a.created_by_user_id === userId) || ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role);
+  if (isAuthor) return true;
+  if (userId && a.assigned_staff_id === userId) return true;
+  // External notification from DSWD/MSWDO: STRICTLY for PWD Admin only (NOT PWD Staff)
+  if (userRole === 'pwd_admin' && Boolean(a.notify_pwd)) return true;
   return false;
 }
 
@@ -434,12 +417,12 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
       });
     }
 
-  // OPTIONAL: NOTIFY MSWDO ADMIN IF notify_mswdo IS ENABLED
+  // OPTIONAL: NOTIFY MSWDO ADMIN IF notify_mswdo IS ENABLED (STRICTLY ADMIN ONLY, NOT STAFF)
   let mswdoCount = 0;
   if (announcement.notify_mswdo) {
     const mswdoUsers = await User.findAll({
       where: {
-        role: { [Op.in]: ['mswdo_admin', 'mswdo_staff'] },
+        role: 'mswdo_admin',
         status: 'active',
       },
       attributes: ['id', 'first_name', 'last_name', 'email'],
@@ -473,12 +456,12 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
     });
   }
 
-  // OPTIONAL: NOTIFY SENIOR CITIZEN ADMIN (OSCA) IF notify_senior IS ENABLED
+  // OPTIONAL: NOTIFY SENIOR CITIZEN ADMIN (OSCA) IF notify_senior IS ENABLED (STRICTLY ADMIN ONLY, NOT STAFF)
   let seniorCount = 0;
   if (announcement.notify_senior) {
     const seniorUsers = await User.findAll({
       where: {
-        role: { [Op.in]: ['senior_citizen_admin', 'senior_citizen_staff'] },
+        role: 'senior_citizen_admin',
         status: 'active',
       },
       attributes: ['id', 'first_name', 'last_name', 'email'],
@@ -511,12 +494,12 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
     });
   }
 
-  // OPTIONAL: NOTIFY PWD ADMIN (PDAO) IF notify_pwd IS ENABLED
+  // OPTIONAL: NOTIFY PWD ADMIN (PDAO) IF notify_pwd IS ENABLED (STRICTLY ADMIN ONLY, NOT STAFF)
   let pwdCount = 0;
   if (announcement.notify_pwd) {
     const pwdUsers = await User.findAll({
       where: {
-        role: { [Op.in]: ['pwd_admin', 'pwd_staff'] },
+        role: 'pwd_admin',
         status: 'active',
       },
       attributes: ['id', 'first_name', 'last_name', 'email'],
@@ -1147,17 +1130,24 @@ router.get('/', async (req, res, next) => {
     const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'] } }, attributes: ['id'] });
     const mswdoUserIds = mswdoUsers.map(u => u.id);
 
-    // Filter MSWDO view at DB level: MSWDO strictly sees announcements created by MSWDO, assigned to staff, or where MSWDO was notified
+    // Filter MSWDO / Senior / PWD view at DB level: strictly sees announcements created by their agency, assigned to staff, or where the specific admin was notified
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       where[Op.and] = where[Op.and] || [];
+      const orConditions = [
+        { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
+        { assigned_staff_id: req.user.id },
+      ];
+      if (req.user.role === 'mswdo_admin') {
+        orConditions.push({ notify_mswdo: true });
+      }
+      if (req.user.role === 'senior_citizen_admin') {
+        orConditions.push({ notify_senior: true });
+      }
+      if (req.user.role === 'pwd_admin') {
+        orConditions.push({ notify_pwd: true });
+      }
       where[Op.and].push({
-        [Op.or]: [
-          { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
-          { assigned_staff_id: req.user.id },
-          { notify_mswdo: true },
-          { notify_senior: true },
-          { notify_pwd: true }
-        ]
+        [Op.or]: orConditions
       });
     } else if (req.user.role === 'admin') {
       // DSWD Admin: strictly see announcements created by DSWD users (NOT MSWDO)
@@ -1218,17 +1208,17 @@ router.get('/', async (req, res, next) => {
       }
     }
 
-    // Filter view for Senior / PWD / MSWDO roles
+    // Filter view for Senior / PWD / MSWDO roles (STRICT: Inter-office notices received by ADMIN ONLY, never staff)
     if (isSeniorRole(req.user.role)) {
-      announcements = announcements.filter(isAnnouncementForSenior);
+      announcements = announcements.filter((a) => isAnnouncementForSenior(a, req.user.role, req.user.id));
     } else if (isPwdRole(req.user.role)) {
-      announcements = announcements.filter(isAnnouncementForPwd);
+      announcements = announcements.filter((a) => isAnnouncementForPwd(a, req.user.role, req.user.id));
     } else if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       announcements = announcements.filter((a) => {
         const isAuthor = a.created_by_user_id === req.user.id || a.CreatedBy?.id === req.user.id;
         const isAssigned = a.assigned_staff_id === req.user.id;
         const isMswdoAgency = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(a.CreatedBy?.role);
-        const isNotified = Boolean(a.notify_mswdo);
+        const isNotified = req.user.role === 'mswdo_admin' && Boolean(a.notify_mswdo);
         return isAuthor || isAssigned || isMswdoAgency || isNotified;
       });
     }
@@ -1322,22 +1312,24 @@ router.get('/:id', async (req, res, next) => {
       });
     }
 
-    // Security check: Office notification access
+    // Security check: Office notification access (Strictly for notified ADMIN ONLY, never staff)
     if (isSeniorRole(req.user.role)) {
-      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_senior);
-      const isTargeted = isAnnouncementForSenior(announcement);
-      if (!isAuthor && !isNotified && !isTargeted) {
+      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id || ['senior_citizen_admin', 'senior_citizen_staff'].includes(announcement.CreatedBy?.role);
+      const isAssigned = announcement.assigned_staff_id === req.user.id;
+      const isNotified = req.user.role === 'senior_citizen_admin' && Boolean(announcement.notify_senior);
+      const isTargeted = isAnnouncementForSenior(announcement, req.user.role, req.user.id);
+      if (!isAuthor && !isAssigned && !isNotified && !isTargeted) {
         return res.status(403).json({
           success: false,
           message: 'Access denied: Senior Citizen Admin was not notified for this announcement.',
         });
       }
     } else if (isPwdRole(req.user.role)) {
-      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_pwd);
-      const isTargeted = isAnnouncementForPwd(announcement);
-      if (!isAuthor && !isNotified && !isTargeted) {
+      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id || ['pwd_admin', 'pwd_staff'].includes(announcement.CreatedBy?.role);
+      const isAssigned = announcement.assigned_staff_id === req.user.id;
+      const isNotified = req.user.role === 'pwd_admin' && Boolean(announcement.notify_pwd);
+      const isTargeted = isAnnouncementForPwd(announcement, req.user.role, req.user.id);
+      if (!isAuthor && !isAssigned && !isNotified && !isTargeted) {
         return res.status(403).json({
           success: false,
           message: 'Access denied: PWD Admin was not notified for this announcement.',
@@ -1345,8 +1337,10 @@ router.get('/:id', async (req, res, next) => {
       }
     } else if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_mswdo) || (isSeniorRole(req.user.role) && Boolean(announcement.notify_senior)) || (isPwdRole(req.user.role) && Boolean(announcement.notify_pwd));
-      if (!isAuthor && !isNotified) {
+      const isAssigned = announcement.assigned_staff_id === req.user.id;
+      const isMswdoAgency = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(announcement.CreatedBy?.role);
+      const isNotified = req.user.role === 'mswdo_admin' && Boolean(announcement.notify_mswdo);
+      if (!isAuthor && !isAssigned && !isMswdoAgency && !isNotified) {
         return res.status(403).json({
           success: false,
           message: 'Access denied: MSWDO was not notified for this announcement.',
@@ -1398,7 +1392,9 @@ router.get('/:id', async (req, res, next) => {
     // For MSWDO Admin: if not author and not notified, strip the beneficiary attendance Recipients list
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_mswdo) || (isSeniorRole(req.user.role) && Boolean(announcement.notify_senior)) || (isPwdRole(req.user.role) && Boolean(announcement.notify_pwd));
+      const isNotified = (req.user.role === 'mswdo_admin' && Boolean(announcement.notify_mswdo)) ||
+                         (req.user.role === 'senior_citizen_admin' && Boolean(announcement.notify_senior)) ||
+                         (req.user.role === 'pwd_admin' && Boolean(announcement.notify_pwd));
       if (!isAuthor && !isNotified) {
         plain.Recipients = [];
       }
@@ -1877,12 +1873,15 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
     // Security check: MSWDO Admin can access attendance stats for announcements created by MSWDO or where notify_mswdo is true
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_mswdo) || (isSeniorRole(req.user.role) && Boolean(announcement.notify_senior)) || (isPwdRole(req.user.role) && Boolean(announcement.notify_pwd));
+      const isMswdoAgency = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(announcement.CreatedBy?.role);
+      const isNotified = (req.user.role === 'mswdo_admin' && Boolean(announcement.notify_mswdo)) ||
+                         (req.user.role === 'senior_citizen_admin' && Boolean(announcement.notify_senior)) ||
+                         (req.user.role === 'pwd_admin' && Boolean(announcement.notify_pwd));
       const isAssigned = announcement.assigned_staff_id === req.user.id;
-      if (!isAuthor && !isNotified && !isAssigned) {
+      if (!isAuthor && !isNotified && !isAssigned && !isMswdoAgency) {
         return res.status(403).json({
           success: false,
-          message: 'Access denied: MSWDO Admin can only access attendance stats for announcements created by MSWDO or where MSWDO was notified.',
+          message: 'Access denied: You do not have permission to access attendance stats for this announcement.',
         });
       }
     }
@@ -2105,12 +2104,15 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
     // Security check: MSWDO Admin can export attendance for announcements created by MSWDO or where notify_mswdo is true
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
-      const isNotified = Boolean(announcement.notify_mswdo) || (isSeniorRole(req.user.role) && Boolean(announcement.notify_senior)) || (isPwdRole(req.user.role) && Boolean(announcement.notify_pwd));
+      const isMswdoAgency = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(announcement.CreatedBy?.role);
+      const isNotified = (req.user.role === 'mswdo_admin' && Boolean(announcement.notify_mswdo)) ||
+                         (req.user.role === 'senior_citizen_admin' && Boolean(announcement.notify_senior)) ||
+                         (req.user.role === 'pwd_admin' && Boolean(announcement.notify_pwd));
       const isAssigned = announcement.assigned_staff_id === req.user.id;
-      if (!isAuthor && !isNotified && !isAssigned) {
+      if (!isAuthor && !isNotified && !isAssigned && !isMswdoAgency) {
         return res.status(403).json({
           success: false,
-          message: 'Access denied: MSWDO Admin can only export attendance for announcements created by MSWDO or where MSWDO was notified.',
+          message: 'Access denied: You do not have permission to export attendance for this announcement.',
         });
       }
     }

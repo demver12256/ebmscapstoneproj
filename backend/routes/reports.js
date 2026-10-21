@@ -319,6 +319,8 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
           [Op.or]: [
             { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
             { notify_mswdo: true },
+            { notify_senior: true },
+            { notify_pwd: true },
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
           ],
@@ -354,6 +356,8 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
       announceWhere[Op.or] = [
         { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
         { notify_mswdo: true },
+        { notify_senior: true },
+        { notify_pwd: true },
         sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
         sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
       ];
@@ -1234,6 +1238,8 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
           [Op.or]: [
             { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
             { notify_mswdo: true },
+            { notify_senior: true },
+            { notify_pwd: true },
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
           ],
@@ -1376,6 +1382,8 @@ router.get('/table/announcements', authorize('admin', 'staff', 'barangay'), asyn
         [Op.or]: [
           { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
           { notify_mswdo: true },
+          { notify_senior: true },
+          { notify_pwd: true },
           sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
           sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
         ],
@@ -1576,6 +1584,8 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
           [Op.or]: [
             { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
             { notify_mswdo: true },
+            { notify_senior: true },
+            { notify_pwd: true },
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
             sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
           ],
@@ -1709,6 +1719,8 @@ router.get('/export/announcements', authorize('admin', 'staff', 'barangay'), asy
         [Op.or]: [
           { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
           { notify_mswdo: true },
+          { notify_senior: true },
+          { notify_pwd: true },
           sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
           sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
         ],

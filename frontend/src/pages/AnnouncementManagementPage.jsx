@@ -243,8 +243,12 @@ export default function AnnouncementManagementPage() {
   const isBarangayStaff = user?.role === 'staff' || user?.role === 'barangay';
   const isMswdoAdmin = user?.role === 'mswdo_admin';
   const isMswdoStaff = user?.role === 'mswdo_staff';
-  const isSeniorAdmin = user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff';
-  const isPwdAdmin = user?.role === 'pwd_admin' || user?.role === 'pwd_staff';
+  const isSeniorOnlyAdmin = user?.role === 'senior_citizen_admin';
+  const isSeniorStaff = user?.role === 'senior_citizen_staff';
+  const isSeniorAdmin = isSeniorOnlyAdmin || isSeniorStaff;
+  const isPwdOnlyAdmin = user?.role === 'pwd_admin';
+  const isPwdStaff = user?.role === 'pwd_staff';
+  const isPwdAdmin = isPwdOnlyAdmin || isPwdStaff;
   const isSectorAdmin = isMswdoAdmin || isMswdoStaff || isSeniorAdmin || isPwdAdmin;
   const [announcements, setAnnouncements] = useState([]);
   const [programs, setPrograms] = useState([]);
@@ -359,29 +363,26 @@ export default function AnnouncementManagementPage() {
       if (['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role)) {
         if (isSeniorAdmin) {
           list = list.filter((a) => {
-            const targets = Array.isArray(a.target_programs) ? a.target_programs : [];
-            const textMatch = targets.some((t) => String(t).toLowerCase().includes('senior'));
-            const isSeniorAuthor = ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role);
-            const titleMatch = (a.title || '').toLowerCase().includes('senior') || (a.title || '').toLowerCase().includes('osca');
-            const isNotified = Boolean(a.notify_senior);
-            return textMatch || isSeniorAuthor || titleMatch || isNotified;
+            const isSeniorAuthor = ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role) || a.created_by_user_id === user?.id;
+            const isNotified = isSeniorOnlyAdmin && Boolean(a.notify_senior);
+            const isAssigned = a.assigned_staff_id === user?.id;
+            return isSeniorAuthor || isNotified || isAssigned;
           });
         } else if (isPwdAdmin) {
           list = list.filter((a) => {
-            const targets = Array.isArray(a.target_programs) ? a.target_programs : [];
-            const textMatch = targets.some((t) => String(t).toLowerCase().includes('pwd') || String(t).toLowerCase().includes('disabil'));
-            const isPwdAuthor = ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role);
-            const titleMatch = (a.title || '').toLowerCase().includes('pwd') || (a.title || '').toLowerCase().includes('pdao');
-            const isNotified = Boolean(a.notify_pwd);
-            return textMatch || isPwdAuthor || titleMatch || isNotified;
+            const isPwdAuthor = ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role) || a.created_by_user_id === user?.id;
+            const isNotified = isPwdOnlyAdmin && Boolean(a.notify_pwd);
+            const isAssigned = a.assigned_staff_id === user?.id;
+            return isPwdAuthor || isNotified || isAssigned;
           });
         } else {
-          list = list.filter((a) =>
-            a.created_by_user_id === user.id ||
-            ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(a.CreatedBy?.role) ||
-            Boolean(a.notify_mswdo) ||
-            a.assigned_staff_id === user.id
-          );
+          list = list.filter((a) => {
+            const isAuthor = a.created_by_user_id === user?.id || a.CreatedBy?.id === user?.id;
+            const isMswdoAgency = ['mswdo_admin', 'mswdo_staff'].includes(a.CreatedBy?.role);
+            const isNotified = isMswdoAdmin && Boolean(a.notify_mswdo);
+            const isAssigned = a.assigned_staff_id === user?.id;
+            return isAuthor || isMswdoAgency || isNotified || isAssigned;
+          });
         }
       }
       setAnnouncements(list);
@@ -390,7 +391,7 @@ export default function AnnouncementManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterProgram, filterBarangay, filterPriority, filterStatus, searchQuery, user, isSeniorAdmin, isPwdAdmin]);
+  }, [filterProgram, filterBarangay, filterPriority, filterStatus, searchQuery, user, isSeniorAdmin, isPwdAdmin, isSeniorOnlyAdmin, isPwdOnlyAdmin, isMswdoAdmin]);
 
   useEffect(() => {
     fetchMetadata();

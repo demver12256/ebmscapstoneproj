@@ -34,7 +34,17 @@ export default function NotificationsPage() {
       const res = await announcementApi.list();
       let list = res.data?.data || [];
       if (user?.role === 'mswdo_admin') {
-        list = list.filter((a) => a.created_by_user_id === user.id || a.notify_mswdo);
+        list = list.filter((a) => a.created_by_user_id === user.id || ['mswdo_admin', 'mswdo_staff'].includes(a.CreatedBy?.role) || Boolean(a.notify_mswdo));
+      } else if (user?.role === 'mswdo_staff') {
+        list = list.filter((a) => a.created_by_user_id === user.id || a.assigned_staff_id === user.id || ['mswdo_admin', 'mswdo_staff'].includes(a.CreatedBy?.role));
+      } else if (user?.role === 'senior_citizen_admin') {
+        list = list.filter((a) => a.created_by_user_id === user.id || ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role) || Boolean(a.notify_senior));
+      } else if (user?.role === 'senior_citizen_staff') {
+        list = list.filter((a) => a.created_by_user_id === user.id || a.assigned_staff_id === user.id || ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role));
+      } else if (user?.role === 'pwd_admin') {
+        list = list.filter((a) => a.created_by_user_id === user.id || ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role) || Boolean(a.notify_pwd));
+      } else if (user?.role === 'pwd_staff') {
+        list = list.filter((a) => a.created_by_user_id === user.id || a.assigned_staff_id === user.id || ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role));
       }
       setAnnouncements(list);
     } catch (err) {
