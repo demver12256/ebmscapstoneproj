@@ -38,11 +38,21 @@ export default function NotificationsPage() {
       } else if (user?.role === 'mswdo_staff') {
         list = list.filter((a) => a.created_by_user_id === user.id || a.assigned_staff_id === user.id || ['mswdo_admin', 'mswdo_staff'].includes(a.CreatedBy?.role));
       } else if (user?.role === 'senior_citizen_admin') {
-        list = list.filter((a) => a.created_by_user_id === user.id || ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role) || Boolean(a.notify_senior));
+        list = list.filter((a) => {
+          const targets = Array.isArray(a.target_programs) ? a.target_programs : [];
+          const textMatch = targets.some((t) => String(t).toLowerCase().includes('senior'));
+          const titleMatch = (a.title || '').toLowerCase().includes('senior') || (a.title || '').toLowerCase().includes('osca');
+          return a.created_by_user_id === user.id || ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role) || Boolean(a.notify_senior) || textMatch || titleMatch;
+        });
       } else if (user?.role === 'senior_citizen_staff') {
         list = list.filter((a) => a.created_by_user_id === user.id || a.assigned_staff_id === user.id || ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role));
       } else if (user?.role === 'pwd_admin') {
-        list = list.filter((a) => a.created_by_user_id === user.id || ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role) || Boolean(a.notify_pwd));
+        list = list.filter((a) => {
+          const targets = Array.isArray(a.target_programs) ? a.target_programs : [];
+          const textMatch = targets.some((t) => String(t).toLowerCase().includes('pwd') || String(t).toLowerCase().includes('disabil'));
+          const titleMatch = (a.title || '').toLowerCase().includes('pwd') || (a.title || '').toLowerCase().includes('pdao');
+          return a.created_by_user_id === user.id || ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role) || Boolean(a.notify_pwd) || textMatch || titleMatch;
+        });
       } else if (user?.role === 'pwd_staff') {
         list = list.filter((a) => a.created_by_user_id === user.id || a.assigned_staff_id === user.id || ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role));
       }

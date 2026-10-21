@@ -14,6 +14,7 @@ const {
   BenefitProgram,
   Barangay,
   Attendance,
+  sequelize,
 } = require('../db');
 const { isMswdoRole, isSeniorRole, isPwdRole, getOfficeBrand, getOfficeName } = require('../utils/roles');
 const { parseDateTime, autoCompleteExpiredAnnouncements } = require('../utils/announcementScheduler');
@@ -145,7 +146,19 @@ function isAnnouncementForSenior(a, userRole = null, userId = null) {
   if (isAuthor) return true;
   if (userId && a.assigned_staff_id === userId) return true;
   // External notification from DSWD/MSWDO: STRICTLY for Senior Citizen Admin only (NOT Senior Staff)
-  if (userRole === 'senior_citizen_admin' && Boolean(a.notify_senior)) return true;
+  if (userRole === 'senior_citizen_admin') {
+    if (Boolean(a.notify_senior)) return true;
+    let targets = [];
+    if (typeof a.target_programs === 'string') {
+      try { targets = JSON.parse(a.target_programs); } catch (e) { targets = [a.target_programs]; }
+    } else if (Array.isArray(a.target_programs)) {
+      targets = a.target_programs;
+    }
+    const textMatches = targets.some((t) => String(t).toLowerCase().includes('senior'));
+    if (textMatches) return true;
+    const titleLower = (a.title || '').toLowerCase();
+    if (titleLower.includes('senior') || titleLower.includes('osca')) return true;
+  }
   return false;
 }
 
@@ -154,7 +167,22 @@ function isAnnouncementForPwd(a, userRole = null, userId = null) {
   if (isAuthor) return true;
   if (userId && a.assigned_staff_id === userId) return true;
   // External notification from DSWD/MSWDO: STRICTLY for PWD Admin only (NOT PWD Staff)
-  if (userRole === 'pwd_admin' && Boolean(a.notify_pwd)) return true;
+  if (userRole === 'pwd_admin') {
+    if (Boolean(a.notify_pwd)) return true;
+    let targets = [];
+    if (typeof a.target_programs === 'string') {
+      try { targets = JSON.parse(a.target_programs); } catch (e) { targets = [a.target_programs]; }
+    } else if (Array.isArray(a.target_programs)) {
+      targets = a.target_programs;
+    }
+    const textMatches = targets.some((t) => {
+      const s = String(t).toLowerCase();
+      return s.includes('pwd') || s.includes('disabil');
+    });
+    if (textMatches) return true;
+    const titleLower = (a.title || '').toLowerCase();
+    if (titleLower.includes('pwd') || titleLower.includes('pdao') || titleLower.includes('disabilit')) return true;
+  }
   return false;
 }
 
@@ -456,9 +484,13 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
     });
   }
 
-  // OPTIONAL: NOTIFY SENIOR CITIZEN ADMIN (OSCA) IF notify_senior IS ENABLED (STRICTLY ADMIN ONLY, NOT STAFF)
+  // OPTIONAL: NOTIFY SENIOR CITIZEN ADMIN (OSCA) IF notify_senior IS ENABLED OR TARGETS SENIOR CITIZENS (STRICTLY ADMIN ONLY, NOT STAFF)
+  const shouldNotifySenior = Boolean(announcement.notify_senior) || (
+    Array.isArray(announcement.target_programs) && announcement.target_programs.some(p => String(p).toLowerCase().includes('senior'))
+  ) || (typeof announcement.target_programs === 'string' && announcement.target_programs.toLowerCase().includes('senior'));
+
   let seniorCount = 0;
-  if (announcement.notify_senior) {
+  if (shouldNotifySenior) {
     const seniorUsers = await User.findAll({
       where: {
         role: 'senior_citizen_admin',
@@ -494,9 +526,13 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
     });
   }
 
-  // OPTIONAL: NOTIFY PWD ADMIN (PDAO) IF notify_pwd IS ENABLED (STRICTLY ADMIN ONLY, NOT STAFF)
+  // OPTIONAL: NOTIFY PWD ADMIN (PDAO) IF notify_pwd IS ENABLED OR TARGETS PWD (STRICTLY ADMIN ONLY, NOT STAFF)
+  const shouldNotifyPwd = Boolean(announcement.notify_pwd) || (
+    Array.isArray(announcement.target_programs) && announcement.target_programs.some(p => String(p).toLowerCase().includes('pwd') || String(p).toLowerCase().includes('disabil'))
+  ) || (typeof announcement.target_programs === 'string' && (announcement.target_programs.toLowerCase().includes('pwd') || announcement.target_programs.toLowerCase().includes('disabil')));
+
   let pwdCount = 0;
-  if (announcement.notify_pwd) {
+  if (shouldNotifyPwd) {
     const pwdUsers = await User.findAll({
       where: {
         role: 'pwd_admin',
@@ -1142,9 +1178,16 @@ router.get('/', async (req, res, next) => {
       }
       if (req.user.role === 'senior_citizen_admin') {
         orConditions.push({ notify_senior: true });
+        orConditions.push(sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }));
+        orConditions.push({ title: { [Op.like]: '%Senior%' } });
+        orConditions.push({ title: { [Op.like]: '%OSCA%' } });
       }
       if (req.user.role === 'pwd_admin') {
         orConditions.push({ notify_pwd: true });
+        orConditions.push(sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }));
+        orConditions.push(sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Disabilit%' }));
+        orConditions.push({ title: { [Op.like]: '%PWD%' } });
+        orConditions.push({ title: { [Op.like]: '%PDAO%' } });
       }
       where[Op.and].push({
         [Op.or]: orConditions
@@ -1529,8 +1572,8 @@ router.post('/', authorize('admin', 'staff', 'barangay'), async (req, res, next)
       target_barangays: parsedBarangays,
       target_sitios: parsedSitios,
       notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : false,
-      notify_senior: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && notify_senior !== undefined) ? !!notify_senior : false,
-      notify_pwd: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && notify_pwd !== undefined) ? !!notify_pwd : false,
+      notify_senior: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && (notify_senior || (Array.isArray(targetCatsOrProgs) && targetCatsOrProgs.some(t => String(t).toLowerCase().includes('senior'))))) ? true : (notify_senior !== undefined ? !!notify_senior : false),
+      notify_pwd: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && (notify_pwd || (Array.isArray(targetCatsOrProgs) && targetCatsOrProgs.some(t => String(t).toLowerCase().includes('pwd') || String(t).toLowerCase().includes('disabil'))))) ? true : (notify_pwd !== undefined ? !!notify_pwd : false),
       assigned_staff_id: req.body.assigned_staff_id ? Number(req.body.assigned_staff_id) : null,
       created_by_user_id: req.user.id,
       recipient_count: previewMatches.length,
@@ -2320,8 +2363,8 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
       recipient_count: nextStatus === 'pending_approval' ? previewMatches.length : announcement.recipient_count,
       beneficiary_visibility_at: new Date(),
       notify_mswdo: (req.user.role === 'admin' && notify_mswdo !== undefined) ? !!notify_mswdo : announcement.notify_mswdo,
-      notify_senior: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && notify_senior !== undefined) ? !!notify_senior : announcement.notify_senior,
-      notify_pwd: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && notify_pwd !== undefined) ? !!notify_pwd : announcement.notify_pwd,
+      notify_senior: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && (notify_senior || (Array.isArray(targetCatsOrProgs) && targetCatsOrProgs.some(t => String(t).toLowerCase().includes('senior'))))) ? true : (notify_senior !== undefined ? !!notify_senior : announcement.notify_senior),
+      notify_pwd: ((req.user.role === 'admin' || req.user.role === 'mswdo_admin') && (notify_pwd || (Array.isArray(targetCatsOrProgs) && targetCatsOrProgs.some(t => String(t).toLowerCase().includes('pwd') || String(t).toLowerCase().includes('disabil'))))) ? true : (notify_pwd !== undefined ? !!notify_pwd : announcement.notify_pwd),
       assigned_staff_id: req.body.assigned_staff_id !== undefined ? (req.body.assigned_staff_id ? Number(req.body.assigned_staff_id) : null) : announcement.assigned_staff_id,
     });
 

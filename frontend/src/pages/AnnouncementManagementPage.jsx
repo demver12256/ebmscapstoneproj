@@ -364,16 +364,22 @@ export default function AnnouncementManagementPage() {
         if (isSeniorAdmin) {
           list = list.filter((a) => {
             const isSeniorAuthor = ['senior_citizen_admin', 'senior_citizen_staff'].includes(a.CreatedBy?.role) || a.created_by_user_id === user?.id;
-            const isNotified = isSeniorOnlyAdmin && Boolean(a.notify_senior);
             const isAssigned = a.assigned_staff_id === user?.id;
-            return isSeniorAuthor || isNotified || isAssigned;
+            const targets = Array.isArray(a.target_programs) ? a.target_programs : [];
+            const textMatch = targets.some((t) => String(t).toLowerCase().includes('senior'));
+            const titleMatch = (a.title || '').toLowerCase().includes('senior') || (a.title || '').toLowerCase().includes('osca');
+            const isNotified = isSeniorOnlyAdmin && (Boolean(a.notify_senior) || textMatch || titleMatch);
+            return isSeniorAuthor || isAssigned || isNotified;
           });
         } else if (isPwdAdmin) {
           list = list.filter((a) => {
             const isPwdAuthor = ['pwd_admin', 'pwd_staff'].includes(a.CreatedBy?.role) || a.created_by_user_id === user?.id;
-            const isNotified = isPwdOnlyAdmin && Boolean(a.notify_pwd);
             const isAssigned = a.assigned_staff_id === user?.id;
-            return isPwdAuthor || isNotified || isAssigned;
+            const targets = Array.isArray(a.target_programs) ? a.target_programs : [];
+            const textMatch = targets.some((t) => String(t).toLowerCase().includes('pwd') || String(t).toLowerCase().includes('disabil'));
+            const titleMatch = (a.title || '').toLowerCase().includes('pwd') || (a.title || '').toLowerCase().includes('pdao');
+            const isNotified = isPwdOnlyAdmin && (Boolean(a.notify_pwd) || textMatch || titleMatch);
+            return isPwdAuthor || isAssigned || isNotified;
           });
         } else {
           list = list.filter((a) => {
@@ -704,8 +710,13 @@ export default function AnnouncementManagementPage() {
       return;
     }
 
+    const targetsSenior = activeCats.some((c) => String(c).toLowerCase().includes('senior'));
+    const targetsPwd = activeCats.some((c) => String(c).toLowerCase().includes('pwd') || String(c).toLowerCase().includes('disabil'));
+
     const payload = {
       ...formData,
+      notify_senior: formData.notify_senior || targetsSenior,
+      notify_pwd: formData.notify_pwd || targetsPwd,
       status: isBarangayStaff
         ? (formData.status === 'draft' ? 'draft' : 'pending_approval')
         : formData.status,
@@ -1516,6 +1527,8 @@ export default function AnnouncementManagementPage() {
                     if (preset) {
                       setFormData((prev) => {
                         const autoPriority = prev.event_date ? calculatePriorityFromDate(prev.event_date) : preset.priority;
+                        const targetsSenior = (preset.target_categories || []).some((c) => String(c).toLowerCase().includes('senior'));
+                        const targetsPwd = (preset.target_categories || []).some((c) => String(c).toLowerCase().includes('pwd') || String(c).toLowerCase().includes('disabil'));
                         return {
                           ...prev,
                           title: preset.title,
@@ -1526,6 +1539,8 @@ export default function AnnouncementManagementPage() {
                           end_time: preset.end_time,
                           target_categories: preset.target_categories,
                           target_programs: mapCategoriesToProgramIds(preset.target_categories, programs),
+                          notify_senior: targetsSenior ? true : prev.notify_senior,
+                          notify_pwd: targetsPwd ? true : prev.notify_pwd,
                           target_barangays: isBarangayStaff && user?.barangay_id
                             ? [Number(user.barangay_id)]
                             : (prev.target_barangays.length > 0 ? prev.target_barangays : barangays.map((b) => b.id)),
