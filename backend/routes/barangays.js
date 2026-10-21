@@ -1,8 +1,9 @@
 const express = require('express');
-const { Sequelize } = require('sequelize');
+const { Sequelize, Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { Barangay, Beneficiary } = require('../db');
+const { isSeniorRole, isPwdRole, isMswdoRole } = require('../utils/roles');
 
 const router = express.Router();
 
@@ -27,11 +28,29 @@ router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) 
       order: [['barangay_name', 'ASC']],
     });
 
-    // Get beneficiary counts per barangay (Only Approved Beneficiaries)
+    const beneficiaryWhere = {
+      status: 'Approved',
+    };
+
+    // Sector-level scoping: Senior Admin/Staff see only Seniors, PWD Admin/Staff see only PWDs, MSWDO sees Municipal roster
+    if (isSeniorRole(req.user.role)) {
+      beneficiaryWhere.category = { [Op.like]: '%Senior%' };
+    } else if (isPwdRole(req.user.role)) {
+      beneficiaryWhere[Op.or] = [
+        { category: { [Op.like]: '%PWD%' } },
+        { category: { [Op.like]: '%Disabilit%' } },
+      ];
+    } else if (isMswdoRole(req.user.role)) {
+      beneficiaryWhere[Op.or] = [
+        { category: { [Op.like]: '%Senior%' } },
+        { category: { [Op.like]: '%PWD%' } },
+        { category: { [Op.like]: '%Disabilit%' } },
+      ];
+    }
+
+    // Get beneficiary counts per barangay (Only Approved Beneficiaries within role scope)
     const counts = await Beneficiary.findAll({
-      where: {
-        status: 'Approved',
-      },
+      where: beneficiaryWhere,
       attributes: [
         'barangay_id',
         'category',
