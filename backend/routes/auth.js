@@ -505,11 +505,14 @@ router.post('/login', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Username/Email and password are required' });
     }
 
+    const aliasMap = { mswdo: 'mswdo_admin', mswdostaff: 'mswdo_staff', senioradmin: 'senior_admin', osca: 'senior_admin', pwdadmin: 'pwd_admin', pwdo: 'pwd_admin' };
+    const resolvedUsername = aliasMap[loginIdentifier.toLowerCase()] || loginIdentifier;
     const user = await User.findOne({
       where: {
         [Op.or]: [
           { email: loginIdentifier },
           { username: loginIdentifier },
+          { username: resolvedUsername },
         ],
       },
     });

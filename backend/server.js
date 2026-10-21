@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const bodyParser = require('body-parser');
 
 const { connectDatabase, User } = require('./db');
+const { Op } = require('sequelize');
 const { processQueuedSms, isConfigured: isSmsConfigured } = require('./utils/smsDispatcher');
 const { autoCompleteExpiredAnnouncements } = require('./utils/announcementScheduler');
 const authRoutes = require('./routes/auth');
@@ -216,23 +217,101 @@ app.get('/api/health', (req, res) => {
 
 app.use(errorHandler);
 
-const createDefaultAdmin = async () => {
-  const adminEmail = 'admin@ebms.local';
-  const [adminUser] = await User.findOrCreate({
-    where: { email: adminEmail },
-    defaults: {
+const createDefaultAccounts = async () => {
+  const defaultAccounts = [
+    {
       first_name: 'System',
       last_name: 'Administrator',
       username: 'admin',
-      email: adminEmail,
+      email: 'admin@ebms.local',
       password: 'Admin@123',
       role: 'admin',
       status: 'active',
     },
-  });
-  if (adminUser && !adminUser.username) {
-    await adminUser.update({ username: 'admin' });
+    {
+      first_name: 'MSWDO',
+      last_name: 'Administrator',
+      username: 'mswdo_admin',
+      email: 'mswdo@ebms.local',
+      password: 'Admin@123',
+      role: 'mswdo_admin',
+      status: 'active',
+    },
+    {
+      first_name: 'MSWDO',
+      last_name: 'Staff',
+      username: 'mswdo_staff',
+      email: 'mswdostaff@ebms.local',
+      password: 'Admin@123',
+      role: 'mswdo_staff',
+      status: 'active',
+    },
+    {
+      first_name: 'Senior Citizen',
+      last_name: 'Admin',
+      username: 'senior_admin',
+      email: 'senioradmin@ebms.local',
+      password: 'Admin@123',
+      role: 'senior_citizen_admin',
+      status: 'active',
+    },
+    {
+      first_name: 'PWD',
+      last_name: 'Admin',
+      username: 'pwd_admin',
+      email: 'pwdadmin@ebms.local',
+      password: 'Admin@123',
+      role: 'pwd_admin',
+      status: 'active',
+    },
+  ];
+
+  for (const acc of defaultAccounts) {
+    try {
+      const existing = await User.findOne({
+        where: {
+          [Op.or]: [
+            { email: acc.email },
+            { username: acc.username },
+          ],
+        },
+      });
+
+      if (!existing) {
+        await User.create(acc);
+        console.log(`[Default Accounts] Created ${acc.role} (${acc.username})`);
+      } else {
+        let needsUpdate = false;
+        if (existing.role !== acc.role) {
+          existing.role = acc.role;
+          needsUpdate = true;
+        }
+        if (existing.status !== 'active') {
+          existing.status = 'active';
+          needsUpdate = true;
+        }
+        if (!existing.username) {
+          existing.username = acc.username;
+          needsUpdate = true;
+        }
+        const isMatch = await existing.comparePassword('Admin@123');
+        if (!isMatch) {
+          existing.password = 'Admin@123';
+          needsUpdate = true;
+        }
+        if (needsUpdate) {
+          await existing.save();
+          console.log(`[Default Accounts] Synchronized credentials for ${acc.role} (${existing.username})`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Default Accounts] Could not seed/sync ${acc.username}:`, err.message);
+    }
   }
+};
+
+const createDefaultAdmin = async () => {
+  await createDefaultAccounts();
 };
 
 const { checkAndProcessExpiredDistributions } = require('./utils/distributionScheduler');
