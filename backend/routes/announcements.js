@@ -1022,13 +1022,14 @@ router.get('/', async (req, res, next) => {
     const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'] } }, attributes: ['id'] });
     const mswdoUserIds = mswdoUsers.map(u => u.id);
 
-    // Filter MSWDO view at DB level: MSWDO strictly sees announcements created by MSWDO or assigned to staff
+    // Filter MSWDO view at DB level: MSWDO strictly sees announcements created by MSWDO, assigned to staff, or where MSWDO was notified
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push({
         [Op.or]: [
           { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
-          { assigned_staff_id: req.user.id }
+          { assigned_staff_id: req.user.id },
+          { notify_mswdo: true }
         ]
       });
     } else if (req.user.role === 'admin') {
@@ -1714,12 +1715,15 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Announcement not found' });
     }
 
-    // Security check: MSWDO Admin can strictly access attendance stats ONLY for announcements they created
+    // Security check: MSWDO Admin can access attendance stats for announcements created by MSWDO or where notify_mswdo is true
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
-      if (announcement.created_by_user_id !== req.user.id) {
+      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
+      const isNotified = Boolean(announcement.notify_mswdo);
+      const isAssigned = announcement.assigned_staff_id === req.user.id;
+      if (!isAuthor && !isNotified && !isAssigned) {
         return res.status(403).json({
           success: false,
-          message: 'Access denied: MSWDO Admin can only access attendance stats for announcements they created.',
+          message: 'Access denied: MSWDO Admin can only access attendance stats for announcements created by MSWDO or where MSWDO was notified.',
         });
       }
     }
@@ -1939,12 +1943,15 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
       return res.status(404).json({ success: false, message: 'Announcement not found' });
     }
 
-    // Security check: MSWDO Admin can strictly export attendance ONLY for announcements they created
+    // Security check: MSWDO Admin can export attendance for announcements created by MSWDO or where notify_mswdo is true
     if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
-      if (announcement.created_by_user_id !== req.user.id) {
+      const isAuthor = announcement.created_by_user_id === req.user.id || announcement.CreatedBy?.id === req.user.id;
+      const isNotified = Boolean(announcement.notify_mswdo);
+      const isAssigned = announcement.assigned_staff_id === req.user.id;
+      if (!isAuthor && !isNotified && !isAssigned) {
         return res.status(403).json({
           success: false,
-          message: 'Access denied: MSWDO Admin can only export attendance for announcements they created.',
+          message: 'Access denied: MSWDO Admin can only export attendance for announcements created by MSWDO or where MSWDO was notified.',
         });
       }
     }

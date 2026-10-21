@@ -343,8 +343,13 @@ export default function AnnouncementManagementPage() {
 
       const res = await announcementApi.list(params);
       let list = res.data?.data || [];
-      if (['mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role)) {
-        list = list.filter((a) => a.created_by_user_id === user.id || ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(a.CreatedBy?.role));
+      if (['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(user?.role)) {
+        list = list.filter((a) =>
+          a.created_by_user_id === user.id ||
+          ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(a.CreatedBy?.role) ||
+          Boolean(a.notify_mswdo) ||
+          a.assigned_staff_id === user.id
+        );
       }
       setAnnouncements(list);
     } catch (err) {
@@ -1132,6 +1137,16 @@ export default function AnnouncementManagementPage() {
                             <span>
                               Created by: <strong className="text-slate-600">{ann.CreatedBy?.first_name || 'Admin'} {ann.CreatedBy?.last_name || ''}</strong>
                             </span>
+                            {ann.CreatedBy?.role === 'admin' && (
+                              <span className="bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                DSWD
+                              </span>
+                            )}
+                            {['mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(ann.CreatedBy?.role) && (
+                              <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                MSWDO
+                              </span>
+                            )}
                             {(ann.CreatedBy?.role === 'staff' || ann.CreatedBy?.role === 'barangay') && (
                               <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded text-[10px] font-bold">
                                 Barangay Staff
@@ -1330,7 +1345,11 @@ export default function AnnouncementManagementPage() {
                           >
                             <Download className="w-4 h-4" />
                           </button>
-                          {ann.status === 'published' && ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role) && (
+                          {ann.status === 'published' && (
+                            ann.created_by_user_id === user?.id ||
+                            (user?.role === 'admin' && !['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(ann.CreatedBy?.role)) ||
+                            (['mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role) && ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(ann.CreatedBy?.role))
+                          ) && (
                             <button
                               onClick={() => handleResend(ann.id)}
                               title="Resend notifications"
@@ -1339,7 +1358,9 @@ export default function AnnouncementManagementPage() {
                               <Send className="w-4 h-4" />
                             </button>
                           )}
-                          {(['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role) ||
+                          {(ann.created_by_user_id === user?.id ||
+                            (user?.role === 'admin' && !['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(ann.CreatedBy?.role)) ||
+                            (['mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role) && ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(ann.CreatedBy?.role)) ||
                             (isBarangayStaff &&
                               Number(ann.created_by_user_id) === Number(user?.id) &&
                               ['pending_approval', 'rejected', 'draft'].includes(ann.status))) && (
@@ -1351,13 +1372,17 @@ export default function AnnouncementManagementPage() {
                               <Edit3 className="w-4 h-4" />
                             </button>
                           )}
-                          <button
-                            onClick={() => handleArchive(ann.id)}
-                            title="Archive announcement"
-                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition"
-                          >
-                            <Archive className="w-4 h-4" />
-                          </button>
+                          {(ann.created_by_user_id === user?.id ||
+                            (user?.role === 'admin' && !['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(ann.CreatedBy?.role)) ||
+                            (['mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role) && ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'].includes(ann.CreatedBy?.role))) && (
+                            <button
+                              onClick={() => handleArchive(ann.id)}
+                              title="Archive announcement"
+                              className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition"
+                            >
+                              <Archive className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
