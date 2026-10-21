@@ -221,6 +221,16 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
       ],
       order: [['distribution_date', 'DESC']],
     });
+
+    // Auto-complete any ongoing events where all beneficiaries have already claimed
+    for (const evt of events) {
+      if (evt.status === 'ongoing' && evt.total_beneficiaries > 0 && evt.total_released >= evt.total_beneficiaries) {
+        evt.status = 'completed';
+        evt.completed_at = evt.completed_at || new Date();
+        await evt.save();
+      }
+    }
+
     res.json({ success: true, data: events });
   } catch (error) {
     next(error);
@@ -247,6 +257,13 @@ router.get('/events/:id', authorize('admin', 'staff', 'barangay', 'beneficiary')
     });
     if (!event) {
       return res.status(404).json({ success: false, message: 'Distribution event not found' });
+    }
+
+    // Auto-complete ongoing event if all beneficiaries have claimed
+    if (event.status === 'ongoing' && event.total_beneficiaries > 0 && event.total_released >= event.total_beneficiaries) {
+      event.status = 'completed';
+      event.completed_at = event.completed_at || new Date();
+      await event.save();
     }
 
     if ((isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') && event.agency !== 'MSWDO') {
@@ -1775,10 +1792,23 @@ router.post('/events/:id/transactions/:txnId/release', authorize('admin', 'staff
     }) || 0;
     const releasedAmount = parseFloat(regularSum) + parseFloat(retroSum);
 
-    await event.update({
+    // Check if all beneficiaries have claimed
+    const pendingRemaining = await DistributionTransaction.count({
+      where: { distribution_event_id: event.id, status: 'pending' },
+      transaction: dbTransaction,
+    });
+    const isAllClaimed = (pendingRemaining === 0 && releasedCount > 0) || (event.total_beneficiaries > 0 && releasedCount >= event.total_beneficiaries);
+
+    const updateEventData = {
       total_released: releasedCount,
       total_amount_released: releasedAmount,
-    }, { transaction: dbTransaction });
+    };
+    if (isAllClaimed) {
+      updateEventData.status = 'completed';
+      updateEventData.completed_at = new Date();
+    }
+
+    await event.update(updateEventData, { transaction: dbTransaction });
 
     console.log('[RELEASE BENEFIT] Event counters updated:', {
       total_released: releasedCount,
@@ -2142,11 +2172,27 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
       where.barangay_id = parseInt(req.query.barangay_id, 10);
     }
 
-    // Agency-level scoping: MSWDO Admin strictly sees ONLY MSWDO events and stats; DSWD sees DSWD
-    if (isMswdoRole(req.user.role)) {
+    // Agency-level scoping: MSWDO Admin/Staff strictly sees ONLY MSWDO events and stats; DSWD sees DSWD
+    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') {
       where.agency = 'MSWDO';
     } else if (req.user.role === 'admin') {
       where.agency = req.query.agency || 'DSWD';
+    }
+
+    // Auto-complete any ongoing events where all beneficiaries have already claimed
+    const ongoingEventsToComplete = await DistributionEvent.findAll({
+      where: {
+        ...where,
+        status: 'ongoing',
+        total_beneficiaries: { [Op.gt]: 0 },
+      },
+    });
+    for (const evt of ongoingEventsToComplete) {
+      if (evt.total_released >= evt.total_beneficiaries) {
+        evt.status = 'completed';
+        evt.completed_at = evt.completed_at || new Date();
+        await evt.save();
+      }
     }
 
     // Total events by status

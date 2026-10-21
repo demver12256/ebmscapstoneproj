@@ -1068,7 +1068,11 @@ export default function DistributionPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <StatusBadge status={event.status} />
+                          {(() => {
+                            const isAllClaimed = event.total_beneficiaries > 0 && (event.total_released >= event.total_beneficiaries);
+                            const effectiveStatus = (event.status === 'completed' || isAllClaimed) ? 'completed' : event.status;
+                            return <StatusBadge status={effectiveStatus} />;
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -1125,28 +1129,46 @@ export default function DistributionPage() {
                               </button>
                             )}
 
-                            {/* Ongoing Status Actions - END SESSION */}
-                            {event.status === 'ongoing' && (['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff' || user?.role === 'mswdo_staff' || user?.role === 'barangay') && (
-                              <button
-                                onClick={() => handleEndSession(event.id)}
-                                className="flex items-center gap-1 px-3 py-1.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-                                title="End Distribution Session"
-                              >
-                                <Square className="w-4 h-4" />
-                                End Session
-                              </button>
-                            )}
+                            {/* Ongoing Status Actions - END SESSION (Mawawala kapag completed na o naka-claim na lahat ng beneficiary) */}
+                            {(() => {
+                              const isAllClaimed = event.total_beneficiaries > 0 && (event.total_released >= event.total_beneficiaries);
+                              const isStillOngoing = event.status === 'ongoing' && !isAllClaimed;
 
-                            {/* Completed Status Actions - EXPORT EXCEL REPORT ONLY WHEN SESSION HAS ENDED */}
-                            {event.status === 'completed' && (
-                               <button
-                                 onClick={() => handleExportExcel(event)}
-                                 className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                 title="Export Excel Report (Claimed & Unclaimed Lists)"
-                               >
-                                 <Download className="w-4 h-4" />
-                               </button>
-                             )}
+                              if (isStillOngoing && (['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff' || user?.role === 'mswdo_staff' || user?.role === 'barangay')) {
+                                return (
+                                  <button
+                                    onClick={() => handleEndSession(event.id)}
+                                    className="flex items-center gap-1 px-3 py-1.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                                    title="End Distribution Session"
+                                  >
+                                    <Square className="w-4 h-4" />
+                                    End Session
+                                  </button>
+                                );
+                              }
+
+                              return null;
+                            })()}
+
+                            {/* Completed Status Actions - EXPORT EXCEL REPORT (Pag completed na o naka-claim na lahat) */}
+                            {(() => {
+                              const isAllClaimed = event.total_beneficiaries > 0 && (event.total_released >= event.total_beneficiaries);
+                              const isFinished = event.status === 'completed' || isAllClaimed;
+
+                              if (isFinished) {
+                                return (
+                                  <button
+                                    onClick={() => handleExportExcel(event)}
+                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                    title="Export Excel Report (Claimed & Unclaimed Lists)"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </button>
+                                );
+                              }
+
+                              return null;
+                            })()}
                           </div>
                         </td>
                       </tr>
