@@ -351,9 +351,61 @@ export default function BeneficiaryListPage() {
     });
   };
 
+  const getRfidPermission = (ben) => {
+    if (!ben || !user) return { canRegister: false, sectorName: '', message: '' };
+    const cat = String(ben.category || '').toLowerCase();
+    const isBen4Ps = cat.includes('4ps') || cat.includes('pantawid');
+    const isBenSenior = cat.includes('senior');
+    const isBenPwd = cat.includes('pwd') || cat.includes('disabilit');
+
+    if (isBen4Ps) {
+      const allowed = isDswdAdmin || user.role === 'staff' || user.role === 'barangay';
+      return {
+        canRegister: allowed,
+        sectorName: '4Ps / DSWD',
+        message: allowed
+          ? ''
+          : 'Bawal mag-rehistro ng RFID: Tanging ang 4Ps / DSWD Administrator o Barangay Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa 4Ps beneficiaries.'
+      };
+    }
+
+    if (isBenSenior) {
+      const allowed = isSeniorAdmin; // senior_citizen_admin or senior_citizen_staff
+      return {
+        canRegister: allowed,
+        sectorName: 'OSCA / Senior Citizen',
+        message: allowed
+          ? ''
+          : 'Bawal mag-rehistro ng RFID: Tanging ang OSCA / Senior Citizen Administrator lamang ang may pahintulot na mag-rehistro ng RFID card para sa Senior Citizens.'
+      };
+    }
+
+    if (isBenPwd) {
+      const allowed = isPwdAdmin; // pwd_admin or pwd_staff
+      return {
+        canRegister: allowed,
+        sectorName: 'PDAO / PWD',
+        message: allowed
+          ? ''
+          : 'Bawal mag-rehistro ng RFID: Tanging ang PDAO / PWD Administrator lamang ang may pahintulot na mag-rehistro ng RFID card para sa Persons with Disabilities (PWD).'
+      };
+    }
+
+    return {
+      canRegister: isDswdAdmin,
+      sectorName: 'Administrator',
+      message: 'Tanging ang Administrator lamang ang may pahintulot na mag-rehistro ng RFID card para sa benepisyaryong ito.'
+    };
+  };
+
   const handleSaveRfidDirect = async (e) => {
     if (e) e.preventDefault();
-    if (!isAdminOrSector) return;
+    if (!viewingBeneficiary) return;
+    const perm = getRfidPermission(viewingBeneficiary);
+    if (!perm.canRegister) {
+      setRfidMsg({ type: 'error', text: perm.message });
+      return;
+    }
     setRfidSaving(true);
     setRfidMsg(null);
     try {
@@ -365,7 +417,7 @@ export default function BeneficiaryListPage() {
       setViewingBeneficiary(prev => ({ ...prev, RFID_number: updatedValue }));
       setRfidMsg({ type: 'success', text: '✓ RFID card registered successfully!' });
     } catch (err) {
-      setRfidMsg({ type: 'error', text: err.message || 'Failed to save RFID card' });
+      setRfidMsg({ type: 'error', text: err.response?.data?.message || err.message || 'Failed to save RFID card' });
     } finally {
       setRfidSaving(false);
     }
@@ -403,10 +455,16 @@ export default function BeneficiaryListPage() {
     setEditSuccess(null);
 
     try {
+      const perm = getRfidPermission(editingBeneficiary);
       const payload = {
         ...editFormData,
         inactivation_reason: editFormData.status === 'inactive' ? editFormData.inactivation_reason.trim() : null
       };
+
+      // If user does not have permission to register RFID for this sector, do not update RFID
+      if (!perm.canRegister) {
+        delete payload.RFID_number;
+      }
 
       await beneficiaryApi.update(editingBeneficiary.id, payload);
       
@@ -1427,43 +1485,52 @@ export default function BeneficiaryListPage() {
                       )}
                     </div>
 
-                    {/* If Admin: show RFID registration form */}
-                    {isAdminOrSector ? (
-                      <form onSubmit={handleSaveRfidDirect} className="pt-2 border-t border-slate-100 space-y-3">
-                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                          Register / Update RFID Card Number
-                        </label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={rfidInput}
-                            onChange={(e) => setRfidInput(e.target.value)}
-                            placeholder="Scan or enter RFID card number (e.g. RFID-0001)..."
-                            className="flex-1 px-3.5 py-2 border border-slate-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50/50"
-                          />
-                          <button
-                            type="submit"
-                            disabled={rfidSaving}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0"
-                          >
-                            {rfidSaving ? 'Saving...' : 'Save RFID'}
-                          </button>
-                        </div>
-                        {rfidMsg && (
-                          <div className={`p-2.5 rounded-xl text-xs font-semibold ${
-                            rfidMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
-                          }`}>
-                            {rfidMsg.text}
+                    {/* RFID registration form strictly for the matching sector admin */}
+                    {(() => {
+                      const rfidPerm = getRfidPermission(viewingBeneficiary);
+                      if (rfidPerm.canRegister) {
+                        return (
+                          <form onSubmit={handleSaveRfidDirect} className="pt-2 border-t border-slate-100 space-y-3">
+                            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                              <span>Register / Update RFID Card ({rfidPerm.sectorName})</span>
+                              <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">Authorized</span>
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={rfidInput}
+                                onChange={(e) => setRfidInput(e.target.value)}
+                                placeholder="Scan or enter RFID card number (e.g. RFID-0001)..."
+                                className="flex-1 px-3.5 py-2 border border-slate-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50/50"
+                              />
+                              <button
+                                type="submit"
+                                disabled={rfidSaving}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0"
+                              >
+                                {rfidSaving ? 'Saving...' : 'Save RFID'}
+                              </button>
+                            </div>
+                            {rfidMsg && (
+                              <div className={`p-2.5 rounded-xl text-xs font-semibold ${
+                                rfidMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                              }`}>
+                                {rfidMsg.text}
+                              </div>
+                            )}
+                          </form>
+                        );
+                      }
+                      return (
+                        <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
+                          <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-semibold block">{rfidPerm.message}</span>
+                            <span className="text-[11px] text-amber-700 mt-0.5 block">Maaari pa ring gamitin ang na-rehistrong RFID card sa DSWD/MSWDO distributions, attendance, at assistance claims.</span>
                           </div>
-                        )}
-                      </form>
-                    ) : (
-                      /* If Barangay Staff: Show read-only notice */
-                      <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-800 flex items-center gap-2">
-                        <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>Ang MSWD Administrator lamang ang may pahintulot na mag-rehistro o magbago ng RFID card numbers.</span>
-                      </div>
-                    )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Digital QR Pass (Temporary ID Card) Card */}
@@ -2500,19 +2567,39 @@ export default function BeneficiaryListPage() {
               </div>
 
               <form onSubmit={handleSaveEdit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">RFID Number</label>
-                  <input
-                    type="text"
-                    value={editFormData.RFID_number || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, RFID_number: e.target.value })}
-                    placeholder="Enter RFID number (e.g., RFID-0001)"
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
-                  />
-                  {editingBeneficiary.RFID_number && !editFormData.RFID_number && (
-                    <p className="text-xs text-slate-500 mt-1">Current: {editingBeneficiary.RFID_number}</p>
-                  )}
-                </div>
+                {(() => {
+                  const editRfidPerm = getRfidPermission(editingBeneficiary);
+                  return (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>RFID Number</span>
+                        {!editRfidPerm.canRegister && (
+                          <span className="text-[11px] text-amber-600 font-normal flex items-center gap-1">
+                            <Lock className="w-3 h-3" /> Naka-lock ({editRfidPerm.sectorName})
+                          </span>
+                        )}
+                      </label>
+                      <input
+                        type="text"
+                        value={editFormData.RFID_number || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, RFID_number: e.target.value })}
+                        disabled={!editRfidPerm.canRegister}
+                        placeholder={editRfidPerm.canRegister ? "Enter RFID number (e.g., RFID-0001)" : "RFID modification restricted to sector admin"}
+                        className={`w-full px-4 py-2 border rounded-lg text-sm font-mono ${
+                          !editRfidPerm.canRegister
+                            ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200'
+                            : 'border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+                        }`}
+                      />
+                      {editingBeneficiary.RFID_number && !editFormData.RFID_number && editRfidPerm.canRegister && (
+                        <p className="text-xs text-slate-500 mt-1">Current: {editingBeneficiary.RFID_number}</p>
+                      )}
+                      {!editRfidPerm.canRegister && (
+                        <p className="text-[11px] text-slate-500 mt-1">{editRfidPerm.message}</p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Status</label>

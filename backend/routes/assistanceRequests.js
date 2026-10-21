@@ -498,10 +498,10 @@ router.patch('/:id/status', async (req, res, next) => {
 router.post('/claim-rfid', async (req, res, next) => {
   try {
     const currentUser = req.user;
-    if (!['admin', 'mswdo_admin'].includes(currentUser.role)) {
+    if (!['admin', 'mswdo_admin', 'mswdo_staff'].includes(currentUser.role)) {
       return res.status(403).json({
         success: false,
-        message: 'Access Denied: Tanging DSWD o MSWDO Admin lamang ang may karapatang mag-release ng tulong gamit ang RFID scanner.',
+        message: 'Access Denied: Tanging DSWD o MSWDO Admin / Staff lamang ang may karapatang mag-release ng tulong gamit ang RFID scanner.',
       });
     }
 
@@ -545,7 +545,7 @@ router.post('/claim-rfid', async (req, res, next) => {
     }
 
     // Agency scoping
-    if (currentUser.role === 'mswdo_admin') {
+    if (['mswdo_admin', 'mswdo_staff'].includes(currentUser.role)) {
       queryWhere.agency = 'MSWDO';
     } else if (currentUser.role === 'admin') {
       queryWhere.agency = 'DSWD';
@@ -575,7 +575,7 @@ router.post('/claim-rfid', async (req, res, next) => {
 
       return res.status(404).json({
         success: false,
-        message: `Walang nakitang na-aprubahang assistance request para kay ${beneficiary.first_name} ${beneficiary.last_name} na handa nang i-claim sa tanggapan ng ${currentUser.role === 'mswdo_admin' ? 'MSWDO' : 'DSWD'}.`,
+        message: `Walang nakitang na-aprubahang assistance request para kay ${beneficiary.first_name} ${beneficiary.last_name} na handa nang i-claim sa tanggapan ng ${['mswdo_admin', 'mswdo_staff'].includes(currentUser.role) ? 'MSWDO' : 'DSWD'}.`,
       });
     }
 

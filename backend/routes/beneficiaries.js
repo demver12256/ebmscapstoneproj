@@ -1723,9 +1723,71 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
       }
     }
 
-    // Admin, MSWDO, and Barangay Staff can register or update RFID numbers
-    if (otherUpdates.RFID_number !== undefined && !['admin', 'mswdo_admin', 'mswdo_staff', 'staff', 'barangay'].includes(req.user.role)) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: Insufficient privileges to register or update RFID numbers' });
+    // Sector-specific RFID Registration Enforcement:
+    // 4Ps Admin/Staff -> 4Ps only; Senior Admin/Staff -> Senior only; PWD Admin/Staff -> PWD only
+    if (otherUpdates.RFID_number !== undefined) {
+      const benCat = String(beneficiary.category || '').toLowerCase();
+      const isBen4Ps = benCat.includes('4ps') || benCat.includes('pantawid');
+      const isBenSenior = benCat.includes('senior');
+      const isBenPwd = benCat.includes('pwd') || benCat.includes('disabilit');
+
+      // 1. 4Ps beneficiaries: Only 4Ps Admin (DSWD Admin) and Barangay Staff can register RFID
+      if (isBen4Ps) {
+        const canRegister4Ps = ['admin', 'staff', 'barangay'].includes(req.user.role);
+        if (!canRegister4Ps) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access Denied: Tanging 4Ps / DSWD Admin at Barangay Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa 4Ps beneficiaries. Bawal mag-rehistro ang Senior Admin o PWD Admin.'
+          });
+        }
+      }
+      // 2. Senior Citizen beneficiaries: Only Senior Citizen Admin / Staff can register RFID
+      else if (isBenSenior) {
+        if (!isSeniorRole(req.user.role)) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access Denied: Tanging Senior Citizen Admin (OSCA) at Senior Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa Senior Citizen beneficiaries. Bawal mag-rehistro ang 4Ps/DSWD at PWD Admin.'
+          });
+        }
+      }
+      // 3. PWD beneficiaries: Only PWD Admin / Staff can register RFID
+      else if (isBenPwd) {
+        if (!isPwdRole(req.user.role)) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access Denied: Tanging PWD Admin (PDAO) at PWD Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa PWD beneficiaries. Bawal mag-rehistro ang 4Ps/DSWD at Senior Admin.'
+          });
+        }
+      }
+      // Fallback for other categories: DSWD Admin only
+      else if (!['admin', 'mswdo_admin'].includes(req.user.role)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access Denied: Insufficient privileges to register or update RFID numbers for this beneficiary.'
+        });
+      }
+
+      // Check for RFID uniqueness across the entire system
+      if (otherUpdates.RFID_number) {
+        const cleanRfid = String(otherUpdates.RFID_number).trim();
+        const existingWithRfid = await Beneficiary.findOne({
+          where: {
+            RFID_number: cleanRfid,
+            id: { [Op.ne]: beneficiary.id },
+          },
+        });
+        if (existingWithRfid) {
+          return res.status(400).json({
+            success: false,
+            message: `Ang RFID card number na "${cleanRfid}" ay nakatalaga na kay ${existingWithRfid.first_name} ${existingWithRfid.last_name} (${existingWithRfid.beneficiary_id_code || 'ID #' + existingWithRfid.id}). Mangyaring gumamit ng ibang RFID card.`,
+          });
+        }
+        otherUpdates.RFID_number = cleanRfid;
+        otherUpdates.rfid_assigned_at = new Date();
+      } else {
+        otherUpdates.RFID_number = null;
+        otherUpdates.rfid_assigned_at = null;
+      }
     }
 
     // If payout account details changed, reset verification status
