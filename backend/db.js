@@ -206,6 +206,29 @@ const connectDatabase = async () => {
 
   // Ensure recent columns exist on announcements
   await ensureColumn('announcements', 'target_sitios', 'JSON NULL');
+  await ensureColumn('announcements', 'assigned_staff_id', 'INT NULL');
+
+  // Ensure recent columns exist on distribution_events
+  await ensureColumn('distribution_events', 'target_sitio', 'VARCHAR(255) NULL');
+  await ensureColumn('distribution_events', 'target_category', 'VARCHAR(100) NULL');
+  await ensureColumn('distribution_events', 'benefit_type', 'VARCHAR(100) NULL');
+  await ensureColumn('distribution_events', 'package_items', 'TEXT NULL');
+
+  try {
+    // Allow program_id to be NULL for direct / MSWDO distributions
+    await sequelize.query('ALTER TABLE distribution_events MODIFY COLUMN program_id INT NULL');
+  } catch (err) {
+    console.warn('[DB Migration] distribution_events.program_id NULL skipped:', err.message);
+  }
+
+  try {
+    // Ensure users.role ENUM includes mswdo_staff and all sector admin roles
+    await sequelize.query(
+      "ALTER TABLE users MODIFY COLUMN role ENUM('admin','mswdo_admin','senior_citizen_admin','pwd_admin','staff','mswdo_staff','barangay','beneficiary') NOT NULL DEFAULT 'beneficiary'"
+    );
+  } catch (err) {
+    console.warn('[DB Migration] users.role ENUM migration skipped:', err.message);
+  }
 
   // Ensure recent columns exist on beneficiaries
   await ensureColumn('beneficiaries', 'qr_token', 'VARCHAR(64) NULL');
