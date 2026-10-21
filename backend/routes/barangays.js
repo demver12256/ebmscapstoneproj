@@ -32,17 +32,11 @@ router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) 
       status: 'Approved',
     };
 
-    // Sector-level scoping: Senior Admin/Staff see only Seniors, PWD Admin/Staff see only PWDs, MSWDO sees Municipal roster
+    // Sector-level scoping: Senior Admin/Staff see only Seniors, PWD Admin/Staff see only PWDs; MSWDO and DSWD see full demographics including 4Ps
     if (isSeniorRole(req.user.role)) {
       beneficiaryWhere.category = { [Op.like]: '%Senior%' };
     } else if (isPwdRole(req.user.role)) {
       beneficiaryWhere[Op.or] = [
-        { category: { [Op.like]: '%PWD%' } },
-        { category: { [Op.like]: '%Disabilit%' } },
-      ];
-    } else if (isMswdoRole(req.user.role)) {
-      beneficiaryWhere[Op.or] = [
-        { category: { [Op.like]: '%Senior%' } },
         { category: { [Op.like]: '%PWD%' } },
         { category: { [Op.like]: '%Disabilit%' } },
       ];

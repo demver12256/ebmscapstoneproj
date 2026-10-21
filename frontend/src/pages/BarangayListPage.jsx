@@ -79,9 +79,9 @@ export default function BarangayListPage() {
     }
     if (isAnyMswdo) {
       return {
-        badge: 'MSWDO MUNICIPAL JURISDICTION',
+        badge: 'MSWDO JURISDICTION & COVERAGE',
         badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-        subtitle: 'Overview of officially approved municipal social welfare beneficiaries (Senior Citizens & PWDs) across all 36 barangays.',
+        subtitle: 'Overview of officially approved beneficiaries across all 36 barangays in Bongabong (4Ps, Senior Citizens, PWDs, and IP classifications).',
       };
     }
     return {
@@ -114,10 +114,10 @@ export default function BarangayListPage() {
     }
 
     if (isAnyMswdo) {
-      const municipalTotal = (totals.senior || 0) + (totals.pwd || 0);
       return [
         { label: 'Total Barangays', value: barangays.length, icon: MapPin, color: 'text-green-600', iconColor: 'text-green-500' },
-        { label: 'Municipal Beneficiaries', value: municipalTotal, icon: Users, color: 'text-blue-600', iconColor: 'text-blue-500' },
+        { label: 'Approved Beneficiaries', value: totals.beneficiaries, icon: Users, color: 'text-blue-600', iconColor: 'text-blue-500' },
+        { label: '4Ps Beneficiaries', value: totals.fourPs, icon: Heart, color: 'text-orange-600', iconColor: 'text-orange-500' },
         { label: 'Senior Citizens', value: totals.senior, icon: UserCheck, color: 'text-indigo-600', iconColor: 'text-indigo-500' },
         { label: 'PWD Beneficiaries', value: totals.pwd, icon: Accessibility, color: 'text-purple-600', iconColor: 'text-purple-500' },
         { label: 'IP / Non-IP', value: `${totals.ip} / ${totals.nonIp}`, icon: Globe, color: 'text-emerald-600', iconColor: 'text-emerald-500' },
@@ -233,7 +233,7 @@ export default function BarangayListPage() {
       ];
     }
 
-    // ── MSWDO Admin / Staff Columns (Municipal only, 4Ps excluded) ──
+    // ── MSWDO Admin / Staff Columns (Includes 4Ps, Senior, PWD) ──
     if (isAnyMswdo) {
       return [
         {
@@ -247,17 +247,24 @@ export default function BarangayListPage() {
           ),
         },
         {
-          header: 'Municipal Beneficiaries',
+          header: 'Total Beneficiaries',
           accessor: 'total',
-          cell: (row) => {
-            const count = (row.senior || 0) + (row.pwd || 0);
-            return (
-              <span className="inline-flex items-center gap-1.5 font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full text-sm">
-                <Users className="w-3.5 h-3.5 text-slate-600" />
-                {count}
-              </span>
-            );
-          },
+          cell: (row) => (
+            <span className="inline-flex items-center gap-1.5 font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full text-sm">
+              <Users className="w-3.5 h-3.5 text-slate-600" />
+              {row.total || 0}
+            </span>
+          ),
+        },
+        {
+          header: '4Ps',
+          accessor: 'fourPs',
+          cell: (row) => (
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-orange-700 bg-orange-50 px-3 py-1 rounded-full">
+              <Heart className="w-3.5 h-3.5 text-orange-500" />
+              {row.fourPs || 0}
+            </span>
+          ),
         },
         {
           header: 'Senior',
@@ -380,11 +387,8 @@ export default function BarangayListPage() {
     if (isAnySenior || isAnyPwd) {
       return 'grid-cols-2 lg:grid-cols-4';
     }
-    if (isAnyMswdo) {
-      return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5';
-    }
     return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6';
-  }, [isAnySenior, isAnyPwd, isAnyMswdo]);
+  }, [isAnySenior, isAnyPwd]);
 
   return (
     <div className="space-y-6">
