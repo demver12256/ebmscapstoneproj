@@ -78,6 +78,7 @@ BenefitProgram.hasMany(DistributionEvent, { foreignKey: 'program_id', as: 'Distr
 DistributionEvent.belongsTo(Barangay, { foreignKey: 'barangay_id' });
 Barangay.hasMany(DistributionEvent, { foreignKey: 'barangay_id' });
 DistributionEvent.belongsTo(User, { foreignKey: 'assigned_staff_id', as: 'AssignedStaff' });
+DistributionEvent.belongsTo(User, { foreignKey: 'created_by', as: 'CreatedBy' });
 
 // ── DistributionTransaction ↔ DistributionEvent / Beneficiary / User (Staff) ──
 DistributionTransaction.belongsTo(DistributionEvent, { foreignKey: 'distribution_event_id', as: 'Event', onDelete: 'CASCADE' });

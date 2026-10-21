@@ -15,7 +15,7 @@ const {
   AuditLog,
   sequelize,
 } = require('../db');
-const { isMswdoRole, getOfficeBrand } = require('../utils/roles');
+const { isMswdoRole, isSeniorRole, isPwdRole, getOfficeBrand, getCategoryFilterForRole } = require('../utils/roles');
 const { calculateRetroForBeneficiary, calculateRetroPreview } = require('../utils/retroCalculator');
 const { isNonCashProgram, getNonCashDetails } = require('../utils/nonCashPrograms');
 const { processQueuedSms } = require('../utils/smsDispatcher');
@@ -204,23 +204,66 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
       where.barangay_id = parseInt(req.query.barangay_id);
     }
 
-    // Agency-level scoping: MSWDO sees ONLY MSWDO distribution events; DSWD Admin sees ONLY DSWD events
-    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') {
+    // Agency & Sector-level scoping
+    if (isSeniorRole(req.user.role)) {
+      where.agency = 'MSWDO';
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        [Op.or]: [
+          { target_category: { [Op.like]: '%Senior%' } },
+          { title: { [Op.like]: '%Senior%' } },
+          { title: { [Op.like]: '%OSCA%' } },
+        ]
+      });
+      where[Op.and].push({
+        [Op.not]: { target_category: { [Op.like]: '%PWD%' } }
+      });
+    } else if (isPwdRole(req.user.role)) {
+      where.agency = 'MSWDO';
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        [Op.or]: [
+          { target_category: { [Op.like]: '%PWD%' } },
+          { target_category: { [Op.like]: '%Disabil%' } },
+          { title: { [Op.like]: '%PWD%' } },
+          { title: { [Op.like]: '%PDAO%' } },
+          { title: { [Op.like]: '%Disabilit%' } },
+        ]
+      });
+      where[Op.and].push({
+        [Op.not]: { target_category: { [Op.like]: '%Senior%' } }
+      });
+    } else if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') {
       where.agency = 'MSWDO';
     } else if (req.user.role === 'admin' || req.user.role === 'staff' || req.user.role === 'barangay') {
       where.agency = 'DSWD';
     }
     // Staff & Barangay see events for their assigned barangay regardless of agency (both DSWD and MSWDO)
 
-    const events = await DistributionEvent.findAll({
+    let events = await DistributionEvent.findAll({
       where,
       include: [
         { model: BenefitProgram, as: 'Program', attributes: ['id', 'name', 'code', 'eligibility_category', 'benefit_type'] },
         { model: Barangay, attributes: ['id', 'barangay_name', 'barangay_code'] },
         { model: User, as: 'AssignedStaff', attributes: ['id', 'first_name', 'last_name', 'email'] },
+        { model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email', 'role'] },
       ],
       order: [['distribution_date', 'DESC']],
     });
+
+    if (isSeniorRole(req.user.role)) {
+      events = events.filter(e => {
+        const cat = (e.target_category || e.Program?.eligibility_category || e.Program?.name || e.title || '').toLowerCase();
+        const isSeniorCreator = ['senior_citizen_admin', 'senior_citizen_staff'].includes(e.CreatedBy?.role);
+        return (isSeniorCreator || cat.includes('senior') || cat.includes('osca')) && !cat.includes('pwd') && !cat.includes('disabil');
+      });
+    } else if (isPwdRole(req.user.role)) {
+      events = events.filter(e => {
+        const cat = (e.target_category || e.Program?.eligibility_category || e.Program?.name || e.title || '').toLowerCase();
+        const isPwdCreator = ['pwd_admin', 'pwd_staff'].includes(e.CreatedBy?.role);
+        return (isPwdCreator || cat.includes('pwd') || cat.includes('disabil') || cat.includes('pdao')) && !cat.includes('senior');
+      });
+    }
 
     // Auto-complete any ongoing events where all beneficiaries have already claimed
     for (const evt of events) {
@@ -310,6 +353,11 @@ router.get('/events/:id/eligible-beneficiaries', authorize('admin', 'staff', 'ba
     let barangayId = req.query.barangay_id;
     let target_category = req.query.target_category;
     let target_sitio = req.query.target_sitio || req.query.sitio;
+    if (isSeniorRole(req.user.role)) {
+      target_category = 'Senior Citizen';
+    } else if (isPwdRole(req.user.role)) {
+      target_category = 'PWD';
+    }
 
     if (req.params.id && req.params.id !== 'new') {
       const ev = await DistributionEvent.findByPk(req.params.id);
@@ -640,11 +688,17 @@ router.post('/events', authorize('admin'), async (req, res, next) => {
     console.log('[CREATE EVENT] Validation passed, creating event (isNonCash:', isNonCash, ')...');
 
     const agency = isMswdoRole(req.user.role) ? 'MSWDO' : 'DSWD';
+    let finalTargetCategory = req.body.target_category || (program ? program.eligibility_category : null);
+    if (isSeniorRole(req.user.role)) {
+      finalTargetCategory = 'Senior Citizens (Social Pension)';
+    } else if (isPwdRole(req.user.role)) {
+      finalTargetCategory = 'Persons with Disabilities (PWD)';
+    }
     const event = await DistributionEvent.create({
       ...req.body,
       program_id: program ? program.id : null,
       barangay_id: parsedBarangayId,
-      target_category: req.body.target_category || (program ? program.eligibility_category : null),
+      target_category: finalTargetCategory,
       target_sitio: (target_sitio && target_sitio !== 'all' && target_sitio !== 'All Sitios') ? target_sitio.trim() : null,
       agency,
       created_by: req.user.id,
@@ -2172,8 +2226,36 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
       where.barangay_id = parseInt(req.query.barangay_id, 10);
     }
 
-    // Agency-level scoping: MSWDO Admin/Staff strictly sees ONLY MSWDO events and stats; DSWD sees DSWD
-    if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') {
+    // Agency & Sector-level scoping
+    if (isSeniorRole(req.user.role)) {
+      where.agency = 'MSWDO';
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        [Op.or]: [
+          { target_category: { [Op.like]: '%Senior%' } },
+          { title: { [Op.like]: '%Senior%' } },
+          { title: { [Op.like]: '%OSCA%' } },
+        ]
+      });
+      where[Op.and].push({
+        [Op.not]: { target_category: { [Op.like]: '%PWD%' } }
+      });
+    } else if (isPwdRole(req.user.role)) {
+      where.agency = 'MSWDO';
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        [Op.or]: [
+          { target_category: { [Op.like]: '%PWD%' } },
+          { target_category: { [Op.like]: '%Disabil%' } },
+          { title: { [Op.like]: '%PWD%' } },
+          { title: { [Op.like]: '%PDAO%' } },
+          { title: { [Op.like]: '%Disabilit%' } },
+        ]
+      });
+      where[Op.and].push({
+        [Op.not]: { target_category: { [Op.like]: '%Senior%' } }
+      });
+    } else if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') {
       where.agency = 'MSWDO';
     } else if (req.user.role === 'admin') {
       where.agency = req.query.agency || 'DSWD';

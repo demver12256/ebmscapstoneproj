@@ -17,8 +17,14 @@ export default function DistributionPage() {
   const isMswdoAdmin = user?.role === 'mswdo_admin';
   const isMswdoStaff = user?.role === 'mswdo_staff';
   const isSeniorAdmin = user?.role === 'senior_citizen_admin';
+  const isSeniorStaff = user?.role === 'senior_citizen_staff';
   const isPwdAdmin = user?.role === 'pwd_admin';
-  const isSectorAdmin = isMswdoAdmin || isMswdoStaff || isSeniorAdmin || isPwdAdmin;
+  const isPwdStaff = user?.role === 'pwd_staff';
+  const isAnySenior = isSeniorAdmin || isSeniorStaff;
+  const isAnyPwd = isPwdAdmin || isPwdStaff;
+  const isAnyMswdo = isMswdoAdmin || isMswdoStaff;
+  const isSectorAdmin = isAnyMswdo || isAnySenior || isAnyPwd;
+  const canCreateDistribution = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role);
   const [events, setEvents] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -93,11 +99,26 @@ export default function DistributionPage() {
       
       const res = await distributionApi.listEvents(params);
       const rawEvents = res.data.data || [];
-      const scopedEvents = isSectorAdmin
-        ? rawEvents.filter(e => e.agency === 'MSWDO' || e.Program?.agency === 'MSWDO')
-        : user?.role === 'admin'
-        ? rawEvents.filter(e => !e.agency || e.agency === 'DSWD' || e.Program?.agency === 'DSWD')
-        : rawEvents;
+      let scopedEvents = rawEvents;
+
+      if (isAnySenior) {
+        scopedEvents = rawEvents.filter(e => {
+          const cat = (e.target_category || e.Program?.eligibility_category || e.Program?.name || e.title || '').toLowerCase();
+          const isSeniorCreator = ['senior_citizen_admin', 'senior_citizen_staff'].includes(e.CreatedBy?.role);
+          return (isSeniorCreator || cat.includes('senior') || cat.includes('osca')) && !cat.includes('pwd') && !cat.includes('disabil');
+        });
+      } else if (isAnyPwd) {
+        scopedEvents = rawEvents.filter(e => {
+          const cat = (e.target_category || e.Program?.eligibility_category || e.Program?.name || e.title || '').toLowerCase();
+          const isPwdCreator = ['pwd_admin', 'pwd_staff'].includes(e.CreatedBy?.role);
+          return (isPwdCreator || cat.includes('pwd') || cat.includes('disabil') || cat.includes('pdao')) && !cat.includes('senior');
+        });
+      } else if (isAnyMswdo) {
+        scopedEvents = rawEvents.filter(e => e.agency === 'MSWDO' || e.Program?.agency === 'MSWDO');
+      } else if (user?.role === 'admin') {
+        scopedEvents = rawEvents.filter(e => !e.agency || e.agency === 'DSWD' || e.Program?.agency === 'DSWD');
+      }
+
       setEvents(scopedEvents);
       setLastUpdated(new Date());
       setError(null);
@@ -106,7 +127,7 @@ export default function DistributionPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, barangayFilter, isMswdoAdmin, user?.role]);
+  }, [statusFilter, barangayFilter, isAnySenior, isAnyPwd, isAnyMswdo, user?.role]);
 
   const loadDashboardStats = useCallback(async () => {
     try {
@@ -130,22 +151,35 @@ export default function DistributionPage() {
         userApi.list()
       ]);
       const rawProgs = programsRes.data.data || [];
-      const scopedProgs = isMswdoAdmin
-        ? rawProgs.filter(p => p.agency === 'MSWDO')
-        : user?.role === 'admin'
-        ? rawProgs.filter(p => !p.agency || p.agency === 'DSWD')
-        : rawProgs;
+      let scopedProgs = rawProgs;
+
+      if (isAnySenior) {
+        scopedProgs = rawProgs.filter(p => {
+          const cat = (p.eligibility_category || p.category || p.name || '').toLowerCase();
+          return cat.includes('senior');
+        });
+      } else if (isAnyPwd) {
+        scopedProgs = rawProgs.filter(p => {
+          const cat = (p.eligibility_category || p.category || p.name || '').toLowerCase();
+          return cat.includes('pwd') || cat.includes('disabil');
+        });
+      } else if (isAnyMswdo) {
+        scopedProgs = rawProgs.filter(p => p.agency === 'MSWDO');
+      } else if (user?.role === 'admin') {
+        scopedProgs = rawProgs.filter(p => !p.agency || p.agency === 'DSWD');
+      }
+
       setPrograms(scopedProgs);
       setBarangays(barangaysRes.data.data || []);
-      // Filter users to only staff/barangay roles and mswdo_staff
+      // Filter users to staff roles including senior/pwd staff
       const staffUsers = (usersRes.data.data || []).filter(
-        u => u.role === 'staff' || u.role === 'barangay' || u.role === 'mswdo_staff'
+        u => ['staff', 'barangay', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(u.role)
       );
       setStaff(staffUsers);
     } catch (err) {
       console.error('Failed to load reference data:', err);
     }
-  }, [isMswdoAdmin, user?.role]);
+  }, [isAnySenior, isAnyPwd, isAnyMswdo, user?.role]);
 
   // Load reference data on mount
   useEffect(() => {
@@ -306,6 +340,11 @@ export default function DistributionPage() {
         barangay_id: formData.barangay_id && formData.barangay_id !== 'all' ? parseInt(formData.barangay_id) : null,
         target_sitio: formData.target_sitio?.trim() || null,
         agency: isSectorAdmin ? 'MSWDO' : 'DSWD',
+        target_category: isAnySenior
+          ? 'Senior Citizens (Social Pension)'
+          : isAnyPwd
+          ? 'Persons with Disabilities (PWD)'
+          : formData.target_category,
         amount_per_beneficiary: amountPerBen,
         budget: computedBudget,
         benefit_type: isNonCash ? (formData.benefit_type || nonCashDetails?.type || 'In-Kind') : 'Cash',
@@ -770,7 +809,7 @@ export default function DistributionPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-blue-50 text-blue-700 border border-blue-100">
-              {['admin', 'mswdo_admin'].includes(user?.role) ? 'Aid Operations' : 'Distributions'}
+              {isAnySenior ? 'OSCA Pension Operations' : isAnyPwd ? 'PDAO Aid Operations' : isAnyMswdo ? 'MSWDO Aid Operations' : user?.role === 'admin' ? 'DSWD Aid Operations' : 'Distributions'}
             </span>
             <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
             {lastUpdated && (
@@ -810,10 +849,29 @@ export default function DistributionPage() {
             <span>Archived ({events.filter(e => e.status === 'archived').length})</span>
           </button>
 
-          {['admin','mswdo_admin'].includes(user?.role) && (
+          {canCreateDistribution && (
             <button
               type="button"
-              onClick={() => setShowCreateModal(true)}
+              onClick={() => {
+                setFormData({
+                  title: '',
+                  program_id: '',
+                  barangay_id: '',
+                  target_sitio: '',
+                  distribution_date: '',
+                  venue: '',
+                  budget: '',
+                  amount_per_beneficiary: '',
+                  assigned_staff_id: '',
+                  notes: '',
+                  target_category: isAnySenior ? 'Senior Citizens (Social Pension)' : isAnyPwd ? 'Persons with Disabilities (PWD)' : '',
+                  item_name: '',
+                  item_quantity: '1',
+                  item_unit: 'package',
+                  benefit_type: 'Cash'
+                });
+                setShowCreateModal(true);
+              }}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -965,10 +1023,29 @@ export default function DistributionPage() {
               <div className="p-8 text-center">
                 <Package className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                 <p className="text-sm text-slate-600">No distribution events found</p>
-                {['admin','mswdo_admin'].includes(user?.role) && (
+                {canCreateDistribution && (
                   <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors"
+                    onClick={() => {
+                      setFormData({
+                        title: '',
+                        program_id: '',
+                        barangay_id: '',
+                        target_sitio: '',
+                        distribution_date: '',
+                        venue: '',
+                        budget: '',
+                        amount_per_beneficiary: '',
+                        assigned_staff_id: '',
+                        notes: '',
+                        target_category: isAnySenior ? 'Senior Citizens (Social Pension)' : isAnyPwd ? 'Persons with Disabilities (PWD)' : '',
+                        item_name: '',
+                        item_quantity: '1',
+                        item_unit: 'package',
+                        benefit_type: 'Cash'
+                      });
+                      setShowCreateModal(true);
+                    }}
+                    className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
                   >
                     Create Your First Distribution
                   </button>
@@ -1085,7 +1162,7 @@ export default function DistributionPage() {
                             </button>
                             
                             {/* Draft Status Actions */}
-                            {event.status === 'draft' && ['admin','mswdo_admin'].includes(user?.role) && (
+                            {event.status === 'draft' && canCreateDistribution && (
                               <>
                                 <button
                                   onClick={() => handlePublishEvent(event.id)}
@@ -1105,7 +1182,7 @@ export default function DistributionPage() {
                             )}
                             
                             {/* Scheduled Status Actions - START SESSION */}
-                            {event.status === 'scheduled' && (['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff' || user?.role === 'mswdo_staff' || user?.role === 'barangay') && (
+                            {event.status === 'scheduled' && (canCreateDistribution || ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'].includes(user?.role)) && (
                               <button
                                 onClick={() => handleStartSession(event.id)}
                                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
@@ -1134,7 +1211,7 @@ export default function DistributionPage() {
                               const isAllClaimed = event.total_beneficiaries > 0 && (event.total_released >= event.total_beneficiaries);
                               const isStillOngoing = event.status === 'ongoing' && !isAllClaimed;
 
-                              if (isStillOngoing && (['admin','mswdo_admin'].includes(user?.role) || user?.role === 'staff' || user?.role === 'mswdo_staff' || user?.role === 'barangay')) {
+                              if (isStillOngoing && (canCreateDistribution || ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'].includes(user?.role))) {
                                 return (
                                   <button
                                     onClick={() => handleEndSession(event.id)}
@@ -1369,21 +1446,41 @@ export default function DistributionPage() {
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Target Category
                 </label>
-                <select
-                  value={formData.target_category}
-                  onChange={(e) => { setFormData({ ...formData, target_category: e.target.value }); setProgramAutoFilled(false); }}
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 ${programAutoFilled && formData.target_category ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
-                >
-                  <option value="">All Categories</option>
-                  <option value="4Ps Household Beneficiaries">4Ps Household Beneficiaries</option>
-                  <option value="Senior Citizens (Social Pension)">Senior Citizens (Social Pension)</option>
-                  <option value="Persons with Disabilities (PWD)">Persons with Disabilities (PWD)</option>
-                </select>
+                {isAnySenior ? (
+                  <div className="px-4 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm font-bold text-slate-800">
+                    👵 Senior Citizens (Social Pension)
+                  </div>
+                ) : isAnyPwd ? (
+                  <div className="px-4 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm font-bold text-slate-800">
+                    ♿ Persons with Disabilities (PWD)
+                  </div>
+                ) : isAnyMswdo ? (
+                  <select
+                    value={formData.target_category}
+                    onChange={(e) => { setFormData({ ...formData, target_category: e.target.value }); setProgramAutoFilled(false); }}
+                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 ${programAutoFilled && formData.target_category ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
+                  >
+                    <option value="">Lahat ng Sektor ng MSWDO (Senior & PWD)</option>
+                    <option value="Senior Citizens (Social Pension)">Senior Citizens (Social Pension)</option>
+                    <option value="Persons with Disabilities (PWD)">Persons with Disabilities (PWD)</option>
+                  </select>
+                ) : (
+                  <select
+                    value={formData.target_category}
+                    onChange={(e) => { setFormData({ ...formData, target_category: e.target.value }); setProgramAutoFilled(false); }}
+                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 ${programAutoFilled && formData.target_category ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
+                  >
+                    <option value="">All Categories</option>
+                    <option value="4Ps Household Beneficiaries">4Ps Household Beneficiaries</option>
+                    <option value="Senior Citizens (Social Pension)">Senior Citizens (Social Pension)</option>
+                    <option value="Persons with Disabilities (PWD)">Persons with Disabilities (PWD)</option>
+                  </select>
+                )}
                 {programAutoFilled && formData.target_category ? (
                   <p className="text-xs text-green-600 mt-1">🏷️ Auto-filled from program: {formData.target_category}</p>
                 ) : (
                   <p className="text-xs text-slate-500 mt-1">
-                    Leave blank to include all categories, or select specific category to filter beneficiaries
+                    {isAnySenior ? 'Exclusive para sa Senior Citizens (OSCA)' : isAnyPwd ? 'Exclusive para sa Persons with Disabilities (PDAO)' : 'Piliin ang kategorya ng mga benepisyaryo'}
                   </p>
                 )}
               </div>
