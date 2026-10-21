@@ -415,13 +415,17 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
   }) : [];
 
   const targetStaffUserIds = staffUsers.map((s) => s.id);
+  const preservedStaffIds = [...targetStaffUserIds];
+  if (announcement.assigned_staff_id) {
+    preservedStaffIds.push(Number(announcement.assigned_staff_id));
+  }
 
-  // Clean up any stale notifications for staff members whose barangays are NO LONGER targeted
+  // Clean up any stale notifications for staff members whose barangays are NO LONGER targeted and who are NOT the assigned facilitator
   await Notification.destroy({
     where: {
       reference_id: announcement.id,
       reference_type: 'announcement_staff',
-      user_id: { [Op.notIn]: targetStaffUserIds.length > 0 ? targetStaffUserIds : [0] },
+      user_id: { [Op.notIn]: preservedStaffIds.length > 0 ? preservedStaffIds : [0] },
     },
   });
 
@@ -435,29 +439,57 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
     is_read: false,
   }));
 
-    if (staffNotifications.length > 0) {
-      await Notification.bulkCreate(staffNotifications, { ignoreDuplicates: true });
-      
-      // Log staff notification details for verification
-      console.log(`[ANNOUNCEMENT ${announcement.id}] Notified ${staffUsers.length} staff for barangays: ${targetBarangayIds.join(', ')}`);
-      staffUsers.forEach(s => {
-        console.log(`  → Staff ID ${s.id}: ${s.first_name} ${s.last_name} (Barangay ID: ${s.barangay_id})`);
+  if (staffNotifications.length > 0) {
+    await Notification.bulkCreate(staffNotifications, { ignoreDuplicates: true });
+    
+    // Log staff notification details for verification
+    console.log(`[ANNOUNCEMENT ${announcement.id}] Notified ${staffUsers.length} staff for barangays: ${targetBarangayIds.join(', ')}`);
+    staffUsers.forEach(s => {
+      console.log(`  → Staff ID ${s.id}: ${s.first_name} ${s.last_name} (Barangay ID: ${s.barangay_id})`);
+    });
+  }
+
+  // Ensure the assigned facilitator (MSWDO staff, Senior staff, PWD staff, or assigned barangay staff) receives their notification
+  if (announcement.assigned_staff_id) {
+    const assignedStaffId = Number(announcement.assigned_staff_id);
+    const existingAssignedNotif = await Notification.findOne({
+      where: {
+        user_id: assignedStaffId,
+        reference_id: announcement.id,
+        reference_type: 'announcement_staff',
+      },
+    });
+    if (!existingAssignedNotif) {
+      await Notification.create({
+        user_id: assignedStaffId,
+        title: `📋 Na-assign Ka para sa Attendance: ${announcement.title}`,
+        message: `Ikaw ang na-assign na mag-assist ng attendance para sa aktibidad na "${announcement.title}" sa ${announcement.event_date || 'nakatakdang petsa'}${announcement.venue ? ` sa ${announcement.venue}` : ''}. Gamitin ang Attendance Scanner sa iyong portal dashboard.`,
+        type: 'announcement',
+        reference_id: announcement.id,
+        reference_type: 'announcement_staff',
+        is_read: false,
       });
+      console.log(`[ANNOUNCEMENT ${announcement.id}] Successfully created assignment notification for staff ID ${assignedStaffId}`);
     }
+  }
 
   // OPTIONAL: NOTIFY MSWDO ADMIN IF notify_mswdo IS ENABLED (STRICTLY ADMIN ONLY, NOT STAFF)
   let mswdoCount = 0;
+  const creatorAgency = ['senior_citizen_admin', 'senior_citizen_staff'].includes(creatorUser?.role)
+    ? 'OSCA'
+    : (['pwd_admin', 'pwd_staff'].includes(creatorUser?.role)
+      ? 'PDAO'
+      : (['mswdo_admin', 'mswdo_staff'].includes(creatorUser?.role) ? 'MSWDO' : 'DSWD'));
+
   if (announcement.notify_mswdo) {
     const mswdoUsers = await User.findAll({
       where: {
         role: 'mswdo_admin',
         status: 'active',
+        id: { [Op.ne]: creatorUser?.id || 0 },
       },
       attributes: ['id', 'first_name', 'last_name', 'email'],
     });
-
-    const creatorUser = await User.findByPk(announcement.created_by_user_id || adminUserId, { attributes: ['id', 'role'] });
-    const creatorAgency = ['mswdo_admin', 'mswdo_staff'].includes(creatorUser?.role) ? 'MSWDO' : 'DSWD';
 
     const mswdoNotifications = mswdoUsers.map((mswdo) => ({
       user_id: mswdo.id,
@@ -495,12 +527,10 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
       where: {
         role: 'senior_citizen_admin',
         status: 'active',
+        id: { [Op.ne]: creatorUser?.id || 0 },
       },
       attributes: ['id', 'first_name', 'last_name', 'email'],
     });
-
-    const creatorUser = await User.findByPk(announcement.created_by_user_id || adminUserId, { attributes: ['id', 'role'] });
-    const creatorAgency = ['mswdo_admin', 'mswdo_staff'].includes(creatorUser?.role) ? 'MSWDO' : 'DSWD';
 
     const seniorNotifications = seniorUsers.map((senior) => ({
       user_id: senior.id,
@@ -537,12 +567,10 @@ async function dispatchAnnouncementNotifications(announcement, adminUserId, { fo
       where: {
         role: 'pwd_admin',
         status: 'active',
+        id: { [Op.ne]: creatorUser?.id || 0 },
       },
       attributes: ['id', 'first_name', 'last_name', 'email'],
     });
-
-    const creatorUser = await User.findByPk(announcement.created_by_user_id || adminUserId, { attributes: ['id', 'role'] });
-    const creatorAgency = ['mswdo_admin', 'mswdo_staff'].includes(creatorUser?.role) ? 'MSWDO' : 'DSWD';
 
     const pwdNotifications = pwdUsers.map((pwd) => ({
       user_id: pwd.id,

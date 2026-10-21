@@ -34,7 +34,8 @@ router.get('/', async (req, res, next) => {
       limit: 50,
     });
 
-    // Guard for Barangay Staff: Strictly verify announcement_staff notifications belong to their barangay
+    // Guard for Barangay Staff: Strictly verify announcement_staff notifications belong to their barangay,
+    // UNLESS the staff member was explicitly assigned as the facilitator (assigned_staff_id)
     if (req.user.role === 'staff' || req.user.role === 'barangay') {
       const userBarangayId = req.user.barangay_id ? Number(req.user.barangay_id) : null;
       const validNotifications = [];
@@ -45,6 +46,11 @@ router.get('/', async (req, res, next) => {
           const ann = await Announcement.findByPk(n.reference_id);
           if (!ann) {
             invalidNotifIds.push(n.id);
+            continue;
+          }
+          if (ann.assigned_staff_id && Number(ann.assigned_staff_id) === Number(req.user.id)) {
+            // Explicitly assigned to this staff facilitator - always valid
+            validNotifications.push(n);
             continue;
           }
           const targetIds = parseTargetBarangayIds(ann.target_barangays);
@@ -85,7 +91,11 @@ router.get('/unread-count', async (req, res, next) => {
       const invalidNotifIds = [];
       for (const n of unreadStaffNotifs) {
         const ann = await Announcement.findByPk(n.reference_id);
-        if (!ann || !userBarangayId || !parseTargetBarangayIds(ann.target_barangays).includes(userBarangayId)) {
+        if (!ann) {
+          invalidNotifIds.push(n.id);
+        } else if (ann.assigned_staff_id && Number(ann.assigned_staff_id) === Number(req.user.id)) {
+          // Explicitly assigned to this staff facilitator - keep it
+        } else if (!userBarangayId || !parseTargetBarangayIds(ann.target_barangays).includes(userBarangayId)) {
           invalidNotifIds.push(n.id);
         }
       }

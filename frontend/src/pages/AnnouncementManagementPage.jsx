@@ -931,12 +931,13 @@ export default function AnnouncementManagementPage() {
   const totalRecipients = announcements.reduce((sum, a) => sum + (a.recipient_count || 0), 0);
   const totalPresent = announcements.reduce((sum, a) => sum + (a.present_count || 0), 0);
   const avgAttendanceRate = totalRecipients > 0 ? Math.round((totalPresent / totalRecipients) * 100) : 0;
+  const [pageSize, setPageSize] = useState(10);
   const visibleAnnouncements = announcements.filter((a) => (
     filterStatus === 'archived' ? a.status === 'archived' : a.status !== 'archived'
   ));
-  const announcementPagination = usePagination(visibleAnnouncements, 10);
+  const announcementPagination = usePagination(visibleAnnouncements, pageSize);
   const archivedAnnouncements = announcements.filter((a) => a.status === 'archived');
-  const archivedPagination = usePagination(archivedAnnouncements, 10);
+  const archivedPagination = usePagination(archivedAnnouncements, pageSize);
   const recipientPagination = usePagination(selectedAnnouncementStats?.Recipients || [], 10);
 
   return (
@@ -1465,15 +1466,20 @@ export default function AnnouncementManagementPage() {
                 })}
               </tbody>
             </table>
-            <div className="border-t border-slate-200 px-5 py-3">
+            <div className="border-t border-slate-200 px-5 py-3.5 bg-slate-50/50">
               <Pagination
                 currentPage={announcementPagination.currentPage}
                 totalPages={announcementPagination.totalPages}
                 onPageChange={announcementPagination.goToPage}
                 totalItems={announcementPagination.totalItems}
-                itemsPerPage={10}
+                itemsPerPage={pageSize}
+                onItemsPerPageChange={(newSize) => {
+                  setPageSize(newSize);
+                  announcementPagination.goToPage(1);
+                }}
                 startIndex={announcementPagination.startIndex}
                 endIndex={announcementPagination.endIndex}
+                alwaysShow={true}
               />
             </div>
           </div>
@@ -2720,15 +2726,20 @@ export default function AnnouncementManagementPage() {
                         ))}
                     </tbody>
                   </table>
-                  <div className="border-t border-slate-200 px-4 py-3">
+                  <div className="border-t border-slate-200 px-4 py-3 bg-slate-50/50">
                     <Pagination
                       currentPage={archivedPagination.currentPage}
                       totalPages={archivedPagination.totalPages}
                       onPageChange={archivedPagination.goToPage}
                       totalItems={archivedPagination.totalItems}
-                      itemsPerPage={10}
+                      itemsPerPage={pageSize}
+                      onItemsPerPageChange={(newSize) => {
+                        setPageSize(newSize);
+                        archivedPagination.goToPage(1);
+                      }}
                       startIndex={archivedPagination.startIndex}
                       endIndex={archivedPagination.endIndex}
+                      alwaysShow={true}
                     />
                   </div>
                 </div>
