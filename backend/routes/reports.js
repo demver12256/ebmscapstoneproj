@@ -280,7 +280,7 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     let announcementScopeIds = null;
     let attendanceWhere = {};
     if (isMswdoRole(req.user.role)) {
-      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff'] } }, attributes: ['id'] });
+      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'] } }, attributes: ['id'] });
       const mswdoUserIds = mswdoUsers.map(u => u.id);
       const mswdoAnnouncements = await Announcement.findAll({
         where: {
@@ -317,7 +317,7 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     // ── Announcement stats ──
     let announceWhere = {};
     if (isMswdoRole(req.user.role)) {
-      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff'] } }, attributes: ['id'] });
+      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'] } }, attributes: ['id'] });
       const mswdoUserIds = mswdoUsers.map(u => u.id);
       announceWhere[Op.or] = [
         { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },

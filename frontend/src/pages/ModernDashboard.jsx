@@ -157,12 +157,32 @@ export default function ModernDashboard() {
     {
       title: 'Senior Citizens',
       value: summary?.seniorCitizensCount || totalBeneficiaries,
-      badge: 'OSCA Pensioners',
+      badge: 'Verified OSCA',
       trend: 'up',
-      icon: Award,
+      icon: Users,
       iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
       badgeBg: 'bg-rose-50 text-rose-700',
       onClick: () => navigate('/dashboard/beneficiaries?category=senior')
+    },
+    {
+      title: 'Pension Distributions',
+      value: summary?.totalDistributionEvents || 0,
+      badge: summary?.totalDistributedFunds ? `₱${Number(summary.totalDistributedFunds).toLocaleString('en-PH')} released` : 'Social Pension',
+      trend: 'up',
+      icon: Package,
+      iconBg: 'bg-blue-50 text-blue-600 border border-blue-100',
+      badgeBg: 'bg-blue-50 text-blue-700',
+      onClick: () => navigate('/dashboard/distributions')
+    },
+    {
+      title: 'Assembly Attendance',
+      value: `${summary?.totalAttendanceRecords || 0}`,
+      badge: `${summary?.attendanceTurnoutRate !== undefined ? summary.attendanceTurnoutRate : 100}% turnout`,
+      trend: 'up',
+      icon: Award,
+      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
+      badgeBg: 'bg-emerald-50 text-emerald-700',
+      onClick: () => navigate('/dashboard/attendance')
     },
     {
       title: 'Covered Barangays',
@@ -175,34 +195,14 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/barangays')
     },
     {
-      title: 'OSCA Announcements',
-      value: announcements.length,
-      badge: `${announcements.filter(a => a.status === 'published' || a.status === 'active').length || announcements.length} active`,
-      trend: 'up',
-      icon: Megaphone,
-      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
-      badgeBg: 'bg-emerald-50 text-emerald-700',
-      onClick: () => navigate('/dashboard/announcements')
-    },
-    {
-      title: 'Pension Distributions',
-      value: summary?.totalDistributionEvents || 0,
-      badge: 'Social Pension',
-      trend: 'up',
-      icon: Package,
-      iconBg: 'bg-blue-50 text-blue-600 border border-blue-100',
-      badgeBg: 'bg-blue-50 text-blue-700',
-      onClick: () => navigate('/dashboard/distributions')
-    },
-    {
-      title: 'Pending Senior Apps',
-      value: pendingCount,
-      badge: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
+      title: 'Senior Assistance',
+      value: summary?.totalAssistanceRequests || 0,
+      badge: summary?.pendingAssistanceRequests > 0 ? `${summary.pendingAssistanceRequests} pending` : 'OSCA Aid',
       trend: 'neutral',
-      icon: Clock,
+      icon: HandHeart,
       iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
       badgeBg: 'bg-amber-50 text-amber-700',
-      onClick: () => navigate('/dashboard/beneficiaries?pending=true&category=senior', { state: { openPending: true } })
+      onClick: () => navigate('/dashboard/assistance-requests')
     }
   ] : isPwdAdmin ? [
     {
@@ -216,6 +216,26 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/beneficiaries?category=pwd')
     },
     {
+      title: 'Disability Aid Events',
+      value: summary?.totalDistributionEvents || 0,
+      badge: summary?.totalDistributedFunds ? `₱${Number(summary.totalDistributedFunds).toLocaleString('en-PH')} released` : 'PDAO Aid',
+      trend: 'up',
+      icon: Package,
+      iconBg: 'bg-teal-50 text-teal-600 border border-teal-100',
+      badgeBg: 'bg-teal-50 text-teal-700',
+      onClick: () => navigate('/dashboard/distributions')
+    },
+    {
+      title: 'Meeting Attendance',
+      value: `${summary?.totalAttendanceRecords || 0}`,
+      badge: `${summary?.attendanceTurnoutRate !== undefined ? summary.attendanceTurnoutRate : 100}% turnout`,
+      trend: 'up',
+      icon: Award,
+      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
+      badgeBg: 'bg-emerald-50 text-emerald-700',
+      onClick: () => navigate('/dashboard/attendance')
+    },
+    {
       title: 'Covered Barangays',
       value: barangays.length || 36,
       badge: 'Municipal Scope',
@@ -226,34 +246,14 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/barangays')
     },
     {
-      title: 'PDAO Announcements',
-      value: announcements.length,
-      badge: `${announcements.filter(a => a.status === 'published' || a.status === 'active').length || announcements.length} active`,
-      trend: 'up',
-      icon: Megaphone,
-      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
-      badgeBg: 'bg-emerald-50 text-emerald-700',
-      onClick: () => navigate('/dashboard/announcements')
-    },
-    {
-      title: 'Disability Aid Events',
-      value: summary?.totalDistributionEvents || 0,
-      badge: 'PDAO Aid',
-      trend: 'up',
-      icon: Package,
-      iconBg: 'bg-teal-50 text-teal-600 border border-teal-100',
-      badgeBg: 'bg-teal-50 text-teal-700',
-      onClick: () => navigate('/dashboard/distributions')
-    },
-    {
-      title: 'Pending PWD Apps',
-      value: pendingCount,
-      badge: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
+      title: 'PWD Assistance',
+      value: summary?.totalAssistanceRequests || 0,
+      badge: summary?.pendingAssistanceRequests > 0 ? `${summary.pendingAssistanceRequests} pending` : 'PDAO Aid',
       trend: 'neutral',
-      icon: Clock,
+      icon: HandHeart,
       iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
       badgeBg: 'bg-amber-50 text-amber-700',
-      onClick: () => navigate('/dashboard/beneficiaries?pending=true&category=pwd', { state: { openPending: true } })
+      onClick: () => navigate('/dashboard/assistance-requests')
     }
   ] : isMswdoAdmin ? [
     {
@@ -267,24 +267,24 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/beneficiaries')
     },
     {
-      title: 'Senior Citizens (OSCA)',
-      value: summary?.seniorCitizensCount || 0,
-      badge: 'OSCA Sector',
+      title: 'Aid Distributions',
+      value: summary?.totalDistributionEvents || 0,
+      badge: summary?.totalDistributedFunds ? `₱${Number(summary.totalDistributedFunds).toLocaleString('en-PH')} released` : `${summary?.completedEvents || 0} completed`,
       trend: 'up',
-      icon: Award,
-      iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
-      badgeBg: 'bg-rose-50 text-rose-700',
-      onClick: () => navigate('/dashboard/beneficiaries?category=senior')
+      icon: Package,
+      iconBg: 'bg-indigo-50 text-indigo-600 border border-indigo-100',
+      badgeBg: 'bg-indigo-50 text-indigo-700',
+      onClick: () => navigate('/dashboard/distributions')
     },
     {
-      title: 'PWD Sector (PDAO)',
-      value: summary?.pwdCount || 0,
-      badge: 'PDAO Sector',
+      title: 'Event Attendance',
+      value: `${summary?.totalAttendanceRecords || 0}`,
+      badge: `${summary?.attendanceTurnoutRate !== undefined ? summary.attendanceTurnoutRate : 100}% turnout`,
       trend: 'up',
-      icon: Target,
-      iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
-      badgeBg: 'bg-amber-50 text-amber-700',
-      onClick: () => navigate('/dashboard/beneficiaries?category=pwd')
+      icon: Award,
+      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
+      badgeBg: 'bg-emerald-50 text-emerald-700',
+      onClick: () => navigate('/dashboard/attendance')
     },
     {
       title: 'Covered Barangays',
@@ -297,14 +297,14 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/barangays')
     },
     {
-      title: 'Pending Applications',
-      value: pendingCount,
-      badge: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
+      title: 'Assistance Requests',
+      value: summary?.totalAssistanceRequests || 0,
+      badge: summary?.pendingAssistanceRequests > 0 ? `${summary.pendingAssistanceRequests} pending` : (summary?.completedAssistanceRequests > 0 ? `${summary.completedAssistanceRequests} completed` : 'Municipal Aid'),
       trend: 'neutral',
-      icon: Clock,
-      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
-      badgeBg: 'bg-emerald-50 text-emerald-700',
-      onClick: () => navigate('/dashboard/beneficiaries?pending=true', { state: { openPending: true } })
+      icon: HandHeart,
+      iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
+      badgeBg: 'bg-amber-50 text-amber-700',
+      onClick: () => navigate('/dashboard/assistance-requests')
     }
   ] : isMswdoStaff ? [
     {
@@ -318,6 +318,26 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/beneficiaries')
     },
     {
+      title: 'Aid Distributions',
+      value: summary?.totalDistributionEvents || 0,
+      badge: `${summary?.completedEvents || 0} completed`,
+      trend: 'up',
+      icon: Package,
+      iconBg: 'bg-indigo-50 text-indigo-600 border border-indigo-100',
+      badgeBg: 'bg-indigo-50 text-indigo-700',
+      onClick: () => navigate('/dashboard/distributions')
+    },
+    {
+      title: 'Event Attendance',
+      value: `${summary?.totalAttendanceRecords || 0}`,
+      badge: `${summary?.attendanceTurnoutRate !== undefined ? summary.attendanceTurnoutRate : 100}% turnout`,
+      trend: 'up',
+      icon: Award,
+      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
+      badgeBg: 'bg-emerald-50 text-emerald-700',
+      onClick: () => navigate('/dashboard/rfid-attendance')
+    },
+    {
       title: 'Covered Barangays',
       value: barangays.length || 36,
       badge: 'Municipal Scope',
@@ -328,34 +348,14 @@ export default function ModernDashboard() {
       onClick: () => navigate('/dashboard/barangays')
     },
     {
-      title: 'Active Announcements',
-      value: announcements.length,
-      badge: `${announcements.filter(a => a.status === 'published' || a.status === 'active').length || announcements.length} active`,
-      trend: 'up',
-      icon: Megaphone,
-      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
-      badgeBg: 'bg-emerald-50 text-emerald-700',
-      onClick: () => navigate('/dashboard/announcements')
-    },
-    {
       title: 'Assistance Requests',
-      value: summary?.pendingAssistanceRequests || 0,
-      badge: 'Municipal Aid',
+      value: summary?.totalAssistanceRequests || 0,
+      badge: summary?.pendingAssistanceRequests > 0 ? `${summary.pendingAssistanceRequests} pending` : 'Municipal Aid',
       trend: 'neutral',
       icon: HandHeart,
       iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
       badgeBg: 'bg-amber-50 text-amber-700',
       onClick: () => navigate('/dashboard/assistance-requests')
-    },
-    {
-      title: 'Pending Verifications',
-      value: pendingCount,
-      badge: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
-      trend: 'neutral',
-      icon: Clock,
-      iconBg: 'bg-teal-50 text-teal-600 border border-teal-100',
-      badgeBg: 'bg-teal-50 text-teal-700',
-      onClick: () => navigate('/dashboard/beneficiaries?pending=true', { state: { openPending: true } })
     }
   ] : [
     {

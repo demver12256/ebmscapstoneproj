@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FileText, Calendar, Filter, X, Download, FileSpreadsheet, Printer, Eye, CheckCircle, AlertCircle, TrendingUp, Users, ExternalLink, Check, ArrowDown } from 'lucide-react';
 import { reportsApi, programApi, barangayApi, beneficiaryApi, distributionApi, announcementApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -338,6 +338,7 @@ function DistributionDetailModal({ distribution, onClose }) {
 export default function ReportsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const handleSelectReport = (type) => {
     setReportType(type);
@@ -361,7 +362,16 @@ export default function ReportsPage() {
   const [successMsg, setSuccessMsg] = useState('');
 
   // Filters
-  const [reportType, setReportType] = useState(isSectorAdmin ? 'beneficiary' : '');
+  const urlParamType = searchParams.get('type') || searchParams.get('tab');
+  const [reportType, setReportType] = useState(urlParamType || (isSectorAdmin ? 'beneficiary' : ''));
+
+  useEffect(() => {
+    const q = searchParams.get('type') || searchParams.get('tab');
+    if (q) {
+      setReportType(q);
+      setCurrentPage(1);
+    }
+  }, [searchParams]);
   const [programFilter, setProgramFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState(
     isSeniorAdmin 
