@@ -223,6 +223,13 @@ const connectDatabase = async () => {
   }
 
   try {
+    // Allow barangay_id to be NULL for municipality-wide MSWDO/Senior/PWD distributions
+    await sequelize.query('ALTER TABLE distribution_events MODIFY COLUMN barangay_id INT NULL');
+  } catch (err) {
+    console.warn('[DB Migration] distribution_events.barangay_id NULL skipped:', err.message);
+  }
+
+  try {
     // Ensure users.role ENUM includes mswdo_staff and all sector admin roles
     await sequelize.query(
       "ALTER TABLE users MODIFY COLUMN role ENUM('admin','mswdo_admin','senior_citizen_admin','pwd_admin','staff','mswdo_staff','senior_citizen_staff','pwd_staff','barangay','beneficiary') NOT NULL DEFAULT 'beneficiary'"
