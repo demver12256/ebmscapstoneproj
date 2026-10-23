@@ -49,7 +49,7 @@ const upload = multer({
 });
 
 // Official Barangay Beneficiary List: Return only 'Approved' beneficiaries
-router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.get('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const where = {};
     const { category, barangay_id } = req.query;
@@ -87,7 +87,7 @@ router.get('/', authorize('admin', 'staff', 'barangay'), async (req, res, next) 
 // Senior Citizen Admin -> Senior Citizens applications only
 // PWD Admin -> Persons with Disabilities (PWD) applications only
 // MSWDO Admin / Staff -> Not authorized to manage applicant registrations (empty list)
-router.get('/applications', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.get('/applications', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     if (isMswdoRole(req.user.role)) {
       console.log('[Applications] MSWDO role: applications approval disabled for MSWDO');
@@ -1397,7 +1397,7 @@ router.get('/:id/enrollments', authorize('admin', 'staff', 'barangay', 'mswdo_ad
 });
 
 // Update application status to Under Review
-router.put('/applications/:id/review', authorize('admin'), async (req, res, next) => {
+router.put('/applications/:id/review', authorize('admin', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
@@ -1452,7 +1452,7 @@ router.put('/applications/:id/review', authorize('admin'), async (req, res, next
 });
 
 // Approve application — DSWD (4Ps), Senior Admin (Senior), PWD Admin (PWD)
-router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
@@ -1554,7 +1554,7 @@ router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay')
 });
 
 // Reject application — DSWD (4Ps), Senior Admin (Senior), PWD Admin (PWD)
-router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
@@ -1743,7 +1743,7 @@ router.post('/:id/regenerate-qr', authorize('admin', 'staff'), async (req, res, 
 });
 
 // Updates and deletions
-router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.put('/:id', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     console.log(`[UPDATE BENEFICIARY] User: ${req.user.id} (${req.user.role}), Beneficiary ID: ${req.params.id}, Body:`, req.body);
     
@@ -1900,7 +1900,7 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), async (req, res, nex
 });
 
 // ── POST /:id/verify-payout-account ── Verify beneficiary's payout account (Admin & Barangay Staff)
-router.post('/:id/verify-payout-account', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.post('/:id/verify-payout-account', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     console.log(`[VERIFY PAYOUT] Request for beneficiary ID: ${req.params.id}, by user: ${req.user.id} (${req.user.role})`);
 

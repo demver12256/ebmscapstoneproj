@@ -163,13 +163,124 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
   const isPwdRole = ['pwd_admin', 'pwd_staff'].includes(user?.role);
   const isMswdoRole = ['mswdo_admin', 'mswdo_staff'].includes(user?.role);
   const isDswdStaff = ['staff', 'barangay'].includes(user?.role);
+  const isDswdAdmin = ['admin', 'dswd_admin'].includes(user?.role);
+  const isSectorRole = isSeniorRole || isPwdRole || isMswdoRole;
+
+  const getSectorLabels = () => {
+    if (isSeniorRole) {
+      return {
+        name: 'Senior Citizen',
+        attendanceTitle: 'Senior Citizen Attendance',
+        attendanceRecordTitle: 'Senior Citizen Attendance Compliance Record',
+        meetingTag: 'Senior Citizen Announcements & Meetings',
+        distributionsTitle: 'Senior Citizen Distributions',
+        ayudaTitle: 'Claimed Senior Citizen Ayuda & Distributions',
+        ayudaTag: 'OSCA Released Only',
+      };
+    }
+    if (isPwdRole) {
+      return {
+        name: 'PWD',
+        attendanceTitle: 'PWD Attendance',
+        attendanceRecordTitle: 'PWD Attendance Compliance Record',
+        meetingTag: 'PWD Announcements & Meetings',
+        distributionsTitle: 'PWD Distributions',
+        ayudaTitle: 'Claimed PWD Ayuda & Distributions',
+        ayudaTag: 'PDAO Released Only',
+      };
+    }
+    if (isMswdoRole) {
+      return {
+        name: 'MSWDO',
+        attendanceTitle: 'MSWDO Attendance',
+        attendanceRecordTitle: 'MSWDO Attendance Compliance Record',
+        meetingTag: 'MSWDO Announcements & Meetings',
+        distributionsTitle: 'MSWDO Distributions',
+        ayudaTitle: 'Claimed MSWDO Ayuda & Distributions',
+        ayudaTag: 'MSWDO Released Only',
+      };
+    }
+    return {
+      name: 'DSWD',
+      attendanceTitle: 'DSWD Attendance',
+      attendanceRecordTitle: 'DSWD Attendance Compliance Record',
+      meetingTag: 'DSWD Meetings Only',
+      distributionsTitle: 'DSWD Distributions',
+      ayudaTitle: 'Claimed DSWD Ayuda & Distributions',
+      ayudaTag: 'DSWD Released Only',
+    };
+  };
+
+  const sectorLabels = getSectorLabels();
+
+  const getBeneficiarySubtitle = (b) => {
+    if (!b) return { is4Ps: false, prefix: 'Beneficiary ID: ', idValue: 'Pending', category: 'Beneficiary' };
+    const cat = String(b.category || '').toLowerCase();
+    const is4Ps = cat.includes('4ps') || cat.includes('pantawid');
+    const idValue = is4Ps
+      ? (b.household_id_number || b.beneficiary_id_code || 'Pending')
+      : (b.beneficiary_id_code || b.household_id_number || 'Pending');
+    return {
+      is4Ps,
+      prefix: is4Ps ? '4Ps Household No.: ' : 'Beneficiary ID: ',
+      idValue,
+      category: b.category || 'Beneficiary',
+    };
+  };
+
+  const getRfidPermission = (ben) => {
+    if (!ben || !user) return { canRegister: false, sectorName: '', message: '' };
+    const cat = String(ben.category || '').toLowerCase();
+    const isBen4Ps = cat.includes('4ps') || cat.includes('pantawid');
+    const isBenSenior = cat.includes('senior');
+    const isBenPwd = cat.includes('pwd') || cat.includes('disabilit');
+
+    if (isBen4Ps) {
+      const allowed = isDswdAdmin || user.role === 'staff' || user.role === 'barangay';
+      return {
+        canRegister: allowed,
+        sectorName: '4Ps / DSWD',
+        message: allowed
+          ? ''
+          : 'Bawal mag-rehistro ng RFID: Tanging ang 4Ps / DSWD Administrator o Barangay Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa 4Ps beneficiaries.'
+      };
+    }
+
+    if (isBenSenior) {
+      const allowed = isSeniorRole;
+      return {
+        canRegister: allowed,
+        sectorName: 'OSCA / SENIOR CITIZEN',
+        message: allowed
+          ? ''
+          : 'Bawal mag-rehistro ng RFID: Tanging ang OSCA / Senior Citizen Administrator lamang ang may pahintulot na mag-rehistro ng RFID card para sa Senior Citizens.'
+      };
+    }
+
+    if (isBenPwd) {
+      const allowed = isPwdRole;
+      return {
+        canRegister: allowed,
+        sectorName: 'PDAO / PWD',
+        message: allowed
+          ? ''
+          : 'Bawal mag-rehistro ng RFID: Tanging ang PDAO / PWD Administrator lamang ang may pahintulot na mag-rehistro ng RFID card para sa Persons with Disabilities (PWD).'
+      };
+    }
+
+    return {
+      canRegister: isDswdAdmin,
+      sectorName: 'ADMINISTRATOR',
+      message: 'Tanging ang Administrator lamang ang may pahintulot na mag-rehistro ng RFID card para sa benepisyaryong ito.'
+    };
+  };
 
   const CATEGORIES = isSeniorRole
     ? ['Senior Citizens (Social Pension)']
     : isPwdRole
     ? ['Persons with Disabilities (PWD)']
     : isMswdoRole
-    ? ['Senior Citizens (Social Pension)', 'Persons with Disabilities (PWD)']
+    ? ['Senior Citizens (Social Pension)', 'Persons with Disabilities (PWD)', '4Ps Household Beneficiary']
     : isDswdStaff
     ? ['4Ps Household Beneficiary']
     : [
@@ -288,23 +399,42 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     }
   };
 
-  const handleSaveRfid = async () => {
-    if (!rfidInput.trim()) {
-      Alert.alert('Walang RFID', 'Pakilagay ang bagong RFID number bago i-save.');
+  const handleSaveRfidDirect = async () => {
+    if (!selectedBeneficiary) return;
+    const perm = getRfidPermission(selectedBeneficiary);
+    if (!perm.canRegister) {
+      Alert.alert('Bawal Mag-rehistro', perm.message);
+      return;
+    }
+    const cleanRfid = rfidInput.trim();
+    if (!cleanRfid) {
+      Alert.alert('Walang RFID', 'Pakilagay ang RFID card number bago i-save.');
       return;
     }
     try {
       setSavingRfid(true);
-      await beneficiaryApi.update(selectedBeneficiary.id, { RFID_number: rfidInput.trim() });
-      Alert.alert('Tagumpay', `Na-assign ang RFID: ${rfidInput.trim()} kay ${selectedBeneficiary.first_name}!`);
-      setSelectedBeneficiary((prev) => ({ ...prev, RFID_number: rfidInput.trim() }));
-      setEditingRfid(false);
+      await beneficiaryApi.update(selectedBeneficiary.id, { RFID_number: cleanRfid });
+      setSelectedBeneficiary((prev) => ({ ...prev, RFID_number: cleanRfid }));
+      setBeneficiaries((prev) =>
+        prev.map((b) => (b.id === selectedBeneficiary.id ? { ...b, RFID_number: cleanRfid } : b))
+      );
+      Alert.alert('Tagumpay', `✓ Matagumpay na na-rehistro ang RFID card: ${cleanRfid}!`);
       await loadData();
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi nai-save ang RFID.');
+      Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi na-save ang RFID card.');
     } finally {
       setSavingRfid(false);
     }
+  };
+
+  const handleRefreshModalData = () => {
+    if (selectedBeneficiary) {
+      loadBeneficiaryDetails(selectedBeneficiary);
+    }
+  };
+
+  const handleSaveRfid = async () => {
+    return handleSaveRfidDirect();
   };
 
   const handleVerifyPayout = async (action) => {
@@ -374,6 +504,8 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
 
   const openDetail = (beneficiary) => {
     setSelectedBeneficiary(beneficiary);
+    setRfidInput(beneficiary.RFID_number || '');
+    setEditingRfid(false);
     setDetailTab('profile');
     setAttendanceData(null);
     setDistributionsData(null);
@@ -486,6 +618,198 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
 
     return (
       <ScrollView style={s.tabContent}>
+        {/* Card 1: Attendance Compliance Record Quick KPI Banner */}
+        <View style={s.complianceCard}>
+          <View style={s.cardTopRow}>
+            <View style={s.blueIconSquare}>
+              <Text style={{ fontSize: 16 }}>📅</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <Text style={s.cardTitle}>{sectorLabels.attendanceRecordTitle}</Text>
+                <View style={s.sectorBadgeBlue}>
+                  <Text style={s.sectorBadgeBlueText}>{sectorLabels.meetingTag}</Text>
+                </View>
+                {attStats && (
+                  <View style={[
+                    s.ratingPill,
+                    attStats.compliance_rate >= 80 ? s.ratingPillGreen : attStats.compliance_rate >= 50 ? s.ratingPillAmber : s.ratingPillRose
+                  ]}>
+                    <Text style={[
+                      s.ratingPillText,
+                      attStats.compliance_rate >= 80 ? s.ratingTextGreen : attStats.compliance_rate >= 50 ? s.ratingTextAmber : s.ratingTextRose
+                    ]}>
+                      {attStats.compliance_rate}% Rating
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {tabLoading && !attendanceData ? (
+                <Text style={s.statsLoadingText}>Kinukuha ang attendance record...</Text>
+              ) : attStats ? (
+                <Text style={s.statsSummaryText}>
+                  Naka-attend: <Text style={s.statGreen}>{attStats.present_count}</Text> • Liban: <Text style={s.statRose}>{attStats.absent_count}</Text> • Pending: <Text style={s.statAmber}>{attStats.pending_count}</Text> (Kabuuang <Text style={{ fontWeight: 'bold' }}>{attStats.total_meetings}</Text> na meetings)
+                </Text>
+              ) : (
+                <Text style={s.statsEmptyText}>Walang nakatalang attendance stats.</Text>
+              )}
+            </View>
+          </View>
+          <TouchableOpacity
+            style={s.viewFullBlueBtn}
+            onPress={() => setDetailTab('attendance')}
+            activeOpacity={0.8}
+          >
+            <Text style={s.viewFullBlueBtnText}>Tingnan Buong Talaan →</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Card 2: Distributions Quick KPI Banner */}
+        <View style={s.ayudaCard}>
+          <View style={s.cardTopRow}>
+            <View style={s.emeraldIconSquare}>
+              <Text style={{ fontSize: 16 }}>📦</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <Text style={s.cardTitle}>{sectorLabels.ayudaTitle}</Text>
+                <View style={s.sectorBadgeTeal}>
+                  <Text style={s.sectorBadgeTealText}>{sectorLabels.ayudaTag}</Text>
+                </View>
+                {distStats && (
+                  <View style={s.ratingPillGreen}>
+                    <Text style={s.ratingTextGreen}>
+                      {formatMoney(distStats.total_amount_claimed)} Na-claim
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {tabLoading && !distributionsData ? (
+                <Text style={s.statsLoadingText}>Kinukuha ang talaan ng ayuda...</Text>
+              ) : distStats ? (
+                <Text style={s.statsSummaryText}>
+                  Na-claim: <Text style={s.statGreen}>{distStats.released_count}</Text> • Pending: <Text style={s.statAmber}>{distStats.pending_count}</Text> • Kabuuang Halaga: <Text style={s.statGreen}>{formatMoney(distStats.total_amount_claimed)}</Text>
+                </Text>
+              ) : (
+                <Text style={s.statsEmptyText}>Walang nakatalang distribution claims.</Text>
+              )}
+            </View>
+          </View>
+          <TouchableOpacity
+            style={s.viewFullEmeraldBtn}
+            onPress={() => setDetailTab('distributions')}
+            activeOpacity={0.8}
+          >
+            <Text style={s.viewFullEmeraldBtnText}>Tingnan Buong Ayuda →</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Card 3: RFID Card Number Card */}
+        <View style={s.rfidCardBox}>
+          <View style={s.rfidHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <View style={s.blueIconSquareSmall}>
+                <Text style={{ fontSize: 14 }}>💳</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.rfidCardTitle}>RFID Card Number</Text>
+                <Text style={s.rfidCardSubtitle}>Official Municipal RFID for Attendance & Distribution Tracking</Text>
+              </View>
+            </View>
+            {b.RFID_number ? (
+              <View style={s.rfidNumberPill}>
+                <Text style={s.rfidNumberPillText}>💳 {b.RFID_number}</Text>
+              </View>
+            ) : (
+              <View style={s.rfidUnassignedPill}>
+                <Text style={s.rfidUnassignedPillText}>⚠️ No RFID Card Assigned</Text>
+              </View>
+            )}
+          </View>
+
+          {/* RFID registration form strictly for matching sector admin / staff */}
+          {(() => {
+            const rfidPerm = getRfidPermission(b);
+            if (rfidPerm.canRegister) {
+              return (
+                <View style={s.rfidRegisterContainer}>
+                  <View style={s.rfidRegisterHeader}>
+                    <Text style={s.rfidRegisterTitle}>
+                      REGISTER / UPDATE RFID CARD ({rfidPerm.sectorName})
+                    </Text>
+                    <View style={s.authorizedBadge}>
+                      <Text style={s.authorizedBadgeText}>AUTHORIZED</Text>
+                    </View>
+                  </View>
+                  <View style={s.rfidInputRow}>
+                    <TextInput
+                      style={s.rfidDirectInput}
+                      value={rfidInput}
+                      onChangeText={setRfidInput}
+                      placeholder="Scan or enter RFID card number (e.g. RFID-0001)..."
+                      placeholderTextColor="#94a3b8"
+                      autoCapitalize="characters"
+                    />
+                    <TouchableOpacity
+                      style={[s.rfidDirectSaveBtn, savingRfid && { opacity: 0.6 }]}
+                      onPress={handleSaveRfidDirect}
+                      disabled={savingRfid}
+                      activeOpacity={0.8}
+                    >
+                      {savingRfid ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={s.rfidDirectSaveBtnText}>Save RFID</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            }
+            return (
+              <View style={s.rfidLockBox}>
+                <Text style={s.lockIconText}>🔒</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.rfidLockTitle}>{rfidPerm.message}</Text>
+                  <Text style={s.rfidLockDesc}>
+                    Maaari pa ring gamitin ang na-rehistrong RFID card sa DSWD/MSWDO distributions, attendance, at assistance claims.
+                  </Text>
+                </View>
+              </View>
+            );
+          })()}
+        </View>
+
+        {/* Card 4: Digital QR Pass / Temporary ID */}
+        <View style={s.qrPassCardBox}>
+          <View style={s.cardTopRow}>
+            <View style={s.emeraldIconSquare}>
+              <Text style={{ fontSize: 16 }}>📱</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={s.cardTitle}>Digital QR Pass / Temporary ID</Text>
+                <View style={s.activeBackupBadge}>
+                  <Text style={s.activeBackupBadgeText}>ACTIVE BACKUP</Text>
+                </View>
+              </View>
+              <Text style={s.qrCardSubtitle}>
+                {b.RFID_number
+                  ? 'Maaari ring gamitin bilang alternatibong pagkakakilanlan.'
+                  : 'Gamitin bilang pansamantalang ID sa mga payout at attendance habang wala pang RFID card.'}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={s.viewQrPassBtn}
+            onPress={() => handleOpenBeneficiaryQr(b)}
+            activeOpacity={0.8}
+          >
+            <Text style={s.viewQrPassBtnText}>Tingnan Digital ID / QR Pass →</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Card 5: Personal Information */}
         <View style={s.profileSection}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <Text style={s.profileSectionTitle}>Personal Information</Text>
@@ -510,6 +834,7 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
           ))}
         </View>
 
+        {/* Card 6: Beneficiary Details */}
         <View style={s.profileSection}>
           <Text style={s.profileSectionTitle}>Beneficiary Details</Text>
           {[
@@ -527,52 +852,9 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
               <Text style={s.profileValue}>{value || '—'}</Text>
             </View>
           ))}
-
-          {/* RFID Assignment Row */}
-          <View style={s.rfidSection}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.rfidLabel}>💳 PHYSICAL RFID CARD</Text>
-                <Text style={s.rfidValue}>{b.RFID_number ? b.RFID_number : 'Walang nakatakdang RFID Card'}</Text>
-              </View>
-              <TouchableOpacity
-                style={s.rfidEditToggleBtn}
-                onPress={() => {
-                  setEditingRfid(!editingRfid);
-                  setRfidInput(b.RFID_number || '');
-                }}
-              >
-                <Text style={s.rfidEditToggleBtnText}>{editingRfid ? '✕ Kanselahin' : (b.RFID_number ? 'Palitan' : '+ I-assign')}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {editingRfid && (
-              <View style={s.rfidEditBox}>
-                <TextInput
-                  style={s.rfidInput}
-                  value={rfidInput}
-                  onChangeText={setRfidInput}
-                  placeholder="I-type o i-scan ang 10-digit RFID..."
-                  placeholderTextColor="#94a3b8"
-                  keyboardType="default"
-                  autoCapitalize="characters"
-                />
-                <TouchableOpacity
-                  style={[s.rfidSaveBtn, savingRfid && { opacity: 0.6 }]}
-                  onPress={handleSaveRfid}
-                  disabled={savingRfid}
-                >
-                  {savingRfid ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={s.rfidSaveBtnText}>I-save ang RFID</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
         </View>
 
+        {/* Card 7: Payout Information */}
         <View style={s.profileSection}>
           <Text style={s.profileSectionTitle}>Payout Information</Text>
           {[
@@ -1096,111 +1378,189 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
         />
       )}
 
-      {/* Detail Modal with Tabs matching Image 3 */}
+      {/* Detail Modal with Tabs matching Screenshots 1:1 */}
       <Modal visible={!!selectedBeneficiary} animationType="slide" onRequestClose={() => setSelectedBeneficiary(null)}>
         <SafeAreaView style={s.modalPage}>
-          <View style={s.modalHeader}>
-            <TouchableOpacity onPress={() => setSelectedBeneficiary(null)} style={s.modalBackBtn}>
-              <Text style={s.modalBackText}>← Back</Text>
-            </TouchableOpacity>
-            <Text style={s.modalTitle} numberOfLines={1}>
-              {selectedBeneficiary ? `${selectedBeneficiary.first_name} ${selectedBeneficiary.last_name}` : ''}
-            </Text>
-          </View>
-
-          {selectedBeneficiary && (
-            <View style={s.modalSummary}>
-              <View style={[s.modalAvatar, { backgroundColor: getCategoryColor(selectedBeneficiary.category) + '20' }]}>
-                <Text style={[s.modalAvatarText, { color: getCategoryColor(selectedBeneficiary.category) }]}>
-                  {(selectedBeneficiary.first_name?.[0] || '').toUpperCase()}{(selectedBeneficiary.last_name?.[0] || '').toUpperCase()}
-                </Text>
-              </View>
-              <View style={s.modalSummaryInfo}>
-                <Text style={s.modalName}>{selectedBeneficiary.first_name} {selectedBeneficiary.last_name}</Text>
-                <Text style={s.modalMeta}>
-                  📍 {selectedBeneficiary.Barangay?.barangay_name || selectedBeneficiary.Barangay?.name || '—'} • {selectedBeneficiary.category || 'N/A'}
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                  <View style={s.approvedBadge}>
-                    <Text style={s.approvedText}>✓ APPROVED</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={s.qrBadgeBtn}
-                    onPress={() => handleOpenBeneficiaryQr(selectedBeneficiary)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={s.qrBadgeBtnText}>☵ QR Pass</Text>
-                  </TouchableOpacity>
+          {/* Navy Blue Hero Header Banner matching Screenshots */}
+          <View style={s.modalHeroBanner}>
+            <View style={s.modalHeroLeft}>
+              {selectedBeneficiary?.profile_picture ? (
+                <Image
+                  source={{
+                    uri: selectedBeneficiary.profile_picture.startsWith('http')
+                      ? selectedBeneficiary.profile_picture
+                      : `${FILES_BASE_URL}/${selectedBeneficiary.profile_picture.replace(/\\/g, '/').replace(/^\/+/, '')}`
+                  }}
+                  style={s.modalHeroAvatarImg}
+                />
+              ) : (
+                <View style={s.modalHeroAvatarFallback}>
+                  <Text style={s.modalHeroAvatarInitials}>
+                    {(selectedBeneficiary?.first_name?.[0] || '').toUpperCase()}{(selectedBeneficiary?.last_name?.[0] || '').toUpperCase()}
+                  </Text>
                 </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Text style={s.modalHeroFullName} numberOfLines={1}>
+                    {selectedBeneficiary?.first_name} {selectedBeneficiary?.middle_name ? `${selectedBeneficiary.middle_name} ` : ''}{selectedBeneficiary?.last_name}
+                  </Text>
+                  <View style={s.modalHeroActivePill}>
+                    <Text style={s.modalHeroActivePillText}>
+                      {selectedBeneficiary?.User?.status || selectedBeneficiary?.status || 'active'}
+                    </Text>
+                  </View>
+                </View>
+                {(() => {
+                  const sub = getBeneficiarySubtitle(selectedBeneficiary);
+                  return (
+                    <Text style={s.modalHeroSubtitle} numberOfLines={1}>
+                      {sub.prefix}
+                      <Text style={s.modalHeroIdText}>{sub.idValue}</Text>
+                      {' • '}
+                      {sub.category}
+                    </Text>
+                  );
+                })()}
               </View>
             </View>
-          )}
+            <TouchableOpacity
+              style={s.modalHeroCloseBtn}
+              onPress={() => setSelectedBeneficiary(null)}
+              activeOpacity={0.8}
+            >
+              <Text style={s.modalHeroCloseBtnText}>✕</Text>
+            </TouchableOpacity>
+          </View>
 
-          {/* Tabs matching Image 3 with Live Badges */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBarContainer}>
-            <View style={s.tabBar}>
-              {/* Tab 1: Profile */}
+          {/* Modal Navigation Tabs with live badges & refresh */}
+          <View style={s.modalTabsContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.modalTabsScroll}>
               <TouchableOpacity
-                style={[s.tab, detailTab === 'profile' && s.tabActive]}
+                style={[s.modalTabBtn, detailTab === 'profile' && s.modalTabBtnActive]}
                 onPress={() => setDetailTab('profile')}
+                activeOpacity={0.7}
               >
-                <Text style={[s.tabText, detailTab === 'profile' && s.tabTextActive]}>
+                <Text style={[s.modalTabBtnText, detailTab === 'profile' && s.modalTabBtnTextActive]}>
                   👤 Personal & RFID Details
                 </Text>
               </TouchableOpacity>
 
-              {/* Tab 2: Attendance */}
               <TouchableOpacity
-                style={[s.tab, detailTab === 'attendance' && s.tabActive]}
+                style={[s.modalTabBtn, detailTab === 'attendance' && s.modalTabBtnActive]}
                 onPress={() => setDetailTab('attendance')}
+                activeOpacity={0.7}
               >
-                <Text style={[s.tabText, detailTab === 'attendance' && s.tabTextActive]}>
-                  📅 DSWD Attendance
+                <Text style={[s.modalTabBtnText, detailTab === 'attendance' && s.modalTabBtnTextActive]}>
+                  📅 {sectorLabels.attendanceTitle}
                 </Text>
                 {attBadge && (
-                  <View style={s.tabBadgeRed}>
-                    <Text style={s.tabBadgeRedText}>{attBadge}</Text>
+                  <View style={[
+                    s.tabBadgePill,
+                    (attStats?.compliance_rate || 0) >= 80 ? s.tabBadgePillGreen : (attStats?.compliance_rate || 0) >= 50 ? s.tabBadgePillAmber : s.tabBadgePillRose
+                  ]}>
+                    <Text style={[
+                      s.tabBadgePillText,
+                      (attStats?.compliance_rate || 0) >= 80 ? s.tabBadgePillTextGreen : (attStats?.compliance_rate || 0) >= 50 ? s.tabBadgePillTextAmber : s.tabBadgePillTextRose
+                    ]}>
+                      {attBadge}
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
 
-              {/* Tab 3: Distributions */}
               <TouchableOpacity
-                style={[s.tab, detailTab === 'distributions' && s.tabActive]}
+                style={[s.modalTabBtn, detailTab === 'distributions' && s.modalTabBtnActive]}
                 onPress={() => setDetailTab('distributions')}
+                activeOpacity={0.7}
               >
-                <Text style={[s.tabText, detailTab === 'distributions' && s.tabTextActive]}>
-                  💰 DSWD Distributions
+                <Text style={[s.modalTabBtnText, detailTab === 'distributions' && s.modalTabBtnTextActive]}>
+                  📦 {sectorLabels.distributionsTitle}
                 </Text>
                 {distBadge && (
-                  <View style={s.tabBadgeGreen}>
-                    <Text style={s.tabBadgeGreenText}>{distBadge}</Text>
+                  <View style={[s.tabBadgePill, s.tabBadgePillGreen]}>
+                    <Text style={[s.tabBadgePillText, s.tabBadgePillTextGreen]}>
+                      {distBadge}
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
 
-              {/* Tab 4: Programs */}
+              {!isSectorRole && (
+                <TouchableOpacity
+                  style={[s.modalTabBtn, detailTab === 'programs' && s.modalTabBtnActive]}
+                  onPress={() => setDetailTab('programs')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.modalTabBtnText, detailTab === 'programs' && s.modalTabBtnTextActive]}>
+                    📦 DSWD Programs
+                  </Text>
+                  {enrBadge && (
+                    <View style={[s.tabBadgePill, s.tabBadgePillPurple]}>
+                      <Text style={[s.tabBadgePillText, s.tabBadgePillTextPurple]}>
+                        {enrBadge}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity
-                style={[s.tab, detailTab === 'programs' && s.tabActive]}
-                onPress={() => setDetailTab('programs')}
+                style={s.modalRefreshBtn}
+                onPress={handleRefreshModalData}
+                disabled={tabLoading}
+                activeOpacity={0.7}
               >
-                <Text style={[s.tabText, detailTab === 'programs' && s.tabTextActive]}>
-                  📦 DSWD Programs
-                </Text>
-                {enrBadge && (
-                  <View style={s.tabBadgePurple}>
-                    <Text style={s.tabBadgePurpleText}>{enrBadge}</Text>
-                  </View>
+                {tabLoading ? (
+                  <ActivityIndicator size="small" color="#2563eb" style={{ marginRight: 4 }} />
+                ) : (
+                  <Text style={{ fontSize: 13, marginRight: 4 }}>🔄</Text>
                 )}
+                <Text style={s.modalRefreshBtnText}>Refresh</Text>
               </TouchableOpacity>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
 
-          {/* Content of selected tab */}
-          {detailTab === 'profile' && renderProfileTab()}
-          {detailTab === 'attendance' && renderAttendanceTab()}
-          {detailTab === 'distributions' && renderDistributionsTab()}
-          {detailTab === 'programs' && renderProgramsTab()}
+          {/* Modal Tab Content */}
+          <View style={{ flex: 1 }}>
+            {detailTab === 'profile' && renderProfileTab()}
+            {detailTab === 'attendance' && renderAttendanceTab()}
+            {detailTab === 'distributions' && renderDistributionsTab()}
+            {detailTab === 'programs' && renderProgramsTab()}
+          </View>
+
+          {/* Modal Persistent Bottom Footer matching Screenshots */}
+          <View style={s.modalBottomBar}>
+            <View style={s.modalBottomInfo}>
+              {detailTab === 'profile' && (
+                <Text style={s.modalBottomInfoText}>
+                  Account Status: <Text style={{ fontWeight: 'bold', color: '#1e293b' }}>{selectedBeneficiary?.User?.status || selectedBeneficiary?.status || 'active'}</Text> • RFID: <Text style={{ fontWeight: 'bold', color: '#1e293b' }}>{selectedBeneficiary?.RFID_number || 'Walang RFID Card'}</Text>
+                </Text>
+              )}
+              {detailTab === 'attendance' && (
+                <Text style={s.modalBottomInfoText}>
+                  Kabuuang Meetings: <Text style={{ fontWeight: 'bold', color: '#1e293b' }}>{attStats?.total_meetings || 0}</Text> • Attendance Rating: <Text style={{ fontWeight: 'bold', color: '#15803d' }}>{attStats?.compliance_rate || 0}%</Text>
+                </Text>
+              )}
+              {detailTab === 'distributions' && (
+                <Text style={s.modalBottomInfoText}>
+                  Kabuuang Na-claim: <Text style={{ fontWeight: 'bold', color: '#15803d' }}>{formatMoney(distStats?.total_amount_claimed)}</Text> • Na-claim: <Text style={{ fontWeight: 'bold', color: '#1e293b' }}>{distStats?.released_count || 0} ayuda</Text>
+                </Text>
+              )}
+              {detailTab === 'programs' && (
+                <Text style={s.modalBottomInfoText}>
+                  Naka-enroll: <Text style={{ fontWeight: 'bold', color: '#7c3aed' }}>{enrStats?.active_count || 0} Aktibo</Text> (Kabuuang {enrStats?.total_enrolled || 0} sinalihan)
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              style={s.modalBottomCloseBtn}
+              onPress={() => setSelectedBeneficiary(null)}
+              activeOpacity={0.8}
+            >
+              <Text style={s.modalBottomCloseBtnText}>Close Window</Text>
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
       </Modal>
 
@@ -1691,68 +2051,537 @@ const s = StyleSheet.create({
 
   // Modal
   modalPage: { flex: 1, backgroundColor: '#f8fafc' },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0f172a',
+  // Modal Hero Header matching Screenshots
+  modalHeroBanner: {
+    backgroundColor: '#172554',
     paddingHorizontal: 16,
     paddingVertical: 14,
-  },
-  modalBackBtn: { paddingRight: 12 },
-  modalBackText: { color: '#93c5fd', fontSize: 15, fontWeight: '600' },
-  modalTitle: { flex: 1, color: '#f8fafc', fontSize: 17, fontWeight: '700' },
-
-  modalSummary: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalHeroLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalHeroAvatarImg: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  modalHeroAvatarFallback: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalHeroAvatarInitials: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  modalHeroFullName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  modalHeroActivePill: {
+    backgroundColor: '#34d399',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  modalHeroActivePillText: {
+    color: '#022c22',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'lowercase',
+  },
+  modalHeroSubtitle: {
+    fontSize: 11.5,
+    color: '#bfdbfe',
+    marginTop: 3,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  modalHeroIdText: {
+    color: '#fde047',
+    fontWeight: '800',
+  },
+  modalHeroCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalHeroCloseBtnText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
+  // Modal Navigation Tabs
+  modalTabsContainer: {
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
   },
-  modalAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
+  modalTabsScroll: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 14,
+    paddingHorizontal: 6,
   },
-  modalAvatarText: { fontSize: 20, fontWeight: '700' },
-  modalSummaryInfo: { flex: 1 },
-  modalName: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
-  modalMeta: { fontSize: 13, color: '#64748b', marginTop: 3 },
-  approvedBadge: {
-    backgroundColor: '#dcfce7',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-    marginTop: 6,
-  },
-  approvedText: { color: '#16a34a', fontSize: 11, fontWeight: '800' },
-
-  // Tabs Bar
-  tabBarContainer: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0', maxHeight: 50 },
-  tabBar: { flexDirection: 'row', alignItems: 'center' },
-  tab: {
+  modalTabBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    borderBottomWidth: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 2.5,
     borderBottomColor: 'transparent',
   },
-  tabActive: { borderBottomColor: '#2563eb' },
-  tabText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
-  tabTextActive: { color: '#2563eb', fontWeight: '800' },
-  tabBadgeRed: { backgroundColor: '#fee2e2', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
-  tabBadgeRedText: { color: '#b91c1c', fontSize: 10, fontWeight: '800' },
-  tabBadgeGreen: { backgroundColor: '#dcfce7', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
-  tabBadgeGreenText: { color: '#15803d', fontSize: 10, fontWeight: '800' },
-  tabBadgePurple: { backgroundColor: '#f3e8ff', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
-  tabBadgePurpleText: { color: '#7e22ce', fontSize: 10, fontWeight: '800' },
+  modalTabBtnActive: {
+    borderBottomColor: '#2563eb',
+  },
+  modalTabBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  modalTabBtnTextActive: {
+    color: '#1d4ed8',
+    fontWeight: '800',
+  },
+  tabBadgePill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  tabBadgePillGreen: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#86efac',
+  },
+  tabBadgePillTextGreen: {
+    color: '#15803d',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  tabBadgePillAmber: {
+    backgroundColor: '#fef3c7',
+    borderColor: '#fde047',
+  },
+  tabBadgePillTextAmber: {
+    color: '#b45309',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  tabBadgePillRose: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#fca5a5',
+  },
+  tabBadgePillTextRose: {
+    color: '#be123c',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  tabBadgePillPurple: {
+    backgroundColor: '#f3e8ff',
+    borderColor: '#d8b4fe',
+  },
+  tabBadgePillTextPurple: {
+    color: '#7e22ce',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  modalRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  modalRefreshBtnText: {
+    color: '#2563eb',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // Compliance, Ayuda, RFID, and QR Pass card styles
+  complianceCard: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  ayudaCard: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  blueIconSquare: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#2563eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  blueIconSquareSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emeraldIconSquare: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  sectorBadgeBlue: {
+    backgroundColor: '#dbeafe',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  sectorBadgeBlueText: {
+    color: '#1d4ed8',
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  sectorBadgeTeal: {
+    backgroundColor: '#ccfbf1',
+    borderWidth: 1,
+    borderColor: '#99f6e4',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  sectorBadgeTealText: {
+    color: '#0f766e',
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  ratingPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  ratingPillGreen: {
+    backgroundColor: '#dcfce7',
+    borderWidth: 1,
+    borderColor: '#86efac',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  ratingPillAmber: {
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fde047',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  ratingPillRose: {
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  ratingPillText: {
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  ratingTextGreen: { color: '#15803d' },
+  ratingTextAmber: { color: '#b45309' },
+  ratingTextRose: { color: '#be123c' },
+  statsLoadingText: {
+    color: '#2563eb',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  statsSummaryText: {
+    color: '#475569',
+    fontSize: 11.5,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  statsEmptyText: {
+    color: '#64748b',
+    fontSize: 11,
+    marginTop: 4,
+  },
+  statGreen: { color: '#15803d', fontWeight: '800' },
+  statRose: { color: '#be123c', fontWeight: '800' },
+  statAmber: { color: '#b45309', fontWeight: '800' },
+  viewFullBlueBtn: {
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewFullBlueBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  viewFullEmeraldBtn: {
+    backgroundColor: '#059669',
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewFullEmeraldBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  rfidCardBox: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  rfidHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  rfidCardTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  rfidCardSubtitle: {
+    fontSize: 10.5,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  rfidNumberPill: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  rfidNumberPillText: {
+    color: '#1d4ed8',
+    fontSize: 11.5,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  rfidUnassignedPill: {
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  rfidUnassignedPillText: {
+    color: '#b45309',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  rfidRegisterContainer: {
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 10,
+    gap: 8,
+  },
+  rfidRegisterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  rfidRegisterTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#475569',
+    letterSpacing: 0.5,
+  },
+  authorizedBadge: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  authorizedBadgeText: {
+    color: '#059669',
+    fontSize: 9.5,
+    fontWeight: '900',
+  },
+  rfidInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  rfidDirectInput: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 40,
+    fontSize: 12.5,
+    color: '#0f172a',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  rfidDirectSaveBtn: {
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rfidDirectSaveBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  rfidLockBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fef08a',
+    borderRadius: 12,
+    padding: 10,
+    gap: 10,
+  },
+  lockIconText: {
+    fontSize: 16,
+    marginTop: 1,
+  },
+  rfidLockTitle: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#78350f',
+    lineHeight: 16,
+  },
+  rfidLockDesc: {
+    fontSize: 10.5,
+    color: '#92400e',
+    marginTop: 4,
+    lineHeight: 14,
+  },
+  qrPassCardBox: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  activeBackupBadge: {
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  activeBackupBadgeText: {
+    color: '#15803d',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  qrCardSubtitle: {
+    fontSize: 11,
+    color: '#166534',
+    marginTop: 3,
+    lineHeight: 15,
+  },
+  viewQrPassBtn: {
+    backgroundColor: '#059669',
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewQrPassBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  modalBottomBar: {
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  modalBottomInfo: {
+    flex: 1,
+  },
+  modalBottomInfoText: {
+    fontSize: 11,
+    color: '#475569',
+  },
+  modalBottomCloseBtn: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  modalBottomCloseBtnText: {
+    color: '#334155',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   tabContent: { flex: 1, padding: 16 },
 
