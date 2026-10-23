@@ -141,6 +141,12 @@ const SidebarDrawer = ({
   const allStaffNavItems = [
     { key: 'dashboard', label: 'Dashboard', icon: '🏠', roles: STAFF_ADMIN_ROLES },
     { key: 'beneficiaryList', label: 'Beneficiaries', icon: '👥', roles: STAFF_ADMIN_ROLES },
+    {
+      key: 'barangays',
+      label: 'Barangays',
+      icon: '📍',
+      roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'],
+    },
     { key: 'programs', label: 'Programs', icon: '📋', roles: ['admin', 'staff', 'barangay'] },
     { key: 'distributions', label: 'Distributions', icon: '📦', roles: STAFF_ADMIN_ROLES },
     { key: 'distributionScanner', label: 'Distribution Scanner', icon: '📱', roles: STAFF_ADMIN_ROLES },

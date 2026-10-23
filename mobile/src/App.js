@@ -38,6 +38,7 @@ import ApplicationSubmissionScreen from './screens/ApplicationSubmissionScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import BotAssistantScreen from './screens/BotAssistantScreen';
 import StaffDashboardScreen from './screens/StaffDashboardScreen';
+import StaffBarangaysScreen from './screens/StaffBarangaysScreen';
 import StaffProgramsScreen from './screens/StaffProgramsScreen';
 import StaffDistributionsScreen from './screens/StaffDistributionsScreen';
 import StaffDistributionScannerScreen from './screens/StaffDistributionScannerScreen';
@@ -1167,6 +1168,17 @@ const App = () => {
             <StaffUsersScreen
               onBack={() => handleNavSelect('dashboard')}
               onOpenDrawer={() => setSidebarOpen(true)}
+              user={user}
+              darkMode={darkMode}
+            />
+          )}
+
+          {/* Staff Barangays Screen */}
+          {currentScreen === 'barangays' && (
+            <StaffBarangaysScreen
+              onBack={() => handleNavSelect('dashboard')}
+              onOpenDrawer={() => setSidebarOpen(true)}
+              onNavigate={handleNavSelect}
               user={user}
               darkMode={darkMode}
             />

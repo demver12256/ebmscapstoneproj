@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   Modal,
   Platform,
 } from 'react-native';
-import { dashboardApi, announcementApi, beneficiaryApi } from '../services/api';
+import { dashboardApi, announcementApi, beneficiaryApi, barangayApi } from '../services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -54,17 +54,21 @@ export default function StaffDashboardScreen({
   const [monthly, setMonthly] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [barangays, setBarangays] = useState([]);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
   const [showAnnouncementsModal, setShowAnnouncementsModal] = useState(false);
 
+  // Sector role flags matching web ModernDashboard.jsx
+  const isSeniorAdmin = user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff';
+  const isPwdAdmin = user?.role === 'pwd_admin' || user?.role === 'pwd_staff';
   const isMswdoAdmin = user?.role === 'mswdo_admin';
   const isMswdoStaff = user?.role === 'mswdo_staff';
-  const isMswdo = isMswdoAdmin || isMswdoStaff;
-  const isSenior = ['senior_citizen_admin', 'senior_citizen_staff'].includes(user?.role);
-  const isPwd = ['pwd_admin', 'pwd_staff'].includes(user?.role);
-  const isAdmin = user?.role === 'admin';
+  const isAnyMswdo = isMswdoAdmin || isMswdoStaff;
+  const isSectorAdmin = isAnyMswdo || isSeniorAdmin || isPwdAdmin;
   const isDswd = ['admin', 'staff', 'barangay'].includes(user?.role);
   const hasAssistanceAccess = ['admin', 'mswdo_admin', 'mswdo_staff', 'staff', 'barangay'].includes(user?.role);
+  const hasBarangaysAccess = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
+  const canAccessPending = ['admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
 
   const loadData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -76,6 +80,7 @@ export default function StaffDashboardScreen({
         dashboardApi.monthlyDistribution().catch(() => ({ data: { data: [] } })),
         announcementApi.list().catch(() => ({ data: { data: [] } })),
         beneficiaryApi.listApplications().catch(() => ({ data: { data: [] } })),
+        barangayApi.list().catch(() => ({ data: { data: [] } })),
       ];
 
       const results = await Promise.all(promises);
@@ -83,11 +88,13 @@ export default function StaffDashboardScreen({
       const monthlyData = results[1]?.data?.data || results[1]?.data || [];
       const annData = results[2]?.data?.data || results[2]?.data || [];
       const appsData = results[3]?.data?.data || results[3]?.data || [];
+      const brgysData = results[4]?.data?.data || results[4]?.data || [];
 
       setSummary(summaryData);
       setMonthly(Array.isArray(monthlyData) ? monthlyData : []);
       setAnnouncements(Array.isArray(annData) ? annData : []);
       setApplications(Array.isArray(appsData) ? appsData : []);
+      setBarangays(Array.isArray(brgysData) ? brgysData : []);
     } catch (err) {
       console.warn('Failed to load staff dashboard data:', err?.message);
     } finally {
@@ -100,22 +107,61 @@ export default function StaffDashboardScreen({
     loadData();
   }, [loadData]);
 
-  // Derived metrics
-  const totalBeneficiaries = summary
-    ? ((summary.fourPsCount || 0) + (summary.seniorCitizensCount || 0) + (summary.pwdCount || 0) || summary.totalBeneficiaries || 0)
-    : 0;
+  // Derived metrics scoped identically to web ModernDashboard.jsx
+  const totalBeneficiaries = isSeniorAdmin
+    ? (summary?.seniorCitizensCount || summary?.approvedCount || 0)
+    : isPwdAdmin
+      ? (summary?.pwdCount || summary?.approvedCount || 0)
+      : isAnyMswdo
+        ? ((summary?.seniorCitizensCount || 0) + (summary?.pwdCount || 0) || summary?.approvedCount || 0)
+        : summary
+          ? ((summary.fourPsCount || 0) + (summary.seniorCitizensCount || 0) + (summary.pwdCount || 0) || summary.totalBeneficiaries || 0)
+          : 0;
+
   const totalDistributedFunds = summary?.totalDistributedFunds || 0;
   const approvedCount = summary?.approvedCount || totalBeneficiaries;
   const totalPrograms = summary?.totalPrograms || 1;
   const totalDistributionEvents = summary?.totalDistributionEvents || 0;
   const pendingRequests = summary?.pendingAssistanceRequests || 0;
 
-  const pendingApps = applications.filter(
-    (a) => a.status !== 'Approved' && a.status !== 'Rejected' && a.status !== 'Pending Submission'
-  );
-  const pendingAppsCount = pendingApps.length;
+  // Filtered applications by sector
+  const pendingApplicationsList = applications.filter((a) => {
+    const isPending =
+      a.status === 'Pending Review' ||
+      a.status === 'Under Review' ||
+      a.status === 'pending' ||
+      a.status === 'Pending' ||
+      (a.status !== 'Approved' && a.status !== 'Rejected' && a.status !== 'Pending Submission');
+    if (!isPending) return false;
+    if (isSeniorAdmin) {
+      return String(a.category || '').toLowerCase().includes('senior');
+    }
+    if (isPwdAdmin) {
+      const c = String(a.category || '').toLowerCase();
+      return c.includes('pwd') || c.includes('disabilit');
+    }
+    if (isAnyMswdo) {
+      return false; // MSWDO does not manage applications
+    }
+    const c = String(a.category || '').toLowerCase();
+    return c.includes('4ps') || c.includes('pantawid');
+  });
+  const pendingAppsCount = pendingApplicationsList.length;
 
-  const recentActivity = applications.slice(0, 5).map((app) => {
+  const filteredAppsForActivity = applications.filter((app) => {
+    if (isSeniorAdmin) return String(app.category || '').toLowerCase().includes('senior');
+    if (isPwdAdmin) {
+      const c = String(app.category || '').toLowerCase();
+      return c.includes('pwd') || c.includes('disabilit');
+    }
+    if (isAnyMswdo) {
+      const c = String(app.category || '').toLowerCase();
+      return (c.includes('senior') || c.includes('pwd') || c.includes('disabilit')) && !c.includes('4ps') && !c.includes('pantawid');
+    }
+    return true;
+  });
+
+  const recentActivity = filteredAppsForActivity.slice(0, 5).map((app) => {
     const isApproved = app.status === 'Approved';
     const isRejected = app.status === 'Rejected';
     return {
@@ -128,7 +174,7 @@ export default function StaffDashboardScreen({
     };
   });
 
-  // Trend calculation
+  // Monthly trend calculation
   const currentMonthData = monthly[monthly.length - 1] || {};
   const previousMonthData = monthly[monthly.length - 2] || {};
   const currAmt = parseFloat(currentMonthData.total || 0);
@@ -139,57 +185,419 @@ export default function StaffDashboardScreen({
     trendPct = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`;
   }
 
-  // Active / published announcements
+  // Active announcements
   const activeAnnouncements = announcements.filter(
     (a) => a.status === 'published' || a.status === 'active' || a.status === 'completed'
   );
   const firstAnnouncement = activeAnnouncements[0] || announcements[0];
 
-  // Category breakdown scoped to the user's sector
-  const categoryData = isSenior
-    ? [{ name: 'Senior Citizens (Social Pension)', value: summary?.seniorCitizensCount || totalBeneficiaries || 0, color: '#E11D48', bg: '#ffe4e6' }]
-    : isPwd
-    ? [{ name: 'Persons with Disabilities (PWD)', value: summary?.pwdCount || totalBeneficiaries || 0, color: '#F59E0B', bg: '#fef3c7' }]
-    : isMswdo
-    ? [
-        { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E11D48', bg: '#ffe4e6' },
-        { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#F59E0B', bg: '#fef3c7' },
-      ]
-    : [
-        { name: '4Ps Program', value: summary?.fourPsCount || 0, color: '#2563EB', bg: '#eff6ff' },
-        { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E11D48', bg: '#ffe4e6' },
-        { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#F59E0B', bg: '#fef3c7' },
-      ];
+  // Sector demographics config matching web ModernDashboard.jsx
+  const categoryData = isSeniorAdmin ? [
+    { name: 'Senior Pensioners', value: summary?.seniorCitizensCount || summary?.approvedCount || totalBeneficiaries || 0, color: '#E11D48', bg: '#ffe4e6' },
+    { name: 'Pending Applications', value: pendingAppsCount, color: '#F59E0B', bg: '#fef3c7' },
+  ] : isPwdAdmin ? [
+    { name: 'PWD Beneficiaries', value: summary?.pwdCount || summary?.approvedCount || totalBeneficiaries || 0, color: '#2563EB', bg: '#eff6ff' },
+    { name: 'Pending Applications', value: pendingAppsCount, color: '#F59E0B', bg: '#fef3c7' },
+  ] : isAnyMswdo ? [
+    { name: 'Senior Citizens (OSCA)', value: summary?.seniorCitizensCount || 0, color: '#E11D48', bg: '#ffe4e6' },
+    { name: 'Persons with Disabilities (PDAO)', value: summary?.pwdCount || 0, color: '#F59E0B', bg: '#fef3c7' },
+    ...(pendingAppsCount > 0 ? [{ name: 'Pending Applications', value: pendingAppsCount, color: '#3B82F6', bg: '#eff6ff' }] : []),
+  ] : [
+    { name: '4Ps Program', value: summary?.fourPsCount || 0, color: '#2563EB', bg: '#eff6ff' },
+    { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E11D48', bg: '#ffe4e6' },
+    { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#F59E0B', bg: '#fef3c7' },
+  ];
   const totalCategorySum = categoryData.reduce((acc, c) => acc + c.value, 0) || 1;
 
-  // Monthly chart calculations
+  const demographicsTotal = isSeniorAdmin
+    ? (summary?.seniorCitizensCount || totalBeneficiaries)
+    : isPwdAdmin
+    ? (summary?.pwdCount || totalBeneficiaries)
+    : totalBeneficiaries;
+
+  // Barangay Bar Chart Data matching web ModernDashboard.jsx
+  const defaultBarangaysList = useMemo(() => [
+    { id: 1, barangay_name: 'Poblacion 1' },
+    { id: 2, barangay_name: 'Poblacion 2' },
+    { id: 3, barangay_name: 'Poblacion 3' },
+    { id: 4, barangay_name: 'Poblacion 4' },
+    { id: 5, barangay_name: 'Balateros' },
+    { id: 6, barangay_name: 'Dulangan' },
+    { id: 7, barangay_name: 'Palangan' },
+    { id: 8, barangay_name: 'Sabang' },
+    { id: 9, barangay_name: 'San Isidro' },
+    { id: 10, barangay_name: 'Tabinay' },
+  ], []);
+
+  const barangayChartData = useMemo(() => {
+    const list = barangays.length > 0 ? barangays : defaultBarangaysList;
+    return list.map((b) => {
+      const match = (summary?.barangayCounts || []).find((bc) => Number(bc.barangay_id) === Number(b.id));
+      return {
+        id: b.id,
+        barangay: (b.barangay_name || '').replace('Barangay ', 'Brgy. '),
+        count: match ? Number(match.count) : 0,
+      };
+    });
+  }, [barangays, defaultBarangaysList, summary?.barangayCounts]);
+
+  const maxBarangayCount = useMemo(() => {
+    return Math.max(...barangayChartData.map((d) => d.count), 5);
+  }, [barangayChartData]);
+
   const maxMonthAmount = Math.max(
     ...monthly.map((m) => parseFloat(m.total || 0)),
     10000
   );
 
-  const getScopeBadge = () => {
-    switch (user?.role) {
-      case 'mswdo_admin':
-        return 'MSWDO ADMIN';
-      case 'mswdo_staff':
-        return 'MSWDO STAFF';
-      case 'senior_citizen_admin':
-        return 'OSCA / SENIOR CITIZEN ADMIN';
-      case 'senior_citizen_staff':
-        return 'OSCA / SENIOR CITIZEN STAFF';
-      case 'pwd_admin':
-        return 'PDAO / PWD ADMIN';
-      case 'pwd_staff':
-        return 'PDAO / PWD STAFF';
-      case 'admin':
-        return 'DSWD ADMIN CONSOLE';
-      case 'staff':
-        return 'DSWD / BARANGAY STAFF';
-      default:
-        return 'BARANGAY STAFF';
-    }
+  // Exact Kicker, Title, and Subtitle per role matching web screenshots
+  const getHeaderBadge = () => {
+    if (isSeniorAdmin) return 'OSCA FOCUS';
+    if (isPwdAdmin) return 'PDAO FOCUS';
+    if (isMswdoStaff) return 'MSWDO STAFF';
+    if (isMswdoAdmin) return 'MSWDO FOCUS';
+    if (user?.role === 'admin') return 'ADMIN CONSOLE';
+    return 'STAFF PORTAL';
   };
+
+  const getHeaderSubtitle = () => {
+    if (isSeniorAdmin) {
+      return 'Office of Senior Citizens Affairs (OSCA) — Social Pension, Welfare, and Assembly Overview.';
+    }
+    if (isPwdAdmin) {
+      return 'Persons with Disability Affairs Office (PDAO) — Disability Welfare, Inclusion, and Assistive Services.';
+    }
+    if (isMswdoStaff) {
+      return 'Municipal Social Welfare Operations — Field verification, physical claiming & attendance.';
+    }
+    if (isMswdoAdmin) {
+      return 'Senior Citizens and Persons with Disabilities (PWD) social protection overview.';
+    }
+    return 'Real-time overview of municipal beneficiaries, programs, and aid distributions.';
+  };
+
+  const getGreetingName = () => {
+    if (user?.first_name) return user.first_name;
+    if (isSeniorAdmin) return 'Senior Citizen';
+    if (isPwdAdmin) return 'PWD';
+    if (isMswdo) return 'MSWDO';
+    return 'Staff';
+  };
+
+  // Stat Cards Config matching web screenshots 1:1
+  const stats = useMemo(() => {
+    if (isSeniorAdmin) {
+      return [
+        {
+          title: 'Senior Citizens',
+          value: summary?.seniorCitizensCount || totalBeneficiaries,
+          badge: 'Verified OSCA',
+          trend: 'up',
+          icon: '👥',
+          iconBg: '#ffe4e6',
+          iconColor: '#e11d48',
+          badgeBg: '#ffe4e6',
+          badgeColor: '#be123c',
+          route: 'beneficiaryList',
+        },
+        {
+          title: 'Pension Distributions',
+          value: summary?.totalDistributionEvents || 0,
+          badge: summary?.totalDistributedFunds ? `₱${Number(summary.totalDistributedFunds).toLocaleString('en-PH')} released` : 'Social Pension',
+          trend: 'up',
+          icon: '📦',
+          iconBg: '#eff6ff',
+          iconColor: '#2563eb',
+          badgeBg: '#eff6ff',
+          badgeColor: '#1d4ed8',
+          route: 'distributions',
+        },
+        {
+          title: 'Assembly Attendance',
+          value: `${summary?.totalAttendanceRecords || 0}`,
+          badge: `${summary?.attendanceTurnoutRate !== undefined ? summary.attendanceTurnoutRate : 100}% turnout`,
+          trend: 'up',
+          icon: '🎖️',
+          iconBg: '#ecfdf5',
+          iconColor: '#059669',
+          badgeBg: '#ecfdf5',
+          badgeColor: '#047857',
+          route: 'attendanceScanner',
+        },
+        {
+          title: 'Covered Barangays',
+          value: barangays.length || 36,
+          badge: 'Municipal Scope',
+          trend: 'neutral',
+          icon: '📍',
+          iconBg: '#faf5ff',
+          iconColor: '#7c3aed',
+          badgeBg: '#faf5ff',
+          badgeColor: '#6d28d9',
+          route: 'barangays',
+        },
+      ];
+    }
+
+    if (isPwdAdmin) {
+      return [
+        {
+          title: 'PWD Beneficiaries',
+          value: summary?.pwdCount || totalBeneficiaries,
+          badge: 'Verified PDAO',
+          trend: 'up',
+          icon: '👥',
+          iconBg: '#eff6ff',
+          iconColor: '#2563eb',
+          badgeBg: '#eff6ff',
+          badgeColor: '#1d4ed8',
+          route: 'beneficiaryList',
+        },
+        {
+          title: 'Disability Aid Events',
+          value: summary?.totalDistributionEvents || 0,
+          badge: summary?.totalDistributedFunds ? `₱${Number(summary.totalDistributedFunds).toLocaleString('en-PH')} released` : 'PDAO Aid',
+          trend: 'up',
+          icon: '📦',
+          iconBg: '#f0fdfa',
+          iconColor: '#0d9488',
+          badgeBg: '#f0fdfa',
+          badgeColor: '#0f766e',
+          route: 'distributions',
+        },
+        {
+          title: 'Meeting Attendance',
+          value: `${summary?.totalAttendanceRecords || 0}`,
+          badge: `${summary?.attendanceTurnoutRate !== undefined ? summary.attendanceTurnoutRate : 100}% turnout`,
+          trend: 'up',
+          icon: '🎖️',
+          iconBg: '#ecfdf5',
+          iconColor: '#059669',
+          badgeBg: '#ecfdf5',
+          badgeColor: '#047857',
+          route: 'attendanceScanner',
+        },
+        {
+          title: 'Covered Barangays',
+          value: barangays.length || 36,
+          badge: 'Municipal Scope',
+          trend: 'neutral',
+          icon: '📍',
+          iconBg: '#faf5ff',
+          iconColor: '#7c3aed',
+          badgeBg: '#faf5ff',
+          badgeColor: '#6d28d9',
+          route: 'barangays',
+        },
+      ];
+    }
+
+    if (isMswdoAdmin) {
+      return [
+        {
+          title: 'Municipal Beneficiaries',
+          value: totalBeneficiaries,
+          badge: `${totalBeneficiaries} approved`,
+          trend: 'up',
+          icon: '👥',
+          iconBg: '#eff6ff',
+          iconColor: '#2563eb',
+          badgeBg: '#eff6ff',
+          badgeColor: '#1d4ed8',
+          route: 'beneficiaryList',
+        },
+        {
+          title: 'Aid Distributions',
+          value: summary?.totalDistributionEvents || 0,
+          badge: summary?.totalDistributedFunds ? `₱${Number(summary.totalDistributedFunds).toLocaleString('en-PH')} released` : `${summary?.completedEvents || 0} completed`,
+          trend: 'up',
+          icon: '📦',
+          iconBg: '#eef2ff',
+          iconColor: '#4f46e5',
+          badgeBg: '#eef2ff',
+          badgeColor: '#4338ca',
+          route: 'distributions',
+        },
+        {
+          title: 'Event Attendance',
+          value: `${summary?.totalAttendanceRecords || 0}`,
+          badge: `${summary?.attendanceTurnoutRate !== undefined ? summary.attendanceTurnoutRate : 100}% turnout`,
+          trend: 'up',
+          icon: '🎖️',
+          iconBg: '#ecfdf5',
+          iconColor: '#059669',
+          badgeBg: '#ecfdf5',
+          badgeColor: '#047857',
+          route: 'attendanceScanner',
+        },
+        {
+          title: 'Covered Barangays',
+          value: barangays.length || 36,
+          badge: 'Municipal Scope',
+          trend: 'neutral',
+          icon: '📍',
+          iconBg: '#faf5ff',
+          iconColor: '#7c3aed',
+          badgeBg: '#faf5ff',
+          badgeColor: '#6d28d9',
+          route: 'barangays',
+        },
+        {
+          title: 'Assistance Requests',
+          value: summary?.totalAssistanceRequests || 0,
+          badge: summary?.pendingAssistanceRequests > 0 ? `${summary.pendingAssistanceRequests} pending` : (summary?.completedAssistanceRequests > 0 ? `${summary.completedAssistanceRequests} completed` : 'Municipal Aid'),
+          trend: 'neutral',
+          icon: '🤲',
+          iconBg: '#fffbeb',
+          iconColor: '#d97706',
+          badgeBg: '#fffbeb',
+          badgeColor: '#b45309',
+          route: 'assistanceRequests',
+        },
+      ];
+    }
+
+    if (isMswdoStaff) {
+      return [
+        {
+          title: 'Municipal Beneficiaries',
+          value: totalBeneficiaries,
+          badge: `${totalBeneficiaries} verified`,
+          trend: 'up',
+          icon: '👥',
+          iconBg: '#eff6ff',
+          iconColor: '#2563eb',
+          badgeBg: '#eff6ff',
+          badgeColor: '#1d4ed8',
+          route: 'beneficiaryList',
+        },
+        {
+          title: 'Aid Distributions',
+          value: summary?.totalDistributionEvents || 0,
+          badge: `${summary?.completedEvents || 0} completed`,
+          trend: 'up',
+          icon: '📦',
+          iconBg: '#eef2ff',
+          iconColor: '#4f46e5',
+          badgeBg: '#eef2ff',
+          badgeColor: '#4338ca',
+          route: 'distributions',
+        },
+        {
+          title: 'Event Attendance',
+          value: `${summary?.totalAttendanceRecords || 0}`,
+          badge: `${summary?.attendanceTurnoutRate !== undefined ? summary.attendanceTurnoutRate : 100}% turnout`,
+          trend: 'up',
+          icon: '🎖️',
+          iconBg: '#ecfdf5',
+          iconColor: '#059669',
+          badgeBg: '#ecfdf5',
+          badgeColor: '#047857',
+          route: 'attendanceScanner',
+        },
+        {
+          title: 'Covered Barangays',
+          value: barangays.length || 36,
+          badge: 'Municipal Scope',
+          trend: 'neutral',
+          icon: '📍',
+          iconBg: '#faf5ff',
+          iconColor: '#7c3aed',
+          badgeBg: '#faf5ff',
+          badgeColor: '#6d28d9',
+          route: 'beneficiaryList',
+        },
+        {
+          title: 'Assistance Requests',
+          value: summary?.totalAssistanceRequests || 0,
+          badge: summary?.pendingAssistanceRequests > 0 ? `${summary.pendingAssistanceRequests} pending` : 'Municipal Aid',
+          trend: 'neutral',
+          icon: '🤲',
+          iconBg: '#fffbeb',
+          iconColor: '#d97706',
+          badgeBg: '#fffbeb',
+          badgeColor: '#b45309',
+          route: 'assistanceRequests',
+        },
+      ];
+    }
+
+    // Default DSWD Admin / Staff Cards
+    return [
+      {
+        title: 'Total Beneficiaries',
+        value: totalBeneficiaries,
+        badge: summary?.approvedCount !== undefined ? `${summary.approvedCount} approved` : '+0%',
+        trend: 'up',
+        icon: '👥',
+        iconBg: '#eff6ff',
+        iconColor: '#2563eb',
+        badgeBg: '#eff6ff',
+        badgeColor: '#1d4ed8',
+        route: 'beneficiaryList',
+      },
+      {
+        title: 'Active Programs',
+        value: summary?.totalPrograms || 1,
+        badge: `${summary?.totalDistributionEvents || 0} events`,
+        trend: 'up',
+        icon: '🎯',
+        iconBg: '#faf5ff',
+        iconColor: '#7c3aed',
+        badgeBg: '#faf5ff',
+        badgeColor: '#6d28d9',
+        route: 'programs',
+      },
+      {
+        title: 'Total Distributed',
+        value: formatMoney(totalDistributedFunds),
+        badge: trendPct,
+        trend: 'up',
+        icon: '₱',
+        iconBg: '#ecfdf5',
+        iconColor: '#059669',
+        badgeBg: '#ecfdf5',
+        badgeColor: '#047857',
+        route: 'distributions',
+      },
+      {
+        title: 'Approved Beneficiaries',
+        value: approvedCount,
+        badge: 'Verified',
+        trend: 'up',
+        icon: '✓',
+        iconBg: '#f0fdfa',
+        iconColor: '#0d9488',
+        badgeBg: '#f0fdfa',
+        badgeColor: '#0f766e',
+        route: 'beneficiaryList',
+      },
+      {
+        title: 'Assistance Requests',
+        value: pendingRequests,
+        badge: 'Barangay aid',
+        trend: 'neutral',
+        icon: '🤲',
+        iconBg: '#fffbeb',
+        iconColor: '#d97706',
+        badgeBg: '#fffbeb',
+        badgeColor: '#b45309',
+        route: 'assistanceRequests',
+      },
+    ];
+  }, [
+    isSeniorAdmin,
+    isPwdAdmin,
+    isMswdoAdmin,
+    isMswdoStaff,
+    summary,
+    totalBeneficiaries,
+    barangays.length,
+    approvedCount,
+    totalDistributedFunds,
+    trendPct,
+    pendingRequests,
+  ]);
 
   return (
     <View style={[styles.screen, darkMode && styles.darkScreen]}>
@@ -252,7 +660,7 @@ export default function StaffDashboardScreen({
         <View style={[styles.welcomeCard, darkMode && styles.darkCard]}>
           <View style={styles.scopeRow}>
             <View style={styles.scopeBadge}>
-              <Text style={styles.scopeBadgeText}>{getScopeBadge()}</Text>
+              <Text style={styles.scopeBadgeText}>{getHeaderBadge()}</Text>
             </View>
             <Text style={[styles.locationText, darkMode && styles.darkSubtext]}>
               • Bongabong, Oriental Mindoro
@@ -260,10 +668,10 @@ export default function StaffDashboardScreen({
           </View>
 
           <Text style={[styles.welcomeTitle, darkMode && styles.darkTitle]}>
-            Welcome back, {user?.first_name || 'Staff'}
+            Welcome back, {getGreetingName()}
           </Text>
           <Text style={[styles.welcomeDesc, darkMode && styles.darkSubtext]}>
-            Real-time overview of municipal beneficiaries, programs, and aid distributions.
+            {getHeaderSubtitle()}
           </Text>
 
           {/* Action Buttons */}
@@ -300,7 +708,7 @@ export default function StaffDashboardScreen({
         </View>
 
         {/* ━━━ Pending Applications Alert Banner ━━━ */}
-        {pendingAppsCount > 0 && (
+        {pendingAppsCount > 0 && canAccessPending && (
           <TouchableOpacity
             style={styles.pendingQueueBanner}
             activeOpacity={0.85}
@@ -351,228 +759,197 @@ export default function StaffDashboardScreen({
           </TouchableOpacity>
         )}
 
-        {/* ━━━ 5 Minimalist KPI Stat Cards ━━━ */}
+        {/* ━━━ Minimalist KPI Stat Cards ━━━ */}
         <Text style={[styles.sectionHeading, darkMode && styles.darkSubtext]}>
           KEY METRICS OVERVIEW
         </Text>
 
         <View style={styles.kpiGrid}>
-          {/* 1. Total Beneficiaries */}
-          <TouchableOpacity
-            style={[styles.kpiCard, darkMode && styles.darkCard]}
-            activeOpacity={0.8}
-            onPress={() => onNavigate && onNavigate('beneficiaryList')}
-          >
-            <View style={styles.kpiTopRow}>
-              <View style={[styles.kpiIconWrap, { backgroundColor: '#eff6ff', borderColor: '#dbeafe' }]}>
-                <Text style={styles.kpiEmoji}>👥</Text>
-              </View>
-              <View style={[styles.kpiBadge, { backgroundColor: '#eff6ff' }]}>
-                <Text style={[styles.kpiBadgeText, { color: '#1d4ed8' }]}>
-                  {approvedCount > 0 ? `${approvedCount} approved` : '+0%'} ↗
-                </Text>
-              </View>
-            </View>
-            <Text style={[styles.kpiValue, darkMode && styles.darkTitle]}>
-              {totalBeneficiaries}
-            </Text>
-            <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
-              Total Beneficiaries
-            </Text>
-          </TouchableOpacity>
-
-          {/* 2. Active Programs */}
-          <TouchableOpacity
-            style={[styles.kpiCard, darkMode && styles.darkCard]}
-            activeOpacity={0.8}
-            onPress={() => onNavigate && onNavigate('programs')}
-          >
-            <View style={styles.kpiTopRow}>
-              <View style={[styles.kpiIconWrap, { backgroundColor: '#faf5ff', borderColor: '#f3e8ff' }]}>
-                <Text style={styles.kpiEmoji}>🎯</Text>
-              </View>
-              <View style={[styles.kpiBadge, { backgroundColor: '#faf5ff' }]}>
-                <Text style={[styles.kpiBadgeText, { color: '#7e22ce' }]}>
-                  {totalDistributionEvents} events ↗
-                </Text>
-              </View>
-            </View>
-            <Text style={[styles.kpiValue, darkMode && styles.darkTitle]}>
-              {totalPrograms}
-            </Text>
-            <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
-              Active Programs
-            </Text>
-          </TouchableOpacity>
-
-          {/* 3. Total Distributed */}
-          <TouchableOpacity
-            style={[styles.kpiCard, darkMode && styles.darkCard]}
-            activeOpacity={0.8}
-            onPress={() => onNavigate && onNavigate('distributions')}
-          >
-            <View style={styles.kpiTopRow}>
-              <View style={[styles.kpiIconWrap, { backgroundColor: '#ecfdf5', borderColor: '#d1fae5' }]}>
-                <Text style={styles.kpiEmoji}>₱</Text>
-              </View>
-              <View style={[styles.kpiBadge, { backgroundColor: '#ecfdf5' }]}>
-                <Text style={[styles.kpiBadgeText, { color: '#047857' }]}>
-                  {trendPct} ↗
-                </Text>
-              </View>
-            </View>
-            <Text style={[styles.kpiValue, darkMode && styles.darkTitle, { fontSize: 20 }]}>
-              {formatMoney(totalDistributedFunds)}
-            </Text>
-            <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
-              Total Distributed
-            </Text>
-          </TouchableOpacity>
-
-          {/* 4. Approved Beneficiaries */}
-          <TouchableOpacity
-            style={[styles.kpiCard, darkMode && styles.darkCard]}
-            activeOpacity={0.8}
-            onPress={() => onNavigate && onNavigate('beneficiaryList')}
-          >
-            <View style={styles.kpiTopRow}>
-              <View style={[styles.kpiIconWrap, { backgroundColor: '#f0fdfa', borderColor: '#ccfbf1' }]}>
-                <Text style={styles.kpiEmoji}>✓</Text>
-              </View>
-              <View style={[styles.kpiBadge, { backgroundColor: '#f0fdfa' }]}>
-                <Text style={[styles.kpiBadgeText, { color: '#0f766e' }]}>
-                  Verified ↗
-                </Text>
-              </View>
-            </View>
-            <Text style={[styles.kpiValue, darkMode && styles.darkTitle]}>
-              {approvedCount}
-            </Text>
-            <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
-              Approved Beneficiaries
-            </Text>
-          </TouchableOpacity>
-
-          {/* 5. Assistance Requests */}
-          {hasAssistanceAccess && (
-            <TouchableOpacity
-              style={[styles.kpiCardFull, darkMode && styles.darkCard]}
-              activeOpacity={0.8}
-              onPress={() => onNavigate && onNavigate('assistanceRequests')}
-            >
-              <View style={styles.kpiTopRow}>
-                <View style={[styles.kpiIconWrap, { backgroundColor: '#fffbeb', borderColor: '#fef3c7' }]}>
-                  <Text style={styles.kpiEmoji}>🤲</Text>
+          {stats.map((stat, idx) => {
+            const isFullWidth = stats.length === 5 && idx === 4;
+            return (
+              <TouchableOpacity
+                key={idx}
+                style={[
+                  isFullWidth ? styles.kpiCardFull : styles.kpiCard,
+                  darkMode && styles.darkCard,
+                ]}
+                activeOpacity={0.8}
+                onPress={() => stat.route && onNavigate && onNavigate(stat.route)}
+              >
+                <View style={styles.kpiTopRow}>
+                  <View style={[styles.kpiIconWrap, { backgroundColor: stat.iconBg }]}>
+                    <Text style={[styles.kpiEmoji, { color: stat.iconColor }]}>{stat.icon}</Text>
+                  </View>
+                  <View style={[styles.kpiBadge, { backgroundColor: stat.badgeBg }]}>
+                    <Text style={[styles.kpiBadgeText, { color: stat.badgeColor }]}>
+                      {stat.badge} {stat.trend === 'up' ? '↗' : ''}
+                    </Text>
+                  </View>
                 </View>
-                <View style={[styles.kpiBadge, { backgroundColor: '#fffbeb' }]}>
-                  <Text style={[styles.kpiBadgeText, { color: '#b45309' }]}>
-                    {isMswdo ? 'MSWDO aid' : 'Barangay aid'}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.kpiFullBottom}>
-                <View>
-                  <Text style={[styles.kpiValue, darkMode && styles.darkTitle]}>
-                    {pendingRequests}
-                  </Text>
-                  <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
-                    Assistance Requests
-                  </Text>
-                </View>
-                <Text style={styles.kpiFullLink}>View requests ›</Text>
-              </View>
-            </TouchableOpacity>
-          )}
+
+                {isFullWidth ? (
+                  <View style={styles.kpiFullBottom}>
+                    <View>
+                      <Text style={[styles.kpiValue, darkMode && styles.darkTitle]}>
+                        {stat.value}
+                      </Text>
+                      <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
+                        {stat.title}
+                      </Text>
+                    </View>
+                    <Text style={[styles.kpiFullLink, { color: stat.badgeColor }]}>View requests ›</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={[styles.kpiValue, darkMode && styles.darkTitle]}>
+                      {stat.value}
+                    </Text>
+                    <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
+                      {stat.title}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* ━━━ Monthly Distribution Trend Chart ━━━ */}
+        {/* ━━━ Sector Barangay Registry Bar Chart or Monthly Distribution ━━━ */}
         <View style={[styles.chartCard, darkMode && styles.darkCard]}>
           <View style={styles.chartHeader}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.chartTitle, darkMode && styles.darkTitle]}>
-                Monthly Distribution Trend
+                {isSeniorAdmin
+                  ? 'Senior Citizens Registry by Barangay'
+                  : isPwdAdmin
+                  ? 'PWD Registry by Barangay'
+                  : isAnyMswdo
+                  ? 'Municipal Beneficiary Registry by Barangay'
+                  : 'Monthly Distribution Trend'}
               </Text>
               <Text style={[styles.chartSubtitle, darkMode && styles.darkSubtext]}>
-                Disbursement volume and history over time
+                {isSeniorAdmin
+                  ? 'Verified senior citizen social pension beneficiaries across barangays'
+                  : isPwdAdmin
+                  ? 'Verified persons with disabilities across barangays'
+                  : isAnyMswdo
+                  ? 'Verified Senior Citizen and PWD municipal beneficiaries across barangays'
+                  : 'Disbursement volume and history over time'}
               </Text>
             </View>
             <View style={styles.amountLegendPill}>
-              <View style={styles.amountLegendDot} />
-              <Text style={styles.amountLegendText}>Amount</Text>
+              <View style={[styles.amountLegendDot, { backgroundColor: '#2563EB' }]} />
+              <Text style={styles.amountLegendText}>{isSectorAdmin ? 'Beneficiaries' : 'Amount'}</Text>
             </View>
           </View>
 
-          {/* Native Bar Trend Visual */}
-          <View style={styles.chartVisualArea}>
-            {/* Horizontal guideline markers */}
-            <View style={styles.guidelineRow}>
-              <Text style={styles.guidelineText}>{formatMoney(maxMonthAmount)}</Text>
-              <View style={[styles.guidelineLine, darkMode && styles.darkGuidelineLine]} />
-            </View>
-            <View style={styles.guidelineRow}>
-              <Text style={styles.guidelineText}>{formatMoney(maxMonthAmount / 2)}</Text>
-              <View style={[styles.guidelineLine, darkMode && styles.darkGuidelineLine]} />
-            </View>
-            <View style={styles.guidelineRow}>
-              <Text style={styles.guidelineText}>₱0</Text>
-              <View style={[styles.guidelineLine, darkMode && styles.darkGuidelineLine]} />
-            </View>
-
-            {/* Monthly Bars */}
-            <View style={styles.barsContainer}>
-              {monthly.length > 0 ? (
-                monthly.map((item, idx) => {
-                  const amt = parseFloat(item.total || 0);
-                  const barHeightPct = Math.max(15, Math.min(100, Math.round((amt / maxMonthAmount) * 100)));
-                  return (
-                    <View key={idx} style={styles.barColumn}>
-                      {/* Amount Bubble */}
-                      <View style={styles.barAmtBadge}>
-                        <Text style={styles.barAmtBadgeText}>{formatMoney(amt)}</Text>
-                      </View>
-                      {/* Bar Fill */}
-                      <View style={styles.barTrack}>
-                        <View style={[styles.barFill, { height: `${barHeightPct}%` }]} />
-                      </View>
-                      {/* Month label */}
-                      <Text style={[styles.barMonthText, darkMode && styles.darkSubtext]} numberOfLines={1}>
-                        {item.month || 'Recent'}
-                      </Text>
+          {isSectorAdmin ? (
+            /* Horizontal Scrollable Bar Chart for Barangays */
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.barangayBarChartScroll}>
+              {barangayChartData.map((item, idx) => {
+                const count = item.count;
+                const barHeightPct = Math.max(10, Math.min(100, Math.round((count / maxBarangayCount) * 100)));
+                return (
+                  <View key={idx} style={styles.barangayBarCol}>
+                    <Text style={[styles.barangayBarCount, darkMode && styles.darkTitle, count > 0 && { color: '#2563eb' }]}>
+                      {count}
+                    </Text>
+                    <View style={styles.barangayBarTrack}>
+                      <View
+                        style={[
+                          styles.barangayBarFill,
+                          { height: `${barHeightPct}%`, backgroundColor: count > 0 ? '#2563EB' : '#cbd5e1' },
+                        ]}
+                      />
                     </View>
-                  );
-                })
-              ) : (
-                <View style={styles.emptyChartWrap}>
-                  <Text style={[styles.emptyChartText, darkMode && styles.darkSubtext]}>
-                    No distribution records yet for this period.
-                  </Text>
-                </View>
-              )}
+                    <Text style={[styles.barangayBarLabel, darkMode && styles.darkSubtext]} numberOfLines={2}>
+                      {item.barangay}
+                    </Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            /* Native Monthly Distribution Trend Visual for DSWD Admin */
+            <View style={styles.chartVisualArea}>
+              <View style={styles.guidelineRow}>
+                <Text style={styles.guidelineText}>{formatMoney(maxMonthAmount)}</Text>
+                <View style={[styles.guidelineLine, darkMode && styles.darkGuidelineLine]} />
+              </View>
+              <View style={styles.guidelineRow}>
+                <Text style={styles.guidelineText}>{formatMoney(maxMonthAmount / 2)}</Text>
+                <View style={[styles.guidelineLine, darkMode && styles.darkGuidelineLine]} />
+              </View>
+              <View style={styles.guidelineRow}>
+                <Text style={styles.guidelineText}>₱0</Text>
+                <View style={[styles.guidelineLine, darkMode && styles.darkGuidelineLine]} />
+              </View>
+
+              <View style={styles.barsContainer}>
+                {monthly.length > 0 ? (
+                  monthly.map((item, idx) => {
+                    const amt = parseFloat(item.total || 0);
+                    const barHeightPct = Math.max(15, Math.min(100, Math.round((amt / maxMonthAmount) * 100)));
+                    return (
+                      <View key={idx} style={styles.barColumn}>
+                        <View style={styles.barAmtBadge}>
+                          <Text style={styles.barAmtBadgeText}>{formatMoney(amt)}</Text>
+                        </View>
+                        <View style={styles.barTrack}>
+                          <View style={[styles.barFill, { height: `${barHeightPct}%` }]} />
+                        </View>
+                        <Text style={[styles.barMonthText, darkMode && styles.darkSubtext]} numberOfLines={1}>
+                          {item.month || 'Recent'}
+                        </Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <View style={styles.emptyChartWrap}>
+                    <Text style={[styles.emptyChartText, darkMode && styles.darkSubtext]}>
+                      No distribution records yet for this period.
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
+          )}
         </View>
 
-        {/* ━━━ Category Distribution Card ━━━ */}
+        {/* ━━━ Category / Sector Demographics Card ━━━ */}
         <View style={[styles.chartCard, darkMode && styles.darkCard]}>
           <View style={styles.chartHeader}>
             <View>
               <Text style={[styles.chartTitle, darkMode && styles.darkTitle]}>
-                Category Distribution
+                {isSeniorAdmin
+                  ? 'OSCA Sector Demographics'
+                  : isPwdAdmin
+                  ? 'PDAO Sector Demographics'
+                  : isAnyMswdo
+                  ? 'MSWDO Sector Demographics'
+                  : 'Category Distribution'}
               </Text>
               <Text style={[styles.chartSubtitle, darkMode && styles.darkSubtext]}>
-                Beneficiary roster breakdown
+                {isSeniorAdmin
+                  ? 'Senior citizen social pension status'
+                  : isPwdAdmin
+                  ? 'PWD registry status'
+                  : isAnyMswdo
+                  ? 'Senior Citizen (OSCA) & PWD (PDAO) roster breakdown'
+                  : 'Beneficiary roster breakdown'}
               </Text>
             </View>
           </View>
 
           {/* Central Donut Summary Visual */}
           <View style={styles.donutCenterWrap}>
-            <View style={[styles.donutOuterRing, darkMode && styles.darkDonutOuterRing]}>
+            <View style={[styles.donutOuterRing, darkMode && styles.darkDonutOuterRing, { borderColor: categoryData[0]?.color || '#2563eb' }]}>
               <View style={[styles.donutInnerHole, darkMode && styles.darkCard]}>
                 <Text style={[styles.donutTotalNum, darkMode && styles.darkTitle]}>
-                  {totalBeneficiaries}
+                  {demographicsTotal}
                 </Text>
-                <Text style={styles.donutTotalLabel}>Total</Text>
+                <Text style={styles.donutTotalLabel}>Total Registry</Text>
               </View>
             </View>
           </View>
@@ -598,7 +975,6 @@ export default function StaffDashboardScreen({
                     </View>
                   </View>
 
-                  {/* Progress Bar */}
                   <View style={[styles.categoryBarTrack, darkMode && styles.darkTrack]}>
                     <View
                       style={[
@@ -613,7 +989,7 @@ export default function StaffDashboardScreen({
           </View>
         </View>
 
-        {/* ━━━ Recent Applications & Activity (Matching Web ModernDashboard) ━━━ */}
+        {/* ━━━ Recent Applications & Activity ━━━ */}
         <View style={[styles.chartCard, darkMode && styles.darkCard]}>
           <View style={styles.chartHeader}>
             <View style={{ flex: 1 }}>
@@ -696,13 +1072,13 @@ export default function StaffDashboardScreen({
           </TouchableOpacity>
         </View>
 
-        {/* ━━━ Comprehensive Quick Operations (All Staff Modules) ━━━ */}
+        {/* ━━━ Comprehensive Quick Operations ━━━ */}
         <View style={[styles.chartCard, darkMode && styles.darkCard]}>
           <Text style={[styles.chartTitle, darkMode && styles.darkTitle]}>
             Quick Operations
           </Text>
           <Text style={[styles.chartSubtitle, darkMode && styles.darkSubtext, { marginBottom: 14 }]}>
-            Komprehensibong kontrol at serbisyo para sa mga kawani ng barangay at DSWD
+            Komprehensibong kontrol at serbisyo para sa mga kawani at opisyal
           </Text>
 
           <View style={styles.operationsGrid}>
@@ -717,7 +1093,20 @@ export default function StaffDashboardScreen({
               <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Roster & Aplikasyon</Text>
             </TouchableOpacity>
 
-            {/* 2. Distributions */}
+            {/* 2. Barangays (for Senior, PWD, MSWDO, Admin) */}
+            {hasBarangaysAccess && (
+              <TouchableOpacity
+                style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+                activeOpacity={0.75}
+                onPress={() => onNavigate && onNavigate('barangays')}
+              >
+                <Text style={styles.opIcon}>📍</Text>
+                <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Barangays</Text>
+                <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>36 na Barangay</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* 3. Distributions */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -728,7 +1117,7 @@ export default function StaffDashboardScreen({
               <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Pamamahagi ng Ayuda</Text>
             </TouchableOpacity>
 
-            {/* 3. Distribution Scanner */}
+            {/* 4. Distribution Scanner */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -739,18 +1128,18 @@ export default function StaffDashboardScreen({
               <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>RFID/QR Claiming</Text>
             </TouchableOpacity>
 
-            {/* 4. Attendance Scanner */}
+            {/* 5. Attendance Scanner */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
               onPress={() => onNavigate && onNavigate('attendanceScanner')}
             >
-              <Text style={styles.opIcon}>📱</Text>
+              <Text style={styles.opIcon}>📅</Text>
               <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Attendance Scanner</Text>
               <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>RFID Attendance</Text>
             </TouchableOpacity>
 
-            {/* 5. Benefit Programs */}
+            {/* 6. Benefit Programs (DSWD only) */}
             {isDswd && (
               <TouchableOpacity
                 style={[styles.opBtn, darkMode && styles.darkOpBtn]}
@@ -763,7 +1152,7 @@ export default function StaffDashboardScreen({
               </TouchableOpacity>
             )}
 
-            {/* 6. Assistance Requests */}
+            {/* 7. Assistance Requests (MSWDO & DSWD) */}
             {hasAssistanceAccess && (
               <TouchableOpacity
                 style={[styles.opBtn, darkMode && styles.darkOpBtn]}
@@ -776,7 +1165,7 @@ export default function StaffDashboardScreen({
               </TouchableOpacity>
             )}
 
-            {/* 7. Community Announcements */}
+            {/* 8. Announcements */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -787,7 +1176,7 @@ export default function StaffDashboardScreen({
               <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Anunsyo sa Barangay</Text>
             </TouchableOpacity>
 
-            {/* 8. Interventions */}
+            {/* 9. Interventions (DSWD only) */}
             {isDswd && (
               <TouchableOpacity
                 style={[styles.opBtn, darkMode && styles.darkOpBtn]}
@@ -800,7 +1189,7 @@ export default function StaffDashboardScreen({
               </TouchableOpacity>
             )}
 
-            {/* 9. Reports */}
+            {/* 10. Reports */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -811,7 +1200,7 @@ export default function StaffDashboardScreen({
               <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Audit & Talaan</Text>
             </TouchableOpacity>
 
-            {/* 10. Messages */}
+            {/* 11. Messages */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -822,7 +1211,7 @@ export default function StaffDashboardScreen({
               <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Mensahe sa Residente</Text>
             </TouchableOpacity>
 
-            {/* 11. BeniAid AI Bot */}
+            {/* 12. BeniAid AI Bot */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -833,7 +1222,7 @@ export default function StaffDashboardScreen({
               <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>AI Staff Assistant</Text>
             </TouchableOpacity>
 
-            {/* 12. User Accounts */}
+            {/* 13. User Accounts */}
             <TouchableOpacity
               style={[styles.opBtn, darkMode && styles.darkOpBtn]}
               activeOpacity={0.75}
@@ -1016,6 +1405,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
     borderColor: '#1e293b',
   },
+  darkItem: {
+    backgroundColor: '#1e293b',
+  },
   scopeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1107,6 +1499,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  pendingQueueBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 14,
+    padding: 12,
+    gap: 8,
+  },
+  pendingQueueLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  pendingQueueIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fef3c7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingQueueTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400e',
+  },
+  pendingQueueSub: {
+    fontSize: 11,
+    color: '#b45309',
+    marginTop: 1,
+  },
+  pendingQueueLink: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#b45309',
   },
   announcementBanner: {
     flexDirection: 'row',
@@ -1211,21 +1643,20 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   kpiIconWrap: {
-    width: 34,
-    height: 34,
+    width: 32,
+    height: 32,
     borderRadius: 8,
-    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   kpiEmoji: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 15,
   },
   kpiBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
+    maxWidth: '70%',
   },
   kpiBadgeText: {
     fontSize: 10,
@@ -1251,7 +1682,6 @@ const styles = StyleSheet.create({
   kpiFullLink: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#d97706',
   },
   chartCard: {
     backgroundColor: '#ffffff',
@@ -1296,12 +1726,46 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#2563eb',
   },
   amountLegendText: {
     fontSize: 10,
     fontWeight: '600',
     color: '#475569',
+  },
+  barangayBarChartScroll: {
+    paddingVertical: 10,
+    gap: 12,
+    alignItems: 'flex-end',
+  },
+  barangayBarCol: {
+    alignItems: 'center',
+    width: 58,
+  },
+  barangayBarCount: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  barangayBarTrack: {
+    width: 24,
+    height: 120,
+    backgroundColor: '#eff6ff',
+    borderRadius: 6,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  barangayBarFill: {
+    width: '100%',
+    borderRadius: 6,
+  },
+  barangayBarLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#64748b',
+    marginTop: 6,
+    textAlign: 'center',
+    height: 26,
   },
   chartVisualArea: {
     height: 190,
@@ -1481,6 +1945,65 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
   },
+  reviewPendingLink: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#eff6ff',
+  },
+  reviewPendingLinkText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  activityList: {
+    gap: 8,
+    marginVertical: 4,
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+  },
+  activityAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  activityAction: {
+    fontSize: 10,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  activityTime: {
+    fontSize: 10,
+    color: '#94a3b8',
+  },
+  viewRosterBtn: {
+    marginTop: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  viewRosterBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
   operationsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1501,27 +2024,27 @@ const styles = StyleSheet.create({
   },
   opIcon: {
     fontSize: 20,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   opTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#0f172a',
   },
   opDesc: {
     fontSize: 10,
     color: '#64748b',
-    marginTop: 2,
+    marginTop: 1,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: 20,
+    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#ffffff',
-    borderRadius: 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 18,
     maxHeight: '80%',
   },
@@ -1535,45 +2058,38 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   modalTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#0f172a',
   },
   modalCloseBtn: {
-    padding: 4,
+    padding: 6,
   },
   modalCloseIcon: {
     fontSize: 16,
-    color: '#64748b',
-    fontWeight: 'bold',
+    color: '#94a3b8',
   },
   announcementItem: {
     padding: 12,
     borderRadius: 10,
     backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    marginBottom: 10,
-  },
-  darkItem: {
-    backgroundColor: '#1e293b',
-    borderColor: '#334155',
+    marginBottom: 8,
   },
   annItemTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   annItemTitle: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#0f172a',
     flex: 1,
-    marginRight: 6,
+    marginRight: 8,
   },
   annPriorityBadge: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: '#eff6ff',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -1581,120 +2097,16 @@ const styles = StyleSheet.create({
   annPriorityText: {
     fontSize: 9,
     fontWeight: '700',
-    color: '#dc2626',
+    color: '#2563eb',
   },
   annItemMsg: {
     fontSize: 11,
     color: '#475569',
     lineHeight: 16,
-    marginBottom: 6,
   },
   annItemMeta: {
     fontSize: 10,
     color: '#64748b',
-    marginTop: 2,
-  },
-  pendingQueueBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fffbeb',
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    borderRadius: 14,
-    padding: 12,
-    gap: 10,
-  },
-  pendingQueueLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  pendingQueueIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#fef3c7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pendingQueueTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#92400e',
-  },
-  pendingQueueSub: {
-    fontSize: 11,
-    color: '#b45309',
-    marginTop: 2,
-  },
-  pendingQueueLink: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#b45309',
-    paddingLeft: 4,
-  },
-  reviewPendingLink: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: '#eff6ff',
-  },
-  reviewPendingLinkText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#2563eb',
-  },
-  activityList: {
-    marginTop: 10,
-    gap: 8,
-  },
-  activityItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  activityAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activityName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  activityAction: {
-    fontSize: 10.5,
-    color: '#64748b',
-    marginTop: 1,
-  },
-  activityTime: {
-    fontSize: 10,
-    color: '#94a3b8',
-    fontWeight: '500',
-  },
-  viewRosterBtn: {
-    marginTop: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center',
-  },
-  viewRosterBtnText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#2563eb',
+    marginTop: 4,
   },
 });
-
-
