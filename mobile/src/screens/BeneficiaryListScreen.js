@@ -1004,46 +1004,6 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
             </View>
           ))}
         </View>
-
-        {/* Card 7: Payout Information */}
-        <View style={s.profileSection}>
-          <Text style={s.profileSectionTitle}>Payout Information</Text>
-          {[
-            ['Preference', b.payout_preference === 'digital' ? '💳 Digital' : '💵 Cash OTC'],
-            ['Provider', b.payout_provider],
-            ['Account No.', b.payout_account_number ? (showFullAccountNo ? b.payout_account_number : '••••' + b.payout_account_number.slice(-4)) : '—'],
-            ['Account Name', b.payout_account_name],
-            ['Verification', (b.account_verification_status || 'unverified').toUpperCase()],
-          ].map(([label, value]) => (
-            <View key={label} style={s.profileRow}>
-              <Text style={s.profileLabel}>{label}</Text>
-              <Text style={s.profileValue}>{value || '—'}</Text>
-            </View>
-          ))}
-
-          {b.payout_preference === 'digital' && b.payout_account_number && (
-            <View style={s.payoutActionsRow}>
-              <TouchableOpacity
-                style={s.toggleAccountNoBtn}
-                onPress={() => setShowFullAccountNo(!showFullAccountNo)}
-              >
-                <Text style={s.toggleAccountNoText}>{showFullAccountNo ? 'Itago ang Numero' : 'Ipakita ang Buong Numero'}</Text>
-              </TouchableOpacity>
-
-              {b.account_verification_status !== 'verified' && (
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                  <TouchableOpacity
-                    style={[s.verifyPayoutBtn, verifyingPayout && { opacity: 0.6 }]}
-                    onPress={() => handleVerifyPayout('verified')}
-                    disabled={verifyingPayout}
-                  >
-                    <Text style={s.verifyPayoutBtnText}>✓ I-verify ang Account</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
       </ScrollView>
     );
   };
