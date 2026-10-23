@@ -4,21 +4,7 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { userApi, barangayApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { UserPlus, X, Users } from 'lucide-react';
-
-const ROLES = [
-  { value: 'mswdo_staff', label: 'MSWDO Staff' },
-  { value: 'staff', label: 'DSWD Staff' },
-  { value: 'senior_citizen_admin', label: 'Senior Citizen Admin (OSCA)' },
-  { value: 'pwd_admin', label: 'PWD Admin (PDAO)' },
-  { value: 'barangay', label: 'Barangay' },
-  { value: 'beneficiary', label: 'Beneficiary' },
-];
-const BENEFICIARY_CATEGORY_OPTIONS = [
-  { value: '4Ps Household Beneficiaries', label: '4Ps Household Beneficiaries' },
-  { value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' },
-  { value: 'Persons with Disabilities (PWD)', label: 'Persons with Disabilities (PWD)' },
-];
+import { UserPlus, X, Users, UserCog } from 'lucide-react';
 
 const getRequiredDocuments = (category) => {
   const base = [{ name: 'Valid Government ID / National ID', required: true }];
@@ -184,21 +170,57 @@ export default function UserListPage() {
     { header: 'Name', accessor: 'first_name', cell: (row) => `${row.first_name} ${row.last_name}` },
     { header: 'Username', accessor: 'username', cell: (row) => row.username || '—' },
     { header: 'Email', accessor: 'email', cell: (row) => row.email || '—' },
-    { header: 'Role', accessor: 'role', cell: (row) => (
-      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-        ['admin','mswdo_admin'].includes(row.role) ? 'bg-purple-100 text-purple-800' :
-        row.role === 'senior_citizen_admin' ? 'bg-rose-100 text-rose-800 font-bold' :
-        row.role === 'senior_citizen_staff' ? 'bg-rose-50 text-rose-700 border border-rose-200 font-bold' :
-        row.role === 'pwd_admin' ? 'bg-blue-100 text-blue-800 font-bold' :
-        row.role === 'pwd_staff' ? 'bg-blue-50 text-blue-700 border border-blue-200 font-bold' :
-        row.role === 'mswdo_staff' ? 'bg-indigo-100 text-indigo-800 font-bold' :
-        row.role === 'staff' ? 'bg-blue-100 text-blue-800' :
-        row.role === 'barangay' ? 'bg-green-100 text-green-800' :
-        'bg-slate-100 text-slate-700'
-      }`}>{row.role}</span>
-    )},
+    { header: 'Role', accessor: 'role', cell: (row) => {
+      if (row.role === 'beneficiary') {
+        const cat = row.Beneficiaries?.[0]?.category || '';
+        const isSenior = cat.toLowerCase().includes('senior');
+        const isPwd = cat.toLowerCase().includes('pwd') || cat.toLowerCase().includes('disabilit');
+        const is4Ps = cat.toLowerCase().includes('4ps');
+
+        return (
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+            isSenior ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+            isPwd ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+            is4Ps ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+            'bg-slate-100 text-slate-700 border border-slate-200'
+          }`}>
+            {isSenior ? '👴 Senior Beneficiary' :
+             isPwd ? '♿ PWD Beneficiary' :
+             is4Ps ? '👨‍👩‍👧 4Ps Beneficiary' :
+             'Beneficiary'}
+          </span>
+        );
+      }
+
+      return (
+        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+          row.role === 'admin' ? 'bg-purple-100 text-purple-800' :
+          row.role === 'mswdo_admin' ? 'bg-indigo-100 text-indigo-800 font-bold' :
+          row.role === 'senior_citizen_admin' ? 'bg-rose-100 text-rose-800 font-bold' :
+          row.role === 'senior_citizen_staff' ? 'bg-rose-50 text-rose-700 border border-rose-200 font-bold' :
+          row.role === 'pwd_admin' ? 'bg-blue-100 text-blue-800 font-bold' :
+          row.role === 'pwd_staff' ? 'bg-blue-50 text-blue-700 border border-blue-200 font-bold' :
+          row.role === 'mswdo_staff' ? 'bg-indigo-100 text-indigo-800 font-bold' :
+          row.role === 'staff' ? 'bg-blue-100 text-blue-800' :
+          row.role === 'barangay' ? 'bg-green-100 text-green-800' :
+          'bg-slate-100 text-slate-700'
+        }`}>
+          {row.role === 'senior_citizen_admin' ? 'Senior Admin (OSCA)' :
+           row.role === 'senior_citizen_staff' ? 'Senior Citizen Staff' :
+           row.role === 'pwd_admin' ? 'PWD Admin (PDAO)' :
+           row.role === 'pwd_staff' ? 'PWD Staff' :
+           row.role === 'mswdo_admin' ? 'MSWDO Admin' :
+           row.role === 'mswdo_staff' ? 'MSWDO Staff' :
+           row.role === 'admin' ? 'DSWD Admin' :
+           row.role === 'staff' ? 'DSWD Staff' :
+           row.role === 'barangay' ? 'Barangay Staff' :
+           row.role}
+        </span>
+      );
+    }},
     { header: 'Barangay', accessor: 'barangay_id', cell: (row) => {
-      const brgy = barangays.find((b) => b.id === row.barangay_id);
+      const brgyId = row.barangay_id || row.Beneficiaries?.[0]?.barangay_id;
+      const brgy = barangays.find((b) => b.id === brgyId);
       return brgy ? brgy.barangay_name : '—';
     }},
     { header: 'Contact', accessor: 'contact_number', cell: (row) => row.contact_number || '—' },
@@ -217,52 +239,114 @@ export default function UserListPage() {
     ) : null },
   ];
 
-  // Filter display lists based on user role
-  const isSeniorAdmin = currentUser?.role === 'senior_citizen_admin';
-  const isPwdAdmin = currentUser?.role === 'pwd_admin';
-  const isMswdoAdmin = currentUser?.role === 'mswdo_admin';
-  const isStaffView = ['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(currentUser?.role);
-  const displayUsers = isStaffView
-    ? users
-    : users.filter((user) => user.role !== 'beneficiary');
+  // Sector helpers
+  const isSeniorRole = ['senior_citizen_admin', 'senior_citizen_staff'].includes(currentUser?.role);
+  const isPwdRole = ['pwd_admin', 'pwd_staff'].includes(currentUser?.role);
+  const isMswdoRole = ['mswdo_admin', 'mswdo_staff'].includes(currentUser?.role);
+  const isDswdRole = ['admin', 'staff', 'barangay'].includes(currentUser?.role);
+  const isAdmin = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(currentUser?.role);
 
-  const pageTitle = isStaffView 
-    ? 'Beneficiary Accounts' 
-    : isSeniorAdmin
+  // Beneficiary category options tailored to the current user's sector
+  const sectorCategoryOptions = isSeniorRole
+    ? [{ value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' }]
+    : isPwdRole
+    ? [{ value: 'Persons with Disabilities (PWD)', label: 'Persons with Disabilities (PWD)' }]
+    : isDswdRole
+    ? [{ value: '4Ps Household Beneficiaries', label: '4Ps Household Beneficiaries' }]
+    : [
+        { value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' },
+        { value: 'Persons with Disabilities (PWD)', label: 'Persons with Disabilities (PWD)' },
+      ];
+
+  // Tab State: 'beneficiaries' | 'staff'
+  const [activeTab, setActiveTab] = useState('beneficiaries');
+
+  // Filter users by tab
+  const beneficiaryUsers = users.filter((u) => u.role === 'beneficiary');
+  const staffUsers = users.filter((u) => u.role !== 'beneficiary');
+  const displayUsers = activeTab === 'beneficiaries' ? beneficiaryUsers : staffUsers;
+
+  const pageTitle = activeTab === 'beneficiaries'
+    ? isSeniorRole
+      ? 'Senior Citizen Beneficiary Accounts'
+      : isPwdRole
+      ? 'PWD Beneficiary Accounts'
+      : isDswdRole
+      ? '4Ps Household Beneficiary Accounts'
+      : 'Municipal Beneficiary Accounts'
+    : isSeniorRole
       ? 'Senior Citizen (OSCA) Staff Accounts'
-      : isPwdAdmin
-        ? 'PWD (PDAO) Staff Accounts'
-        : isMswdoAdmin
-          ? 'MSWDO Staff Accounts'
-          : 'Staff Accounts';
+      : isPwdRole
+      ? 'PWD (PDAO) Staff Accounts'
+      : isMswdoRole
+      ? 'MSWDO Staff Accounts'
+      : 'DSWD Staff & Barangay Accounts';
 
-  const pageDescription = isStaffView 
-    ? 'Manage beneficiary accounts.' 
-    : isSeniorAdmin
+  const pageDescription = activeTab === 'beneficiaries'
+    ? isSeniorRole
+      ? 'Manage official Senior Citizens (Social Pension) beneficiary user accounts.'
+      : isPwdRole
+      ? 'Manage official Persons with Disabilities (PWD) beneficiary user accounts.'
+      : isDswdRole
+      ? 'Manage official 4Ps Household beneficiary user accounts.'
+      : 'Manage official municipal beneficiary user accounts (Senior Citizens & PWD).'
+    : isSeniorRole
       ? 'Manage OSCA senior staff accounts.'
-      : isPwdAdmin
-        ? 'Manage PDAO disability staff accounts.'
-        : isMswdoAdmin
-          ? 'Manage MSWDO staff and municipal accounts.'
-          : 'Manage DSWD staff and user accounts.';
+      : isPwdRole
+      ? 'Manage PDAO disability staff accounts.'
+      : isMswdoRole
+      ? 'Manage MSWDO staff and municipal accounts.'
+      : 'Manage DSWD and Barangay staff accounts.';
 
-  const loadingLabel = isStaffView ? 'Loading beneficiary accounts...' : 'Loading staff accounts...';
-  const emptyLabel = isStaffView ? 'No beneficiary accounts found' : 'No staff accounts found';
+  const loadingLabel = activeTab === 'beneficiaries' ? 'Loading beneficiary accounts...' : 'Loading staff accounts...';
+  const emptyLabel = activeTab === 'beneficiaries' ? 'No beneficiary accounts found' : 'No staff accounts found';
 
-  const availableRoles = isSeniorAdmin
+  const availableRoles = isSeniorRole
     ? [{ value: 'senior_citizen_staff', label: 'Senior Citizen Staff (OSCA)' }]
-    : isPwdAdmin
-      ? [{ value: 'pwd_staff', label: 'PWD Staff (PDAO)' }]
-      : isMswdoAdmin
-        ? [
-            { value: 'mswdo_staff', label: 'MSWDO Staff' },
-            { value: 'senior_citizen_admin', label: 'Senior Citizen Admin (OSCA)' },
-            { value: 'pwd_admin', label: 'PWD Admin (PDAO)' },
-          ]
-        : [
-            { value: 'staff', label: 'DSWD Staff' },
-            { value: 'barangay', label: 'Barangay Staff' },
-          ];
+    : isPwdRole
+    ? [{ value: 'pwd_staff', label: 'PWD Staff (PDAO)' }]
+    : isMswdoRole
+    ? [
+        { value: 'mswdo_staff', label: 'MSWDO Staff' },
+        { value: 'senior_citizen_admin', label: 'Senior Citizen Admin (OSCA)' },
+        { value: 'pwd_admin', label: 'PWD Admin (PDAO)' },
+      ]
+    : [
+        { value: 'staff', label: 'DSWD Staff' },
+        { value: 'barangay', label: 'Barangay Staff' },
+      ];
+
+  const handleOpenCreateModal = () => {
+    setFormError(null);
+    if (activeTab === 'beneficiaries') {
+      setForm({
+        first_name: '',
+        last_name: '',
+        username: '',
+        email: '',
+        password: '',
+        contact_number: '',
+        role: 'beneficiary',
+        barangay_id: currentUser?.barangay_id || '',
+        category: sectorCategoryOptions[0]?.value || '',
+        household_id_number: '',
+      });
+    } else {
+      setForm({
+        first_name: '',
+        last_name: '',
+        username: '',
+        email: '',
+        password: '',
+        contact_number: '',
+        role: availableRoles[0]?.value || 'staff',
+        barangay_id: '',
+        category: '',
+        household_id_number: '',
+      });
+    }
+    setShowModal(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -286,7 +370,7 @@ export default function UserListPage() {
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
           <button
             type="button"
-            onClick={() => setShowModal(true)}
+            onClick={handleOpenCreateModal}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
           >
             <UserPlus className="w-3.5 h-3.5" />
@@ -299,6 +383,57 @@ export default function UserListPage() {
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-start gap-3">
           <span className="text-lg">⚠️</span>
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* Navigation Tabs (Beneficiary Accounts vs Staff Accounts) */}
+      {(isAdmin || staffUsers.length > 0) && (
+        <div className="flex items-center gap-2 border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('beneficiaries')}
+            className={`pb-2.5 px-3 text-xs font-bold transition border-b-2 flex items-center gap-2 ${
+              activeTab === 'beneficiaries'
+                ? 'border-indigo-600 text-indigo-700'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>
+              {isSeniorRole ? 'Senior Citizen Beneficiaries' :
+               isPwdRole ? 'PWD Beneficiaries' :
+               isDswdRole ? '4Ps Household Beneficiaries' :
+               'Municipal Beneficiaries'}
+            </span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              activeTab === 'beneficiaries' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
+            }`}>
+              {beneficiaryUsers.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('staff')}
+            className={`pb-2.5 px-3 text-xs font-bold transition border-b-2 flex items-center gap-2 ${
+              activeTab === 'staff'
+                ? 'border-indigo-600 text-indigo-700'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <UserCog className="w-3.5 h-3.5" />
+            <span>
+              {isSeniorRole ? 'Senior Citizen (OSCA) Staff' :
+               isPwdRole ? 'PWD (PDAO) Staff' :
+               isMswdoRole ? 'MSWDO Staff' :
+               'DSWD & Barangay Staff'}
+            </span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              activeTab === 'staff' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
+            }`}>
+              {staffUsers.length}
+            </span>
+          </button>
         </div>
       )}
 
@@ -344,12 +479,26 @@ export default function UserListPage() {
               </div>
               <div>
                 <h2 className="text-base font-semibold text-slate-900">
-                  {isStaffView ? 'Create Beneficiary Account' : (currentUser?.role === 'mswdo_admin' ? 'Create MSWDO Staff Account' : 'Create Staff Account')}
+                  {form.role === 'beneficiary'
+                    ? isSeniorRole
+                      ? 'Create Senior Citizen Beneficiary Account'
+                      : isPwdRole
+                      ? 'Create PWD Beneficiary Account'
+                      : isDswdRole
+                      ? 'Create 4Ps Beneficiary Account'
+                      : 'Create Municipal Beneficiary Account'
+                    : isSeniorRole
+                    ? 'Create OSCA Senior Staff Account'
+                    : isPwdRole
+                    ? 'Create PDAO Disability Staff Account'
+                    : isMswdoRole
+                    ? 'Create MSWDO Staff Account'
+                    : 'Create DSWD Staff Account'}
                 </h2>
                 <p className="text-xs text-slate-500">
-                  {currentUser?.role === 'staff'
-                    ? 'Fill in the details to create a beneficiary account in your barangay.'
-                    : 'Fill in the details to create a new staff account.'}
+                  {form.role === 'beneficiary'
+                    ? 'Fill in the details to create a beneficiary portal access account.'
+                    : 'Fill in the details to create an authorized staff account.'}
                 </p>
               </div>
             </div>
@@ -373,7 +522,7 @@ export default function UserListPage() {
               <Input label="Password" name="password" type="password" value={form.password} onChange={handleChange} required autoComplete="new-password" />
               <Input label="Contact Number" name="contact_number" value={form.contact_number} onChange={handleChange} autoComplete="off" />
 
-              {(form.role === 'beneficiary' || isStaffView) && (
+              {form.role === 'beneficiary' && (
                 <>
                   <label className="block text-sm font-semibold text-slate-700">
                     Beneficiary Category
@@ -382,10 +531,9 @@ export default function UserListPage() {
                       value={form.category}
                       onChange={handleChange}
                       className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                      required={form.role === 'beneficiary'}
+                      required
                     >
-                      <option value="">Select category</option>
-                      {BENEFICIARY_CATEGORY_OPTIONS.map((option) => (
+                      {sectorCategoryOptions.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </select>
@@ -416,11 +564,7 @@ export default function UserListPage() {
                       </ul>
                     </div>
                   )}
-                </>
-              )}
-              
-              {currentUser && ['admin','mswdo_admin'].includes(currentUser.role) && (
-                <>
+
                   <label className="block text-sm font-semibold text-slate-700">
                     Barangay
                     <select
@@ -428,6 +572,7 @@ export default function UserListPage() {
                       value={form.barangay_id}
                       onChange={handleChange}
                       className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      required
                     >
                       <option value="">Select Barangay</option>
                       {barangays.map((b) => (
@@ -435,6 +580,27 @@ export default function UserListPage() {
                       ))}
                     </select>
                   </label>
+                </>
+              )}
+              
+              {form.role !== 'beneficiary' && (
+                <>
+                  {['admin', 'mswdo_admin'].includes(currentUser?.role) && (
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Barangay
+                      <select
+                        name="barangay_id"
+                        value={form.barangay_id}
+                        onChange={handleChange}
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      >
+                        <option value="">Select Barangay (Optional)</option>
+                        {barangays.map((b) => (
+                          <option key={b.id} value={b.id}>{b.barangay_name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <label className="block text-sm font-semibold text-slate-700">
                     Role
                     <select

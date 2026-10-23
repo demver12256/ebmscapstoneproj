@@ -21,48 +21,124 @@ router.use(authorize('admin', 'staff'));
 router.get('/', async (req, res, next) => {
   try {
     let whereClause = {};
-    if (req.user.role === 'staff') {
+
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
+      // Senior Citizen Admin & Staff strictly see Senior Citizen Beneficiaries & Senior Staff
+      const seniorBens = await Beneficiary.findAll({
+        where: {
+          category: { [Op.like]: '%Senior%' },
+          [Op.and]: [
+            { category: { [Op.notLike]: '%4Ps%' } },
+            { category: { [Op.notLike]: '%Pantawid%' } },
+          ],
+        },
+        attributes: ['user_id'],
+        raw: true,
+      });
+      const seniorUserIds = seniorBens.map((b) => b.user_id).filter(Boolean);
+
       whereClause = {
-        role: 'beneficiary',
-        ...(req.user.barangay_id ? { barangay_id: req.user.barangay_id } : {}),
+        [Op.or]: [
+          { role: { [Op.in]: ['senior_citizen_staff', 'senior_citizen_admin'] } },
+          { role: 'beneficiary', id: { [Op.in]: seniorUserIds } },
+        ],
       };
-    } else if (req.user.role === 'mswdo_staff') {
+    } else if (['pwd_admin', 'pwd_staff'].includes(req.user.role)) {
+      // PWD Admin & Staff strictly see PWD Beneficiaries & PWD Staff
+      const pwdBens = await Beneficiary.findAll({
+        where: {
+          [Op.or]: [
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } },
+          ],
+        },
+        attributes: ['user_id'],
+        raw: true,
+      });
+      const pwdUserIds = pwdBens.map((b) => b.user_id).filter(Boolean);
+
       whereClause = {
-        role: { [Op.in]: ['mswdo_staff', 'beneficiary'] },
-      };
-    } else if (req.user.role === 'senior_citizen_staff') {
-      whereClause = {
-        role: { [Op.in]: ['senior_citizen_staff', 'beneficiary'] },
-      };
-    } else if (req.user.role === 'pwd_staff') {
-      whereClause = {
-        role: { [Op.in]: ['pwd_staff', 'beneficiary'] },
-      };
-    } else if (req.user.role === 'mswdo_admin') {
-      // MSWDO Admin strictly manages MSWDO Staff & Municipal Sector Admins
-      whereClause = {
-        role: { [Op.in]: ['mswdo_staff', 'senior_citizen_admin', 'pwd_admin'] },
+        [Op.or]: [
+          { role: { [Op.in]: ['pwd_staff', 'pwd_admin'] } },
+          { role: 'beneficiary', id: { [Op.in]: pwdUserIds } },
+        ],
       };
     } else if (req.user.role === 'admin') {
-      // DSWD Admin strictly manages DSWD Staff & Barangay Staff
+      // DSWD Admin strictly sees 4Ps Beneficiaries & DSWD/Barangay Staff
+      const dswdBens = await Beneficiary.findAll({
+        where: {
+          [Op.or]: [
+            { category: { [Op.like]: '%4Ps%' } },
+            { category: { [Op.like]: '%Pantawid%' } },
+          ],
+        },
+        attributes: ['user_id'],
+        raw: true,
+      });
+      const dswdUserIds = dswdBens.map((b) => b.user_id).filter(Boolean);
+
       whereClause = {
-        role: { [Op.in]: ['staff', 'barangay'] },
+        [Op.or]: [
+          { role: { [Op.in]: ['staff', 'barangay', 'admin'] } },
+          { role: 'beneficiary', id: { [Op.in]: dswdUserIds } },
+        ],
       };
-    } else if (req.user.role === 'senior_citizen_admin') {
-      // Senior Citizen Admin manages Senior Citizen Staff
+    } else if (['staff', 'barangay'].includes(req.user.role)) {
+      // DSWD / Barangay Staff strictly see 4Ps Beneficiaries in their barangay
+      const userBrgyId = req.user.barangay_id;
+      const dswdBens = await Beneficiary.findAll({
+        where: {
+          [Op.or]: [
+            { category: { [Op.like]: '%4Ps%' } },
+            { category: { [Op.like]: '%Pantawid%' } },
+          ],
+          ...(userBrgyId ? { barangay_id: userBrgyId } : {}),
+        },
+        attributes: ['user_id'],
+        raw: true,
+      });
+      const dswdUserIds = dswdBens.map((b) => b.user_id).filter(Boolean);
+
       whereClause = {
-        role: { [Op.in]: ['senior_citizen_staff', 'senior_citizen_admin'] },
+        [Op.or]: [
+          { role: { [Op.in]: ['staff', 'barangay'] }, ...(userBrgyId ? { barangay_id: userBrgyId } : {}) },
+          { role: 'beneficiary', id: { [Op.in]: dswdUserIds } },
+        ],
       };
-    } else if (req.user.role === 'pwd_admin') {
-      // PWD Admin manages PWD Staff
+    } else if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
+      // MSWDO Admin & Staff strictly see Municipal Beneficiaries (Senior Citizens and PWD)
+      const mswdoBens = await Beneficiary.findAll({
+        where: {
+          [Op.or]: [
+            { category: { [Op.like]: '%Senior%' } },
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } },
+          ],
+        },
+        attributes: ['user_id'],
+        raw: true,
+      });
+      const mswdoUserIds = mswdoBens.map((b) => b.user_id).filter(Boolean);
+
       whereClause = {
-        role: { [Op.in]: ['pwd_staff', 'pwd_admin'] },
+        [Op.or]: [
+          { role: { [Op.in]: ['mswdo_staff', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'] } },
+          { role: 'beneficiary', id: { [Op.in]: mswdoUserIds } },
+        ],
       };
     }
 
     const users = await User.findAll({
       where: whereClause,
-      attributes: { exclude: ['password'] }
+      attributes: { exclude: ['password'] },
+      include: [
+        {
+          model: Beneficiary,
+          attributes: ['id', 'category', 'status', 'household_id_number', 'RFID_number', 'barangay_id'],
+          required: false,
+        },
+      ],
+      order: [['role', 'ASC'], ['first_name', 'ASC']],
     });
     res.json({ success: true, data: users });
   } catch (error) {
@@ -74,30 +150,41 @@ router.post('/', async (req, res, next) => {
   try {
     let { first_name, last_name, username, email, password, contact_number, address, barangay_id, role, category, household_id_number } = req.body;
 
-    if (req.user.role === 'senior_citizen_admin') {
-      // Senior Citizen Admin creates Senior Citizen Staff (OSCA scope)
-      role = 'senior_citizen_staff';
-      barangay_id = null;
-    } else if (req.user.role === 'pwd_admin') {
-      // PWD Admin creates PWD Staff (PDAO scope)
-      role = 'pwd_staff';
-      barangay_id = null;
-    } else if (req.user.role === 'mswdo_admin') {
-      // MSWDO Admin creates MSWDO staff (all barangays coverage, barangay_id = null)
-      if (!role || role === 'staff') {
-        role = 'mswdo_staff';
-      }
-      if (role === 'mswdo_staff') {
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
+      if (role === 'beneficiary' || req.user.role === 'senior_citizen_staff') {
+        role = 'beneficiary';
+        category = 'Senior Citizens (Social Pension)';
+      } else {
+        role = 'senior_citizen_staff';
         barangay_id = null;
       }
-    } else if (req.user.role === 'admin') {
-      if (!role || role === 'mswdo_staff') {
-        role = 'staff';
+    } else if (['pwd_admin', 'pwd_staff'].includes(req.user.role)) {
+      if (role === 'beneficiary' || req.user.role === 'pwd_staff') {
+        role = 'beneficiary';
+        category = 'Persons with Disabilities (PWD)';
+      } else {
+        role = 'pwd_staff';
+        barangay_id = null;
       }
-    } else if (['staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(req.user.role)) {
-      role = 'beneficiary';
-      if (req.user.barangay_id) {
-        barangay_id = req.user.barangay_id;
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
+      if (role === 'beneficiary' || req.user.role === 'staff' || req.user.role === 'barangay') {
+        role = 'beneficiary';
+        category = '4Ps Household Beneficiaries';
+        if (req.user.barangay_id && !barangay_id) {
+          barangay_id = req.user.barangay_id;
+        }
+      } else {
+        if (!role || role === 'mswdo_staff') role = 'staff';
+      }
+    } else if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
+      if (role === 'beneficiary' || req.user.role === 'mswdo_staff') {
+        role = 'beneficiary';
+        if (!category || category.toLowerCase().includes('4ps')) {
+          category = 'Senior Citizens (Social Pension)';
+        }
+      } else {
+        if (!role || role === 'staff') role = 'mswdo_staff';
+        if (role === 'mswdo_staff') barangay_id = null;
       }
     }
 

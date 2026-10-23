@@ -17,34 +17,121 @@ const getUserBarangayId = async (user) => {
 };
 
 // Get list of users the current user can message
-// Admin -> all staff, barangay, and beneficiary users
-// Staff -> admin, staff from same barangay, beneficiaries from same barangay
-// Beneficiary -> system administrator, staff from their registered barangay
+// Senior Citizen Admin & Staff -> Inter-office Admins (MSWDO, DSWD, PWD) + Senior Staff/Admin + ONLY Approved Senior Beneficiaries
+// PWD Admin & Staff -> Inter-office Admins (MSWDO, DSWD, Senior) + PWD Staff/Admin + ONLY Approved PWD Beneficiaries
+// DSWD Admin -> Inter-office Admins + DSWD Staff / Barangay + ONLY Approved 4Ps Beneficiaries
+// MSWDO Admin & Staff -> Inter-office Admins + MSWDO Staff + ONLY Approved Municipal Beneficiaries (Senior & PWD)
+// Staff / Barangay -> Admins + Staff from same barangay + ONLY Approved 4Ps Beneficiaries from same barangay
+// Beneficiary -> System / Sector Admins and Barangay Staff
 router.get('/contacts', async (req, res, next) => {
   try {
     const currentUser = req.user;
     let whereClause = { status: 'active' };
 
-    if (['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(currentUser.role)) {
-      // Admin can message all staff/barangay users and only APPROVED beneficiaries
-      const approvedBeneficiaryUserIds = (await Beneficiary.findAll({
-        where: { status: 'Approved' },
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(currentUser.role)) {
+      // Senior Citizen Admin & Staff:
+      // 1. Inter-office Admins (MSWDO Admin, DSWD Admin, PWD Admin)
+      // 2. Fellow Senior Citizen Admin & Staff
+      // 3. ONLY APPROVED Senior Citizen Beneficiaries
+      const seniorApprovedBenUserIds = (await Beneficiary.findAll({
+        where: {
+          status: 'Approved',
+          category: { [Op.like]: '%Senior%' },
+          [Op.and]: [
+            { category: { [Op.notLike]: '%4Ps%' } },
+            { category: { [Op.notLike]: '%Pantawid%' } },
+          ],
+        },
         attributes: ['user_id'],
         raw: true,
       })).map((b) => b.user_id).filter(Boolean);
 
       whereClause[Op.or] = [
-        { role: { [Op.in]: ['staff','barangay'] } },
-        { 
+        // Inter-office Admins + Senior Office Colleagues
+        { role: { [Op.in]: ['mswdo_admin', 'admin', 'pwd_admin', 'senior_citizen_admin', 'senior_citizen_staff'] } },
+        // ONLY Approved Senior Citizen Beneficiaries
+        {
           role: 'beneficiary',
-          id: { [Op.in]: approvedBeneficiaryUserIds }
-        }
+          id: { [Op.in]: seniorApprovedBenUserIds },
+        },
+      ];
+    } else if (['pwd_admin', 'pwd_staff'].includes(currentUser.role)) {
+      // PWD Admin & Staff:
+      // 1. Inter-office Admins (MSWDO Admin, DSWD Admin, Senior Citizen Admin)
+      // 2. Fellow PWD Admin & Staff
+      // 3. ONLY APPROVED PWD Beneficiaries
+      const pwdApprovedBenUserIds = (await Beneficiary.findAll({
+        where: {
+          status: 'Approved',
+          [Op.or]: [
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } },
+          ],
+        },
+        attributes: ['user_id'],
+        raw: true,
+      })).map((b) => b.user_id).filter(Boolean);
+
+      whereClause[Op.or] = [
+        // Inter-office Admins + PWD Office Colleagues
+        { role: { [Op.in]: ['mswdo_admin', 'admin', 'senior_citizen_admin', 'pwd_admin', 'pwd_staff'] } },
+        // ONLY Approved PWD Beneficiaries
+        {
+          role: 'beneficiary',
+          id: { [Op.in]: pwdApprovedBenUserIds },
+        },
+      ];
+    } else if (currentUser.role === 'admin') {
+      // DSWD Admin:
+      // 1. Inter-office Admins (MSWDO Admin, Senior Admin, PWD Admin)
+      // 2. DSWD Staff & Barangay Staff
+      // 3. ONLY APPROVED 4Ps Beneficiaries
+      const dswdApprovedBenUserIds = (await Beneficiary.findAll({
+        where: {
+          status: 'Approved',
+          [Op.or]: [
+            { category: { [Op.like]: '%4Ps%' } },
+            { category: { [Op.like]: '%Pantawid%' } },
+          ],
+        },
+        attributes: ['user_id'],
+        raw: true,
+      })).map((b) => b.user_id).filter(Boolean);
+
+      whereClause[Op.or] = [
+        { role: { [Op.in]: ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'barangay'] } },
+        {
+          role: 'beneficiary',
+          id: { [Op.in]: dswdApprovedBenUserIds },
+        },
+      ];
+    } else if (['mswdo_admin', 'mswdo_staff'].includes(currentUser.role)) {
+      // MSWDO Admin & Staff:
+      // 1. Inter-office Admins (DSWD Admin, Senior Admin, PWD Admin, MSWDO Admin)
+      // 2. MSWDO Staff
+      // 3. ONLY APPROVED Municipal Beneficiaries (Senior Citizens and PWD)
+      const mswdoApprovedBenUserIds = (await Beneficiary.findAll({
+        where: {
+          status: 'Approved',
+          [Op.or]: [
+            { category: { [Op.like]: '%Senior%' } },
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } },
+          ],
+        },
+        attributes: ['user_id'],
+        raw: true,
+      })).map((b) => b.user_id).filter(Boolean);
+
+      whereClause[Op.or] = [
+        { role: { [Op.in]: ['mswdo_admin', 'admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'] } },
+        {
+          role: 'beneficiary',
+          id: { [Op.in]: mswdoApprovedBenUserIds },
+        },
       ];
     } else if (currentUser.role === 'staff' || currentUser.role === 'barangay') {
-      // Staff can only message:
-      // 1. Admin users
-      // 2. Staff / Barangay users from their SAME barangay only
-      // 3. Only APPROVED beneficiaries from their SAME barangay
+      // DSWD / Barangay Staff from their assigned barangay
       const userBarangayId = await getUserBarangayId(currentUser);
       if (!userBarangayId) {
         return res.status(403).json({ 
@@ -57,24 +144,28 @@ router.get('/contacts', async (req, res, next) => {
         where: {
           barangay_id: userBarangayId,
           status: 'Approved',
+          [Op.or]: [
+            { category: { [Op.like]: '%4Ps%' } },
+            { category: { [Op.like]: '%Pantawid%' } },
+          ],
         },
         attributes: ['user_id'],
         raw: true,
       })).map((b) => b.user_id).filter(Boolean);
 
       whereClause[Op.or] = [
-        // Admin (any barangay)
-        { role: { [Op.in]: ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'] } },
-        // Staff from the SAME barangay only
-        { 
-          role: { [Op.in]: ['staff','barangay'] },
-          barangay_id: userBarangayId
+        // Admins
+        { role: { [Op.in]: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'] } },
+        // Staff from SAME barangay
+        {
+          role: { [Op.in]: ['staff', 'barangay'] },
+          barangay_id: userBarangayId,
         },
-        // Only APPROVED beneficiaries from the SAME barangay
-        { 
+        // Only APPROVED 4Ps beneficiaries from SAME barangay
+        {
           role: 'beneficiary',
-          id: { [Op.in]: approvedBeneficiaryUserIds }
-        }
+          id: { [Op.in]: approvedBeneficiaryUserIds },
+        },
       ];
     } else if (currentUser.role === 'beneficiary') {
       // Beneficiaries can only message if their registration is Approved
@@ -83,21 +174,31 @@ router.get('/contacts', async (req, res, next) => {
         return res.json({ success: true, data: [] });
       }
 
-      const beneficiaryBarangayId = ben.barangay_id || currentUser.barangay_id;
+      const benCategory = String(ben.category || '').toLowerCase();
+      const isSeniorBen = benCategory.includes('senior') && !benCategory.includes('4ps');
+      const isPwdBen = benCategory.includes('pwd') || benCategory.includes('disabilit');
 
+      const allowedAdmins = ['admin', 'mswdo_admin'];
+      if (isSeniorBen) {
+        allowedAdmins.push('senior_citizen_admin', 'senior_citizen_staff');
+      } else if (isPwdBen) {
+        allowedAdmins.push('pwd_admin', 'pwd_staff');
+      } else {
+        // 4Ps or other
+        allowedAdmins.push('senior_citizen_admin', 'pwd_admin');
+      }
+
+      const beneficiaryBarangayId = ben.barangay_id || currentUser.barangay_id;
       if (beneficiaryBarangayId) {
         whereClause[Op.or] = [
-          // System Administrator
-          { role: { [Op.in]: ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'] } },
-          // Staff from their registered barangay
-          { 
-            role: { [Op.in]: ['staff','barangay'] },
-            barangay_id: beneficiaryBarangayId
-          }
+          { role: { [Op.in]: allowedAdmins } },
+          {
+            role: { [Op.in]: ['staff', 'barangay'] },
+            barangay_id: beneficiaryBarangayId,
+          },
         ];
       } else {
-        // If no barangay assigned yet, they can still contact System Admin
-        whereClause.role = { [Op.in]: ['admin','mswdo_admin','senior_citizen_admin','pwd_admin'] };
+        whereClause.role = { [Op.in]: allowedAdmins };
       }
     } else {
       return res.json({ success: true, data: [] });
@@ -513,14 +614,65 @@ router.post('/', async (req, res, next) => {
 
     const receiverRole = receiver.role;
 
-    // 1. Admin can message staff, barangay, and beneficiaries
-    if (['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(currentRole)) {
-      if (!['staff', 'barangay', 'beneficiary'].includes(receiverRole)) {
-        return res.status(403).json({ success: false, message: 'Admin can only message staff, barangay, and beneficiary users' });
+    // 1. Senior Citizen Admin & Staff
+    if (['senior_citizen_admin', 'senior_citizen_staff'].includes(currentRole)) {
+      const allowedColleagues = ['mswdo_admin', 'admin', 'pwd_admin', 'senior_citizen_admin', 'senior_citizen_staff'];
+      if (allowedColleagues.includes(receiverRole)) {
+        // Allowed to message inter-office admins and colleagues
+      } else if (receiverRole === 'beneficiary') {
+        const ben = await Beneficiary.findOne({ where: { user_id: receiver.id } });
+        const cat = String(ben?.category || '').toLowerCase();
+        if (!ben || ben.status !== 'Approved' || !cat.includes('senior') || cat.includes('4ps')) {
+          return res.status(403).json({ success: false, message: 'Senior Citizen Admin/Staff can only message approved Senior Citizen beneficiaries.' });
+        }
+      } else {
+        return res.status(403).json({ success: false, message: 'Invalid recipient for Senior Citizen office.' });
       }
     }
-    
-    // 2. Staff can message:
+    // 2. PWD Admin & Staff
+    else if (['pwd_admin', 'pwd_staff'].includes(currentRole)) {
+      const allowedColleagues = ['mswdo_admin', 'admin', 'senior_citizen_admin', 'pwd_admin', 'pwd_staff'];
+      if (allowedColleagues.includes(receiverRole)) {
+        // Allowed to message inter-office admins and colleagues
+      } else if (receiverRole === 'beneficiary') {
+        const ben = await Beneficiary.findOne({ where: { user_id: receiver.id } });
+        const cat = String(ben?.category || '').toLowerCase();
+        if (!ben || ben.status !== 'Approved' || (!cat.includes('pwd') && !cat.includes('disabilit'))) {
+          return res.status(403).json({ success: false, message: 'PWD Admin/Staff can only message approved PWD beneficiaries.' });
+        }
+      } else {
+        return res.status(403).json({ success: false, message: 'Invalid recipient for PWD office.' });
+      }
+    }
+    // 3. DSWD Admin (admin)
+    else if (currentRole === 'admin') {
+      const allowedColleagues = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'barangay'];
+      if (allowedColleagues.includes(receiverRole)) {
+        // Allowed to message admins and DSWD staff
+      } else if (receiverRole === 'beneficiary') {
+        const ben = await Beneficiary.findOne({ where: { user_id: receiver.id } });
+        if (!ben || ben.status !== 'Approved') {
+          return res.status(403).json({ success: false, message: 'Admin can only message approved beneficiaries.' });
+        }
+      } else {
+        return res.status(403).json({ success: false, message: 'Invalid recipient.' });
+      }
+    }
+    // 4. MSWDO Admin & Staff
+    else if (['mswdo_admin', 'mswdo_staff'].includes(currentRole)) {
+      const allowedColleagues = ['admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_admin', 'mswdo_staff'];
+      if (allowedColleagues.includes(receiverRole)) {
+        // Allowed to message inter-office admins and MSWDO staff
+      } else if (receiverRole === 'beneficiary') {
+        const ben = await Beneficiary.findOne({ where: { user_id: receiver.id } });
+        if (!ben || ben.status !== 'Approved') {
+          return res.status(403).json({ success: false, message: 'Can only message approved municipal beneficiaries.' });
+        }
+      } else {
+        return res.status(403).json({ success: false, message: 'Invalid recipient.' });
+      }
+    }
+    // 5. Staff can message:
     // - Admin (any barangay)
     // - Other staff / barangay from SAME barangay only
     // - Beneficiaries from SAME barangay only
@@ -556,8 +708,8 @@ router.post('/', async (req, res, next) => {
       }
     }
     
-    // 3. Beneficiary can message:
-    // - System Administrator (role: 'admin')
+    // 6. Beneficiary can message:
+    // - Authorized Administrators and Staff
     // - Staff from their registered barangay only (Approved beneficiaries only)
     else if (currentRole === 'beneficiary') {
       const ben = await Beneficiary.findOne({ where: { user_id: req.user.id } });
@@ -568,15 +720,28 @@ router.post('/', async (req, res, next) => {
         });
       }
 
+      const benCategory = String(ben.category || '').toLowerCase();
+      const isSeniorBen = benCategory.includes('senior') && !benCategory.includes('4ps');
+      const isPwdBen = benCategory.includes('pwd') || benCategory.includes('disabilit');
+
+      const allowedAdmins = ['admin', 'mswdo_admin'];
+      if (isSeniorBen) {
+        allowedAdmins.push('senior_citizen_admin', 'senior_citizen_staff');
+      } else if (isPwdBen) {
+        allowedAdmins.push('pwd_admin', 'pwd_staff');
+      } else {
+        allowedAdmins.push('senior_citizen_admin', 'pwd_admin');
+      }
+
       const beneficiaryBarangayId = ben.barangay_id || req.user.barangay_id;
 
-      if (['admin','mswdo_admin','senior_citizen_admin','pwd_admin'].includes(receiverRole)) {
-        // Allowed to message System Administrator
+      if (allowedAdmins.includes(receiverRole)) {
+        // Allowed to message authorized Administrators and Staff
       } else if (receiverRole === 'staff' || receiverRole === 'barangay') {
         if (!beneficiaryBarangayId) {
           return res.status(403).json({ 
             success: false, 
-            message: 'Your beneficiary account is not registered to a barangay. You can contact the System Administrator.' 
+            message: 'Your beneficiary account is not registered to a barangay. You can contact the Office Administrator.' 
           });
         }
         const receiverBarangayId = await getUserBarangayId(receiver);
