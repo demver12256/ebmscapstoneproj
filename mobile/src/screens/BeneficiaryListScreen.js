@@ -54,7 +54,7 @@ const getCategoryShort = (category) => {
   return category.length > 12 ? category.substring(0, 12) + '…' : category;
 };
 
-const BeneficiaryListScreen = ({ onBack, user }) => {
+const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [barangays, setBarangays] = useState([]);
   const [pendingApplications, setPendingApplications] = useState([]);
@@ -64,8 +64,12 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBarangayId, setSelectedBarangayId] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedIpClassification, setSelectedIpClassification] = useState('');
+  const [showArchivedOnly, setShowArchivedOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [listMode, setListMode] = useState('roster'); // 'roster' | 'applications'
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 8;
 
   // Selected Beneficiary Detail State
   const [selectedBeneficiary, setSelectedBeneficiary] = useState(null);
@@ -83,8 +87,16 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
   const [showFullAccountNo, setShowFullAccountNo] = useState(false);
 
   // Edit Beneficiary Modal
+  const [editingBeneficiary, setEditingBeneficiary] = useState(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
-  const [editForm, setEditForm] = useState({ contact_number: '', address: '', sitio: '', civil_status: '' });
+  const [editForm, setEditForm] = useState({
+    contact_number: '',
+    address: '',
+    sitio: '',
+    civil_status: 'Single',
+    status: 'active',
+    inactivation_reason: '',
+  });
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Pending Application Review & Rejection
@@ -321,9 +333,40 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     loadData();
   };
 
+  const canManageApplications = (isDswdAdmin || isSeniorRole || isPwdRole) && !isMswdoRole;
+
+  const isArchivedBeneficiary = (b) => {
+    return b.User?.status === 'inactive' || b.status === 'inactive' || b.status === 'archived' || (b.inactivation_reason && b.inactivation_reason.includes('Archived'));
+  };
+
+  const categoryMatches = (beneficiaryCategory, filterCategory) => {
+    if (!filterCategory) return true;
+    if (!beneficiaryCategory) return false;
+    if (beneficiaryCategory === filterCategory) return true;
+    const isPwdFilter = filterCategory.toLowerCase().includes('pwd') || filterCategory.toLowerCase().includes('disabilit');
+    const isPwdBen = beneficiaryCategory.toLowerCase().includes('pwd') || beneficiaryCategory.toLowerCase().includes('disabilit');
+    if (isPwdFilter && isPwdBen) return true;
+    const is4PsFilter = filterCategory.toLowerCase().includes('4ps');
+    const is4PsBen = beneficiaryCategory.toLowerCase().includes('4ps');
+    if (is4PsFilter && is4PsBen) return true;
+    const isSeniorFilter = filterCategory.toLowerCase().includes('senior');
+    const isSeniorBen = beneficiaryCategory.toLowerCase().includes('senior');
+    if (isSeniorFilter && isSeniorBen) return true;
+    return false;
+  };
+
+  const archivedCount = beneficiaries.filter(isArchivedBeneficiary).length;
+  const activeCount = beneficiaries.filter((b) => !isArchivedBeneficiary(b)).length;
+
   const filteredBeneficiaries = beneficiaries.filter((b) => {
+    const isArchived = isArchivedBeneficiary(b);
+    if (showArchivedOnly && !isArchived) return false;
+    if (!showArchivedOnly && isArchived) return false;
+
     if (selectedBarangayId && String(b.barangay_id) !== selectedBarangayId) return false;
-    if (selectedCategory && b.category !== selectedCategory) return false;
+    if (selectedCategory && !categoryMatches(b.category, selectedCategory)) return false;
+    if (selectedIpClassification && b.ip_classification !== selectedIpClassification) return false;
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const fullName = `${b.first_name || ''} ${b.middle_name || ''} ${b.last_name || ''}`.toLowerCase();
@@ -335,9 +378,15 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     return true;
   });
 
+  const totalPages = Math.ceil(filteredBeneficiaries.length / ITEMS_PER_PAGE) || 1;
+  const paginatedBeneficiaries = filteredBeneficiaries.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   const filteredApplications = pendingApplications.filter((app) => {
     if (selectedBarangayId && String(app.barangay_id) !== selectedBarangayId) return false;
-    if (selectedCategory && app.category !== selectedCategory) return false;
+    if (selectedCategory && !categoryMatches(app.category, selectedCategory)) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const fullName = `${app.first_name || ''} ${app.middle_name || ''} ${app.last_name || ''}`.toLowerCase();
@@ -347,6 +396,34 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     }
     return true;
   });
+
+  const handleToggleArchiveBeneficiary = (beneficiaryRow) => {
+    const isArchived = isArchivedBeneficiary(beneficiaryRow);
+    const actionLabel = isArchived ? 'i-restore / i-activate' : 'i-archive / i-deactivate';
+    Alert.alert(
+      isArchived ? 'I-restore ang Benepisyaryo' : 'I-archive ang Benepisyaryo',
+      `Sigurado ka bang nais mong ${actionLabel} ang rekord ni ${beneficiaryRow.first_name} ${beneficiaryRow.last_name}?`,
+      [
+        { text: 'Kanselahin', style: 'cancel' },
+        {
+          text: isArchived ? 'I-restore' : 'I-archive',
+          style: isArchived ? 'default' : 'destructive',
+          onPress: async () => {
+            try {
+              await beneficiaryApi.update(beneficiaryRow.id, {
+                status: isArchived ? 'active' : 'inactive',
+                inactivation_reason: isArchived ? null : `Archived by ${user?.first_name || 'Staff'}`
+              });
+              Alert.alert('Tagumpay', `Matagumpay na na-${isArchived ? 'restore' : 'archive'} ang rekord!`);
+              await loadData();
+            } catch (err) {
+              Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi naisagawa ang aksyon.');
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const handleApproveApplication = (app) => {
     Alert.alert(
@@ -459,22 +536,36 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
   };
 
   const handleOpenEditModal = (b) => {
+    setEditingBeneficiary(b);
     setEditForm({
       contact_number: b.contact_number || '',
       address: b.address || '',
       sitio: b.sitio || '',
       civil_status: b.civil_status || 'Single',
+      status: isArchivedBeneficiary(b) ? 'inactive' : (b.User?.status || b.status || 'active'),
+      inactivation_reason: b.inactivation_reason || '',
     });
     setEditModalVisible(true);
   };
 
   const handleSaveEdit = async () => {
+    if (!editingBeneficiary) return;
+    if (editForm.status === 'inactive' && !editForm.inactivation_reason?.trim()) {
+      Alert.alert('Kailangan ang Dahilan', 'Pakilagay ang dahilan o note kung bakit gagawing inactive / archived ang rekord.');
+      return;
+    }
     try {
       setSavingEdit(true);
-      await beneficiaryApi.update(selectedBeneficiary.id, editForm);
-      Alert.alert('Tagumpay', 'Matagumpay na na-update ang impormasyon ng benepisyaryo!');
-      setSelectedBeneficiary((prev) => ({ ...prev, ...editForm }));
+      const payload = {
+        ...editForm,
+        inactivation_reason: editForm.status === 'inactive' ? editForm.inactivation_reason.trim() : null,
+      };
+      await beneficiaryApi.update(editingBeneficiary.id, payload);
+      Alert.alert('Tagumpay', 'Matagumpay na na-update ang impormasyon sa database!');
       setEditModalVisible(false);
+      if (selectedBeneficiary && selectedBeneficiary.id === editingBeneficiary.id) {
+        setSelectedBeneficiary((prev) => ({ ...prev, ...payload }));
+      }
       await loadData();
     } catch (err) {
       Alert.alert('Error', err?.response?.data?.message || err.message || 'Hindi na-update ang impormasyon.');
@@ -518,39 +609,99 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     const barangayName = item.Barangay?.barangay_name || item.Barangay?.name || '—';
     const catColor = getCategoryColor(item.category);
     const catShort = getCategoryShort(item.category);
+    const isArchived = isArchivedBeneficiary(item);
+    const isIp = item.ip_classification === 'IP';
 
     return (
-      <TouchableOpacity style={s.card} onPress={() => openDetail(item)} activeOpacity={0.7}>
-        <View style={s.cardHeader}>
-          <View style={[s.avatar, { backgroundColor: catColor + '20' }]}>
-            <Text style={[s.avatarText, { color: catColor }]}>
-              {(item.first_name?.[0] || '').toUpperCase()}{(item.last_name?.[0] || '').toUpperCase()}
+      <View style={[s.card, isArchived && s.cardArchived]}>
+        <TouchableOpacity onPress={() => openDetail(item)} activeOpacity={0.7}>
+          <View style={s.cardHeader}>
+            <View style={[s.avatar, { backgroundColor: catColor + '20' }]}>
+              <Text style={[s.avatarText, { color: catColor }]}>
+                {(item.first_name?.[0] || '').toUpperCase()}{(item.last_name?.[0] || '').toUpperCase()}
+              </Text>
+            </View>
+            <View style={s.cardInfo}>
+              <Text style={s.cardName} numberOfLines={1}>{fullName}</Text>
+              <Text style={s.cardMeta}>
+                📍 {barangayName} {item.sitio ? `• ${item.sitio}` : ''}
+              </Text>
+            </View>
+            <View style={[s.categoryBadge, { backgroundColor: catColor + '18', borderColor: catColor + '40' }]}>
+              <Text style={[s.categoryText, { color: catColor }]}>{catShort}</Text>
+            </View>
+          </View>
+
+          <View style={s.cardFooter}>
+            <View style={s.footerItem}>
+              <Text style={s.footerLabel}>ID / Household No.</Text>
+              <Text style={s.footerValue}>{item.household_id_number || item.beneficiary_id_code || '—'}</Text>
+            </View>
+            <View style={s.footerItem}>
+              <Text style={s.footerLabel}>RFID Card</Text>
+              <Text style={[s.footerValue, item.RFID_number ? { color: '#1d4ed8' } : { color: '#ca8a04' }]}>
+                {item.RFID_number ? `💳 ${item.RFID_number}` : '⚠️ Walang RFID'}
+              </Text>
+            </View>
+            <View style={s.footerItem}>
+              <Text style={s.footerLabel}>Status</Text>
+              <View style={[s.statusPill, isArchived ? s.statusPillPurple : item.User?.status === 'active' ? s.statusPillGreen : s.statusPillSlate]}>
+                <Text style={[s.statusPillText, isArchived ? s.statusTextPurple : item.User?.status === 'active' ? s.statusTextGreen : s.statusTextSlate]}>
+                  {isArchived ? 'Archived' : (item.User?.status || item.status || 'active')}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={s.cardSubRow}>
+            <View style={[s.ipBadge, isIp ? s.ipBadgeActive : s.ipBadgeNormal]}>
+              <Text style={[s.ipBadgeText, isIp ? s.ipBadgeTextActive : s.ipBadgeTextNormal]}>
+                {isIp ? '🌿 IP (Mangyan)' : 'Non-IP'}
+              </Text>
+            </View>
+            <Text style={s.cardDateText}>
+              📅 Inaprubahan: {formatDate(item.approval_date || item.created_at)}
             </Text>
           </View>
-          <View style={s.cardInfo}>
-            <Text style={s.cardName} numberOfLines={1}>{fullName}</Text>
-            <Text style={s.cardMeta}>📍 {barangayName}</Text>
-          </View>
-          <View style={[s.categoryBadge, { backgroundColor: catColor + '18', borderColor: catColor + '40' }]}>
-            <Text style={[s.categoryText, { color: catColor }]}>{catShort}</Text>
-          </View>
+        </TouchableOpacity>
+
+        {/* Action Buttons Toolbar matching Web App (Eye, QR, Edit, Archive) */}
+        <View style={s.cardActionsToolbar}>
+          <TouchableOpacity
+            style={s.actionToolBtnBlue}
+            onPress={() => openDetail(item)}
+            activeOpacity={0.7}
+          >
+            <Text style={s.actionToolBtnBlueText}>👁 Tingnan</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={s.actionToolBtnGreen}
+            onPress={() => handleOpenBeneficiaryQr(item)}
+            activeOpacity={0.7}
+          >
+            <Text style={s.actionToolBtnGreenText}>☵ QR Pass</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={s.actionToolBtnAmber}
+            onPress={() => handleOpenEditModal(item)}
+            activeOpacity={0.7}
+          >
+            <Text style={s.actionToolBtnAmberText}>✏ I-edit</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={isArchived ? s.actionToolBtnRestore : s.actionToolBtnArchive}
+            onPress={() => handleToggleArchiveBeneficiary(item)}
+            activeOpacity={0.7}
+          >
+            <Text style={isArchived ? s.actionToolBtnRestoreText : s.actionToolBtnArchiveText}>
+              {isArchived ? '↺ I-restore' : '📦 I-archive'}
+            </Text>
+          </TouchableOpacity>
         </View>
-        <View style={s.cardFooter}>
-          <View style={s.footerItem}>
-            <Text style={s.footerLabel}>ID Code</Text>
-            <Text style={s.footerValue}>{item.beneficiary_id_code || '—'}</Text>
-          </View>
-          <View style={s.footerItem}>
-            <Text style={s.footerLabel}>RFID Card</Text>
-            <Text style={s.footerValue}>{item.RFID_number || 'Walang RFID'}</Text>
-          </View>
-          <View style={s.footerItem}>
-            <Text style={s.footerLabel}>Sex</Text>
-            <Text style={s.footerValue}>{item.sex || '—'}</Text>
-          </View>
-          <Text style={s.viewArrow}>›</Text>
-        </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -879,8 +1030,8 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
                 <Text style={s.toggleAccountNoText}>{showFullAccountNo ? 'Itago ang Numero' : 'Ipakita ang Buong Numero'}</Text>
               </TouchableOpacity>
 
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                {b.account_verification_status !== 'verified' && (
+              {b.account_verification_status !== 'verified' && (
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                   <TouchableOpacity
                     style={[s.verifyPayoutBtn, verifyingPayout && { opacity: 0.6 }]}
                     onPress={() => handleVerifyPayout('verified')}
@@ -888,17 +1039,8 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
                   >
                     <Text style={s.verifyPayoutBtnText}>✓ I-verify ang Account</Text>
                   </TouchableOpacity>
-                )}
-                {b.account_verification_status !== 'rejected' && (
-                  <TouchableOpacity
-                    style={[s.rejectPayoutBtn, verifyingPayout && { opacity: 0.6 }]}
-                    onPress={() => handleVerifyPayout('rejected')}
-                    disabled={verifyingPayout}
-                  >
-                    <Text style={s.rejectPayoutBtnText}>✕ I-reject</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -1232,17 +1374,22 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     <SafeAreaView style={s.page}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
 
-      {/* Header */}
+      {/* Header matching Web App (Lines 960-985) */}
       <View style={s.header}>
-        <TouchableOpacity onPress={onBack} style={s.backBtn}>
-          <Text style={s.backText}>← Back</Text>
+        <TouchableOpacity onPress={onBack || onOpenDrawer} style={s.backBtn}>
+          <Text style={s.backText}>{onBack ? '← Back' : '☰ Menu'}</Text>
         </TouchableOpacity>
         <View style={s.headerCenter}>
-          <Text style={s.headerTitle}>Beneficiaries</Text>
+          <View style={s.agencyBadgeTag}>
+            <Text style={s.agencyBadgeTagText}>
+              {isSeniorRole ? 'OSCA REGISTRY' : isPwdRole ? 'PDAO REGISTRY' : isMswdoRole ? 'MSWDO REGISTRY' : 'BENEFICIARY MANAGEMENT'}
+            </Text>
+          </View>
+          <Text style={s.headerTitle} numberOfLines={1}>
+            {showArchivedOnly ? 'Archived Beneficiary Records' : 'Official Beneficiary Records'}
+          </Text>
           <Text style={s.headerCount}>
-            {listMode === 'roster'
-              ? `${filteredBeneficiaries.length} Rehistrado`
-              : `${filteredApplications.length} Nakapilang Aplikasyon`}
+            Bongabong, Oriental Mindoro • {listMode === 'roster' ? `${filteredBeneficiaries.length} Rekord` : `${filteredApplications.length} Nakapilang Aplikasyon`}
           </Text>
         </View>
         <TouchableOpacity onPress={() => setShowFilters(!showFilters)} style={s.filterBtn}>
@@ -1250,31 +1397,116 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
         </TouchableOpacity>
       </View>
 
-      {/* Segmented Mode Tabs: Registered Roster vs Pending Applications */}
-      <View style={s.modeTabRow}>
-        <TouchableOpacity
-          style={[s.modeTabBtn, listMode === 'roster' && s.modeTabBtnActive]}
-          onPress={() => setListMode('roster')}
-          activeOpacity={0.8}
-        >
-          <Text style={[s.modeTabBtnText, listMode === 'roster' && s.modeTabBtnTextActive]}>
-            👥 Rehistrado ({filteredBeneficiaries.length})
+      {/* Oversight Callout Card matching Web App (Lines 1010-1030) */}
+      {isSectorRole && (
+        <View style={s.sectorOversightCard}>
+          <Text style={{ fontSize: 18, marginRight: 8 }}>📋</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.sectorOversightTitle}>
+              {isSeniorRole
+                ? 'Office of Senior Citizens Affairs (OSCA) Registry'
+                : isPwdRole
+                ? 'Persons with Disability Affairs Office (PDAO) Registry'
+                : 'Municipal Beneficiary Records Oversight (MSWDO)'}
+            </Text>
+            <Text style={s.sectorOversightDesc}>
+              {isSeniorRole
+                ? 'Municipal registry at social pension records para sa mga Senior Citizens ng Bongabong.'
+                : isPwdRole
+                ? 'Municipal registry at disability welfare records para sa Persons with Disabilities (PWD).'
+                : 'Municipal registry para sa Senior Citizens, Persons with Disabilities (PWD), at 4Ps households.'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Top KPI Stat Cards matching Web App (Lines 1111-1142) */}
+      <View style={s.topKpiStatsContainer}>
+        <View style={s.topKpiCardBlue}>
+          <Text style={s.topKpiCardLabel}>Total Records</Text>
+          <Text style={s.topKpiCardNumberBlue}>{filteredBeneficiaries.length}</Text>
+          <Text style={s.topKpiCardSub}>Naka-filter sa listahan</Text>
+        </View>
+
+        <View style={s.topKpiCardGreen}>
+          <Text style={[s.topKpiCardLabel, { color: '#15803d' }]}>Active</Text>
+          <Text style={[s.topKpiCardNumber, { color: '#16a34a' }]}>
+            {filteredBeneficiaries.filter((b) => !isArchivedBeneficiary(b)).length}
           </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.modeTabBtn, listMode === 'applications' && s.modeTabBtnActive]}
-          onPress={() => setListMode('applications')}
-          activeOpacity={0.8}
-        >
-          <Text style={[s.modeTabBtnText, listMode === 'applications' && s.modeTabBtnTextActive]}>
-            ⏳ Aplikasyon
+          <Text style={[s.topKpiCardSub, { color: '#16a34a' }]}>Aktibong rekord</Text>
+        </View>
+
+        <View style={s.topKpiCardRose}>
+          <Text style={[s.topKpiCardLabel, { color: '#be123c' }]}>Inactive</Text>
+          <Text style={[s.topKpiCardNumber, { color: '#e11d48' }]}>
+            {filteredBeneficiaries.filter((b) => isArchivedBeneficiary(b)).length}
           </Text>
-          {pendingApplications.length > 0 && (
-            <View style={s.tabBadgeCount}>
-              <Text style={s.tabBadgeCountText}>{pendingApplications.length}</Text>
+          <Text style={[s.topKpiCardSub, { color: '#be123c' }]}>Inaktibo / Archive</Text>
+        </View>
+
+        {canManageApplications && (
+          <TouchableOpacity
+            style={s.topKpiCardAmber}
+            onPress={() => {
+              setListMode('applications');
+              setCurrentPage(1);
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={[s.topKpiCardLabel, { color: '#b45309' }]}>Pending</Text>
+              <Text style={{ fontSize: 11 }}>⏳</Text>
             </View>
-          )}
+            <Text style={[s.topKpiCardNumber, { color: '#d97706' }]}>{pendingApplications.length}</Text>
+            <Text style={[s.topKpiCardSub, { color: '#b45309' }]}>Suriin →</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Roster & Archive Mode Toggle Buttons matching Web App */}
+      <View style={s.rosterToggleRow}>
+        <TouchableOpacity
+          style={[s.rosterToggleBtn, !showArchivedOnly && listMode === 'roster' && s.rosterToggleBtnActive]}
+          onPress={() => {
+            setShowArchivedOnly(false);
+            setListMode('roster');
+            setCurrentPage(1);
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={[s.rosterToggleBtnText, !showArchivedOnly && listMode === 'roster' && s.rosterToggleBtnTextActive]}>
+            👥 Aktibo ({activeCount})
+          </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[s.rosterToggleBtn, showArchivedOnly && listMode === 'roster' && s.rosterToggleBtnActivePurple]}
+          onPress={() => {
+            setShowArchivedOnly(true);
+            setListMode('roster');
+            setCurrentPage(1);
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={[s.rosterToggleBtnText, showArchivedOnly && listMode === 'roster' && s.rosterToggleBtnTextActive]}>
+            📦 Naka-archive ({archivedCount})
+          </Text>
+        </TouchableOpacity>
+
+        {canManageApplications && (
+          <TouchableOpacity
+            style={[s.rosterToggleBtn, listMode === 'applications' && s.rosterToggleBtnActiveAmber]}
+            onPress={() => {
+              setListMode('applications');
+              setCurrentPage(1);
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.rosterToggleBtnText, listMode === 'applications' && s.rosterToggleBtnTextActive]}>
+              ⏳ Aplikasyon ({pendingApplications.length})
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Search Bar */}
@@ -1283,25 +1515,28 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
         <TextInput
           style={s.searchInput}
           value={searchQuery}
-          onChangeText={setSearchQuery}
+          onChangeText={(val) => {
+            setSearchQuery(val);
+            setCurrentPage(1);
+          }}
           placeholder={listMode === 'roster' ? 'Search by name, barangay, or ID...' : 'Search applications...'}
           placeholderTextColor="#64748b"
         />
         {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
+          <TouchableOpacity onPress={() => { setSearchQuery(''); setCurrentPage(1); }}>
             <Text style={s.clearSearch}>✕</Text>
           </TouchableOpacity>
         ) : null}
       </View>
 
-      {/* Filter Panel */}
+      {/* Filter Panel matching Web App (Barangay, Category, IP Classification) */}
       {showFilters && (
         <View style={s.filterPanel}>
           <Text style={s.filterTitle}>Filter by Barangay</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterScroll}>
             <TouchableOpacity
               style={[s.filterChip, !selectedBarangayId && s.filterChipActive]}
-              onPress={() => setSelectedBarangayId('')}
+              onPress={() => { setSelectedBarangayId(''); setCurrentPage(1); }}
             >
               <Text style={[s.filterChipText, !selectedBarangayId && s.filterChipTextActive]}>All</Text>
             </TouchableOpacity>
@@ -1311,7 +1546,7 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
                 <TouchableOpacity
                   key={brgy.id}
                   style={[s.filterChip, selectedBarangayId === String(brgy.id) && s.filterChipActive]}
-                  onPress={() => setSelectedBarangayId(selectedBarangayId === String(brgy.id) ? '' : String(brgy.id))}
+                  onPress={() => { setSelectedBarangayId(selectedBarangayId === String(brgy.id) ? '' : String(brgy.id)); setCurrentPage(1); }}
                 >
                   <Text style={[s.filterChipText, selectedBarangayId === String(brgy.id) && s.filterChipTextActive]}>
                     {name}
@@ -1325,7 +1560,7 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterScroll}>
             <TouchableOpacity
               style={[s.filterChip, !selectedCategory && s.filterChipActive]}
-              onPress={() => setSelectedCategory('')}
+              onPress={() => { setSelectedCategory(''); setCurrentPage(1); }}
             >
               <Text style={[s.filterChipText, !selectedCategory && s.filterChipTextActive]}>All</Text>
             </TouchableOpacity>
@@ -1333,10 +1568,29 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
               <TouchableOpacity
                 key={cat}
                 style={[s.filterChip, selectedCategory === cat && s.filterChipActive]}
-                onPress={() => setSelectedCategory(selectedCategory === cat ? '' : cat)}
+                onPress={() => { setSelectedCategory(selectedCategory === cat ? '' : cat); setCurrentPage(1); }}
               >
                 <Text style={[s.filterChipText, selectedCategory === cat && s.filterChipTextActive]}>
                   {getCategoryShort(cat)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <Text style={[s.filterTitle, { marginTop: 10 }]}>Filter by IP Classification</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterScroll}>
+            {[
+              ['', 'All Classifications'],
+              ['IP', 'IP (Mangyan)'],
+              ['Non-IP', 'Non-IP'],
+            ].map(([val, label]) => (
+              <TouchableOpacity
+                key={val}
+                style={[s.filterChip, selectedIpClassification === val && s.filterChipActive]}
+                onPress={() => { setSelectedIpClassification(selectedIpClassification === val ? '' : val); setCurrentPage(1); }}
+              >
+                <Text style={[s.filterChipText, selectedIpClassification === val && s.filterChipTextActive]}>
+                  {label}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1361,7 +1615,7 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
         </View>
       ) : (
         <FlatList
-          data={listMode === 'roster' ? filteredBeneficiaries : filteredApplications}
+          data={listMode === 'roster' ? paginatedBeneficiaries : filteredApplications}
           keyExtractor={(item) => String(item.id)}
           renderItem={listMode === 'roster' ? renderBeneficiaryCard : renderApplicationCard}
           contentContainerStyle={s.listContent}
@@ -1370,10 +1624,63 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
             <View style={s.centered}>
               <Text style={s.emptyText}>
                 {listMode === 'roster'
-                  ? 'Walang nakitang rehistradong benepisyaryo sa napiling filter.'
+                  ? (showArchivedOnly
+                      ? 'Walang nakitang naka-archive na rekord sa filter na ito.'
+                      : 'Walang nakitang rehistradong benepisyaryo sa napiling filter.')
                   : 'Walang nakapilang aplikasyon sa kasalukuyan.'}
               </Text>
             </View>
+          }
+          ListFooterComponent={
+            listMode === 'roster' && filteredBeneficiaries.length > 0 ? (
+              <View style={s.paginationBar}>
+                <Text style={s.paginationInfoText}>
+                  Pahina {currentPage} ng {totalPages} ({filteredBeneficiaries.length} kabuuang rekord)
+                </Text>
+                <View style={s.paginationControls}>
+                  <TouchableOpacity
+                    style={[s.pageNavBtn, currentPage === 1 && s.pageNavBtnDisabled]}
+                    onPress={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[s.pageNavBtnText, currentPage === 1 && s.pageNavBtnTextDisabled]}>‹ Nakaraan</Text>
+                  </TouchableOpacity>
+
+                  <View style={s.pageNumbersRow}>
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum = i + 1;
+                      if (totalPages > 5) {
+                        if (currentPage <= 3) pageNum = i + 1;
+                        else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                        else pageNum = currentPage - 2 + i;
+                      }
+                      return (
+                        <TouchableOpacity
+                          key={pageNum}
+                          style={[s.pageNumBtn, currentPage === pageNum && s.pageNumBtnActive]}
+                          onPress={() => setCurrentPage(pageNum)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[s.pageNumBtnText, currentPage === pageNum && s.pageNumBtnTextActive]}>
+                            {pageNum}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <TouchableOpacity
+                    style={[s.pageNavBtn, currentPage === totalPages && s.pageNavBtnDisabled]}
+                    onPress={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[s.pageNavBtnText, currentPage === totalPages && s.pageNavBtnTextDisabled]}>Susunod ›</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null
           }
         />
       )}
@@ -1850,7 +2157,9 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
         <View style={s.rejectOverlay}>
           <View style={s.rejectCard}>
             <View style={s.rejectHeader}>
-              <Text style={s.rejectTitle}>I-edit ang Impormasyon ng Benepisyaryo</Text>
+              <Text style={s.rejectTitle}>
+                I-edit: {editingBeneficiary ? `${editingBeneficiary.first_name} ${editingBeneficiary.last_name}` : 'Benepisyaryo'}
+              </Text>
               <TouchableOpacity onPress={() => setEditModalVisible(false)}>
                 <Text style={s.rejectClose}>✕</Text>
               </TouchableOpacity>
@@ -1894,6 +2203,41 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              <Text style={[s.editFieldLabel, { marginTop: 12 }]}>RECORD STATUS</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                <TouchableOpacity
+                  style={[s.statusChip, editForm.status === 'active' && { backgroundColor: '#dcfce7', borderColor: '#86efac' }]}
+                  onPress={() => setEditForm((prev) => ({ ...prev, status: 'active', inactivation_reason: '' }))}
+                >
+                  <Text style={[s.statusChipText, editForm.status === 'active' && { color: '#15803d', fontWeight: '800' }]}>
+                    ✓ Active (Aktibo)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.statusChip, editForm.status === 'inactive' && { backgroundColor: '#fee2e2', borderColor: '#fca5a5' }]}
+                  onPress={() => setEditForm((prev) => ({ ...prev, status: 'inactive' }))}
+                >
+                  <Text style={[s.statusChipText, editForm.status === 'inactive' && { color: '#be123c', fontWeight: '800' }]}>
+                    ⊗ Inactive (Inaktibo)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {editForm.status === 'inactive' && (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={s.editFieldLabel}>DAHILAN / NOTE SA PAGIGING INACTIVE (REQUIRED)</Text>
+                  <TextInput
+                    style={[s.editInput, { height: 60, textAlignVertical: 'top' }]}
+                    value={editForm.inactivation_reason}
+                    onChangeText={(val) => setEditForm((prev) => ({ ...prev, inactivation_reason: val }))}
+                    placeholder="Ilagay ang dahilan (e.g. Lumipat ng tirahan, Archived, atbp.)..."
+                    placeholderTextColor="#94a3b8"
+                    multiline
+                  />
+                </View>
+              )}
             </ScrollView>
 
             <View style={s.rejectBtnRow}>
@@ -1905,7 +2249,7 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
                 onPress={handleSaveEdit}
                 disabled={savingEdit}
               >
-                {savingEdit ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.approveActionBtnText}>I-save</Text>}
+                {savingEdit ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.approveActionBtnText}>I-save sa Database</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -3266,6 +3610,449 @@ const s = StyleSheet.create({
   docPreviewImage: {
     width: '100%',
     height: '100%',
+  },
+
+  // ── Missing Styles for Modal Header & Review ──
+  tabBadgePillText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  modalBackBtn: {
+    paddingRight: 12,
+  },
+  modalBackText: {
+    color: '#93c5fd',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalTitle: {
+    color: '#f8fafc',
+    fontSize: 17,
+    fontWeight: '700',
+    flex: 1,
+  },
+  modalAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  modalAvatarText: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  modalMeta: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
+
+  // ── Sector Agency & Oversight Callout ──
+  agencyBadgeTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  agencyBadgeTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  sectorOversightCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 12,
+    padding: 12,
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  sectorOversightTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e40af',
+  },
+  sectorOversightDesc: {
+    fontSize: 11,
+    color: '#3b82f6',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+
+  // ── Top KPI Stat Cards ──
+  topKpiStatsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  topKpiCardBlue: {
+    flex: 1,
+    minWidth: '47%',
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 12,
+    padding: 10,
+  },
+  topKpiCardGreen: {
+    flex: 1,
+    minWidth: '47%',
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 12,
+    padding: 10,
+  },
+  topKpiCardRose: {
+    flex: 1,
+    minWidth: '47%',
+    backgroundColor: '#fff1f2',
+    borderWidth: 1,
+    borderColor: '#fecdd3',
+    borderRadius: 12,
+    padding: 10,
+  },
+  topKpiCardAmber: {
+    flex: 1,
+    minWidth: '47%',
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 12,
+    padding: 10,
+  },
+  topKpiCardLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  topKpiCardNumber: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginTop: 2,
+  },
+  topKpiCardNumberBlue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1d4ed8',
+    marginTop: 2,
+  },
+  topKpiCardSub: {
+    fontSize: 10,
+    color: '#64748b',
+    marginTop: 2,
+  },
+
+  // ── Roster & Archive Toggle Row ──
+  rosterToggleRow: {
+    flexDirection: 'row',
+    backgroundColor: '#e2e8f0',
+    padding: 4,
+    borderRadius: 12,
+    marginHorizontal: 12,
+    marginBottom: 10,
+    gap: 4,
+  },
+  rosterToggleBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  rosterToggleBtnActive: {
+    backgroundColor: '#1e40af',
+    elevation: 2,
+    shadowColor: '#1e40af',
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  rosterToggleBtnActivePurple: {
+    backgroundColor: '#7c3aed',
+    elevation: 2,
+  },
+  rosterToggleBtnActiveAmber: {
+    backgroundColor: '#d97706',
+    elevation: 2,
+  },
+  rosterToggleBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  rosterToggleBtnTextActive: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+
+  // ── Card Status & Badges ──
+  cardArchived: {
+    borderLeftColor: '#94a3b8',
+    backgroundColor: '#f8fafc',
+    opacity: 0.9,
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  statusPillGreen: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#86efac',
+  },
+  statusPillPurple: {
+    backgroundColor: '#f3e8ff',
+    borderColor: '#d8b4fe',
+  },
+  statusPillSlate: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#cbd5e1',
+  },
+  statusPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  statusTextGreen: {
+    color: '#15803d',
+  },
+  statusTextPurple: {
+    color: '#7e22ce',
+  },
+  statusTextSlate: {
+    color: '#64748b',
+  },
+  cardSubRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  ipBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  ipBadgeActive: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#a7f3d0',
+  },
+  ipBadgeNormal: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+  },
+  ipBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  ipBadgeTextActive: {
+    color: '#047857',
+  },
+  ipBadgeTextNormal: {
+    color: '#64748b',
+  },
+  cardDateText: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+
+  // ── Card Actions Toolbar ──
+  cardActionsToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  actionToolBtnBlue: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 8,
+  },
+  actionToolBtnBlueText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1d4ed8',
+  },
+  actionToolBtnGreen: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 8,
+  },
+  actionToolBtnGreenText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803d',
+  },
+  actionToolBtnAmber: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 8,
+  },
+  actionToolBtnAmberText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#b45309',
+  },
+  actionToolBtnArchive: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 8,
+  },
+  actionToolBtnArchiveText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#dc2626',
+  },
+  actionToolBtnRestore: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    backgroundColor: '#f5f3ff',
+    borderWidth: 1,
+    borderColor: '#ddd6fe',
+    borderRadius: 8,
+  },
+  actionToolBtnRestoreText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7c3aed',
+  },
+
+  // ── Pagination Bar & Buttons ──
+  paginationBar: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 20,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  paginationInfoText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  paginationControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  pageNavBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  pageNavBtnDisabled: {
+    opacity: 0.4,
+  },
+  pageNavBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  pageNavBtnTextDisabled: {
+    color: '#94a3b8',
+  },
+  pageNumbersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  pageNumBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  pageNumBtnActive: {
+    backgroundColor: '#1e40af',
+    borderColor: '#1e40af',
+  },
+  pageNumBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  pageNumBtnTextActive: {
+    color: '#fff',
   },
 });
 

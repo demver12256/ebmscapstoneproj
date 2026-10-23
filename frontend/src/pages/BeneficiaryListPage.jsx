@@ -1796,25 +1796,6 @@ export default function BeneficiaryListPage() {
                                       >
                                         I-unverify
                                       </button>
-                                      <button
-                                        onClick={async () => {
-                                          if (!window.confirm('Sigurado ka bang nais mong i-reject ang payout account na ito? Maabisuhan ang benepisyaryo na mag-update.')) return;
-                                          try {
-                                            const res = await beneficiaryApi.verifyPayoutAccount(viewingBeneficiary.id, { action: 'reject' });
-                                            if (res.data.success) {
-                                              setViewingBeneficiary(prev => ({ ...prev, account_verification_status: 'rejected', account_verified_at: null }));
-                                              setBeneficiaries(prev => prev.map(b => b.id === viewingBeneficiary.id ? { ...b, account_verification_status: 'rejected' } : b));
-                                              alert('❌ Na-reject ang payout account.');
-                                            }
-                                          } catch (err) {
-                                            alert(`Error: ${err.response?.data?.message || err.message}`);
-                                          }
-                                        }}
-                                        className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold rounded-lg transition-colors"
-                                        title="Tanggihan ang account"
-                                      >
-                                        I-reject
-                                      </button>
                                     </>
                                   )}
 
