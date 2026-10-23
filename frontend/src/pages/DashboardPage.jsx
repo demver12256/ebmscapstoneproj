@@ -104,7 +104,7 @@ export default function DashboardPage() {
       if (res.data?.success && res.data?.data) {
         const b = res.data.data;
         setBeneficiary(b);
-        setCategory(b.category || '4Ps Household Beneficiary');
+        setCategory(b.category || '');
         setNationalId(b.national_id_number || '');
         setPsaBirthCert(b.psa_birth_cert_number || '');
         setContactNumber(b.contact_number || '');
@@ -554,17 +554,30 @@ export default function DashboardPage() {
               <form onSubmit={handleSaveProfile} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Category Selection <span className="text-red-500">*</span></label>
-                    <select
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-dswd-lightBlue focus:ring-2 focus:ring-blue-100"
-                      required
-                    >
-                      {CATEGORIES.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Category Selection <span className="text-red-500">*</span>
+                      </label>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                        <Lock className="w-3 h-3" /> Rehistradong Sektor
+                      </span>
+                    </div>
+                    <div className="w-full rounded-lg border border-slate-300 bg-slate-100/90 px-4 py-2.5 text-sm font-bold text-slate-800 flex items-center justify-between shadow-xs select-none">
+                      <span className="flex items-center gap-2">
+                        {String(category || beneficiary?.category || '').toLowerCase().includes('senior')
+                          ? '👴 '
+                          : String(category || beneficiary?.category || '').toLowerCase().includes('pwd')
+                          ? '♿ '
+                          : '👨‍👩‍👧‍👦 '}
+                        {category || beneficiary?.category || '4Ps Household Beneficiary'}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        Locked
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Kategoryang napili noong nag-sign up. Naka-lock upang tumugma sa inyong opisyal na rehistrasyon.
+                    </p>
                   </div>
 
                   <Input

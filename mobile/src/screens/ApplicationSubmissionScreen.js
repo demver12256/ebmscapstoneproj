@@ -345,17 +345,20 @@ export default function ApplicationSubmissionScreen({ profile, onProfileUpdated,
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Step 1: Application Profile Details</Text>
-          <Text style={styles.fieldLabel}>Category Selection *</Text>
-          <View style={styles.chipRow}>
-            {CATEGORIES.map((item) => {
-              const itemKey = item.toLowerCase().includes('4ps') ? '4ps' : item.toLowerCase().includes('senior') ? 'senior' : 'pwd';
-              const selected = category.toLowerCase().includes(itemKey);
-              return (
-                <TouchableOpacity key={item} onPress={() => setCategory(item)} style={[styles.chip, selected && styles.chipActive]}>
-                  <Text style={[styles.chipText, selected && styles.chipTextActive]}>{item}</Text>
-                </TouchableOpacity>
-              );
-            })}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <Text style={styles.fieldLabel}>Category Selection *</Text>
+            <View style={{ backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#1d4ed8' }}>🔒 Rehistradong Sektor (Fixed)</Text>
+            </View>
+          </View>
+          <View style={{ backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, padding: 12, marginBottom: 12 }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>
+              {String(category || profile?.category || '').toLowerCase().includes('senior') ? '👴 ' : String(category || profile?.category || '').toLowerCase().includes('pwd') ? '♿ ' : '👨‍👩‍👧‍👦 '}
+              {category || profile?.category || '4Ps Household Beneficiaries'}
+            </Text>
+            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+              Kategoryang napili noong nag-sign up. Naka-lock upang tumugma sa inyong opisyal na rehistrasyon.
+            </Text>
           </View>
 
           <View style={styles.fieldsGrid}>

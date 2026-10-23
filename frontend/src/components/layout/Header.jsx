@@ -31,6 +31,7 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
 
   // Beneficiary profile picture
   const [beneficiaryProfilePic, setBeneficiaryProfilePic] = useState(null);
+  const [beneficiaryStatus, setBeneficiaryStatus] = useState(null);
 
   // Change password modal state
   const [showChangePwModal, setShowChangePwModal] = useState(false);
@@ -108,7 +109,9 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
 
   useEffect(() => {
     if (user) {
-      fetchUnreadCount();
+      if (user.role !== 'beneficiary' || beneficiaryStatus === 'Approved') {
+        fetchUnreadCount();
+      }
       // Pre-fetch pending beneficiary applications for sector admins only
       if (canReviewApps) {
         beneficiaryApi.listApplications().then(res => {
@@ -136,7 +139,9 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
       const handleUpdate = () => fetchUnreadCount();
       window.addEventListener('notificationsUpdated', handleUpdate);
       const interval = setInterval(() => {
+        if (user.role !== 'beneficiary' || beneficiaryStatus === 'Approved') {
         fetchUnreadCount();
+      }
         // Refresh counts periodically
         if (canReviewApps) {
           beneficiaryApi.listApplications().then(res => {
@@ -240,7 +245,9 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
     try {
       await notificationApi.markAsRead(notifId);
       setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
-      fetchUnreadCount();
+      if (user.role !== 'beneficiary' || beneficiaryStatus === 'Approved') {
+        fetchUnreadCount();
+      }
       window.dispatchEvent(new Event('notificationsUpdated'));
     } catch (err) {
       console.error('Failed to mark as read:', err);
@@ -329,11 +336,17 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
   useEffect(() => {
     if (user?.role === 'beneficiary') {
       beneficiaryApi.getMe().then(res => {
-        const pic = res.data?.data?.profile_picture;
+        const b = res.data?.data;
+        if (b) setBeneficiaryStatus(b.status);
+        const pic = b?.profile_picture;
         if (pic) setBeneficiaryProfilePic(`${getBackendBaseUrl()}/${pic}`);
       }).catch(() => {});
     }
   }, [user]);
+
+  const isBeneficiary = user?.role === 'beneficiary';
+  const isApprovedBeneficiary = isBeneficiary && beneficiaryStatus === 'Approved';
+  const showNotificationBell = !isBeneficiary || isApprovedBeneficiary;
 
   // Close user menu on outside click
   useEffect(() => {
@@ -404,7 +417,8 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
 
       {/* Right Side Header Items */}
       <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-5">
-        {/* Notifications Bell with Dropdown */}
+        {/* Notifications Bell with Dropdown (only for staff/admin or approved beneficiaries) */}
+        {showNotificationBell && (
         <div className="relative">
           <button 
             ref={bellRef}
@@ -715,6 +729,8 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
             </div>
           )}
         </div>
+
+        )}
 
         {/* Dark Mode Toggle */}
         <button

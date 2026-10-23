@@ -340,7 +340,7 @@ router.put('/me', authorize('beneficiary'), async (req, res, next) => {
     }
 
     const updates = {
-      category,
+      category: beneficiary.category || category,
       sex,
       birthdate,
       civil_status,
