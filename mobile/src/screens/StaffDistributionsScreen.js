@@ -492,12 +492,18 @@ const StaffDistributionsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
                     <Text style={styles.viewEventBtnText}>👁️ View Details</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.scanShortcutBtn}
-                    onPress={() => onNavigate && onNavigate('distributionScanner')}
-                  >
-                    <Text style={styles.scanShortcutText}>📱 Scan QR / RFID</Text>
-                  </TouchableOpacity>
+                  {item.status?.toLowerCase() !== 'completed' ? (
+                    <TouchableOpacity
+                      style={styles.scanShortcutBtn}
+                      onPress={() => onNavigate && onNavigate('distributionScanner')}
+                    >
+                      <Text style={styles.scanShortcutText}>📱 Scan QR / RFID</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={[styles.scanShortcutBtn, { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' }]}>
+                      <Text style={[styles.scanShortcutText, { color: '#94a3b8' }]}>🔒 Closed</Text>
+                    </View>
+                  )}
                 </View>
               </View>
             );
@@ -569,15 +575,21 @@ const StaffDistributionsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
               )}
 
               {/* Launch Scanner Shortcut */}
-              <TouchableOpacity
-                style={styles.launchScannerBtn}
-                onPress={() => {
-                  setSelectedEvent(null);
-                  if (onNavigate) onNavigate('distributionScanner');
-                }}
-              >
-                <Text style={styles.launchScannerText}>📱 Launch Distribution Scanner for this Event</Text>
-              </TouchableOpacity>
+              {selectedEvent?.status?.toLowerCase() !== 'completed' ? (
+                <TouchableOpacity
+                  style={styles.launchScannerBtn}
+                  onPress={() => {
+                    setSelectedEvent(null);
+                    if (onNavigate) onNavigate('distributionScanner');
+                  }}
+                >
+                  <Text style={styles.launchScannerText}>📱 Launch Distribution Scanner for this Event</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={[styles.launchScannerBtn, { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1' }]}>
+                  <Text style={[styles.launchScannerText, { color: '#64748b' }]}>🔒 Tapos na ang Event — Scanner Closed</Text>
+                </View>
+              )}
 
               {/* Recipient Roster */}
               <View style={styles.rosterHeader}>

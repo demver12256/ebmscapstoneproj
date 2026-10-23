@@ -96,7 +96,7 @@ router.get('/applications', authorize('admin', 'staff', 'barangay', 'mswdo_admin
 
     const where = {
       status: {
-        [Op.ne]: 'Pending Submission'
+        [Op.ne]: 'Approved'
       }
     };
 

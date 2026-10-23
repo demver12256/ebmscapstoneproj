@@ -312,9 +312,7 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
       setBeneficiaries(benefRes.data?.data || []);
       setBarangays(brgyRes.data?.data || []);
       const allApps = appsRes.data?.data || [];
-      const pendingList = allApps.filter(
-        (a) => a.status !== 'Approved' && a.status !== 'Pending Submission'
-      );
+      const pendingList = allApps.filter((a) => a.status !== 'Approved');
       setPendingApplications(pendingList);
     } catch (err) {
       setError(err?.response?.data?.message || err.message || 'Failed to load beneficiaries');
@@ -327,6 +325,14 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (isSeniorRole) {
+      setSelectedCategory('Senior Citizens (Social Pension)');
+    } else if (isPwdRole) {
+      setSelectedCategory('Persons with Disabilities (PWD)');
+    }
+  }, [isSeniorRole, isPwdRole]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -363,6 +369,10 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
     if (showArchivedOnly && !isArchived) return false;
     if (!showArchivedOnly && isArchived) return false;
 
+    // Strict role sector scoping matching database & web app
+    if (isSeniorRole && !categoryMatches(b.category, 'Senior Citizens (Social Pension)')) return false;
+    if (isPwdRole && !categoryMatches(b.category, 'Persons with Disabilities (PWD)')) return false;
+
     if (selectedBarangayId && String(b.barangay_id) !== selectedBarangayId) return false;
     if (selectedCategory && !categoryMatches(b.category, selectedCategory)) return false;
     if (selectedIpClassification && b.ip_classification !== selectedIpClassification) return false;
@@ -385,6 +395,10 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
   );
 
   const filteredApplications = pendingApplications.filter((app) => {
+    // Strict role sector scoping matching database & web app
+    if (isSeniorRole && !categoryMatches(app.category, 'Senior Citizens (Social Pension)')) return false;
+    if (isPwdRole && !categoryMatches(app.category, 'Persons with Disabilities (PWD)')) return false;
+
     if (selectedBarangayId && String(app.barangay_id) !== selectedBarangayId) return false;
     if (selectedCategory && !categoryMatches(app.category, selectedCategory)) return false;
     if (searchQuery.trim()) {
@@ -1516,26 +1530,30 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
             })}
           </ScrollView>
 
-          <Text style={[s.filterTitle, { marginTop: 10 }]}>Filter by Category</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterScroll}>
-            <TouchableOpacity
-              style={[s.filterChip, !selectedCategory && s.filterChipActive]}
-              onPress={() => { setSelectedCategory(''); setCurrentPage(1); }}
-            >
-              <Text style={[s.filterChipText, !selectedCategory && s.filterChipTextActive]}>All</Text>
-            </TouchableOpacity>
-            {CATEGORIES.map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={[s.filterChip, selectedCategory === cat && s.filterChipActive]}
-                onPress={() => { setSelectedCategory(selectedCategory === cat ? '' : cat); setCurrentPage(1); }}
-              >
-                <Text style={[s.filterChipText, selectedCategory === cat && s.filterChipTextActive]}>
-                  {getCategoryShort(cat)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {!isSeniorRole && !isPwdRole && (
+            <>
+              <Text style={[s.filterTitle, { marginTop: 10 }]}>Filter by Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterScroll}>
+                <TouchableOpacity
+                  style={[s.filterChip, !selectedCategory && s.filterChipActive]}
+                  onPress={() => { setSelectedCategory(''); setCurrentPage(1); }}
+                >
+                  <Text style={[s.filterChipText, !selectedCategory && s.filterChipTextActive]}>All</Text>
+                </TouchableOpacity>
+                {CATEGORIES.map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[s.filterChip, selectedCategory === cat && s.filterChipActive]}
+                    onPress={() => { setSelectedCategory(selectedCategory === cat ? '' : cat); setCurrentPage(1); }}
+                  >
+                    <Text style={[s.filterChipText, selectedCategory === cat && s.filterChipTextActive]}>
+                      {getCategoryShort(cat)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          )}
 
           <Text style={[s.filterTitle, { marginTop: 10 }]}>Filter by IP Classification</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterScroll}>

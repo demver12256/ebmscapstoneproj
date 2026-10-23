@@ -44,10 +44,13 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
         (e) => e.status === 'ongoing' || e.status === 'scheduled'
       );
       setEvents(all);
-      if (activeOrScheduled.length > 0 && !selectedEventId) {
-        setSelectedEventId(activeOrScheduled[0].id);
-      } else if (all.length > 0 && !selectedEventId) {
-        setSelectedEventId(all[0].id);
+      // Strictly prioritize active/ongoing or scheduled events! Never auto-select completed!
+      if (activeOrScheduled.length > 0) {
+        if (!selectedEventId || !all.some((e) => e.id === Number(selectedEventId) && e.status !== 'completed')) {
+          setSelectedEventId(activeOrScheduled[0].id);
+        }
+      } else {
+        setSelectedEventId(null);
       }
     } catch (err) {
       console.warn('Failed to load events:', err);
@@ -89,7 +92,19 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
       return;
     }
     if (!selectedEventId) {
-      setAlertMsg({ type: 'error', text: 'Pumili muna ng Distribution Event sa itaas.' });
+      setAlertMsg({ type: 'error', text: 'Pumili muna ng aktibong Distribution Event sa itaas.' });
+      return;
+    }
+
+    if (currentEvent && currentEvent.status?.toLowerCase() === 'completed') {
+      Alert.alert(
+        'Tapos na ang Event',
+        'Ang distribution event na ito ay COMPLETED na. Bawal na itong buksan upang mag-scan muli.'
+      );
+      setAlertMsg({
+        type: 'error',
+        text: '🔒 Ang distribution event na ito ay COMPLETED na. Bawal na itong buksan upang mag-scan muli.',
+      });
       return;
     }
 
@@ -272,58 +287,87 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
           </View>
         </View>
 
-        {/* RFID Tap / Scanner Box */}
-        <View style={[styles.scanBox, darkMode && styles.darkCard]}>
-          <View style={styles.rfidIconCircle}>
-            <Text style={{ fontSize: 32 }}>💳</Text>
+        {/* RFID Tap / Scanner Box OR Completed Lockout Card */}
+        {currentEvent && currentEvent.status?.toLowerCase() === 'completed' ? (
+          <View style={[styles.completedLockBox, darkMode && styles.darkCard]}>
+            <View style={styles.completedLockIconCircle}>
+              <Text style={{ fontSize: 36 }}>🔒</Text>
+            </View>
+            <Text style={[styles.completedLockTitle, darkMode && styles.darkText]}>
+              DISTRIBUTION EVENT COMPLETED
+            </Text>
+            <Text style={styles.completedLockSub}>
+              Ang distribution event na ito ay tapos na (Status: COMPLETED). Sarado na ang sesyon at bawal nang mag-scan o mag-release uli ng ayuda.
+            </Text>
+            <View style={styles.completedStatusPill}>
+              <Text style={styles.completedStatusPillText}>✓ STATUS: COMPLETED (LOCKED)</Text>
+            </View>
           </View>
-          <Text style={[styles.scanBoxTitle, darkMode && styles.darkText]}>Tap or Enter Beneficiary Card</Text>
-          <Text style={styles.scanBoxSub}>
-            I-scan ang RFID card, QR code pass, o i-type ang Card / ID Number
-          </Text>
-
-          <View style={styles.inputWrap}>
-            <TextInput
-              ref={inputRef}
-              style={[styles.rfidInput, darkMode && styles.darkInput]}
-              placeholder="e.g. 10452399 o BEN-2024-..."
-              placeholderTextColor="#94a3b8"
-              value={rfidInput}
-              onChangeText={setRfidInput}
-              onSubmitEditing={() => handleScanSubmit()}
-              returnKeyType="done"
-            />
-            <TouchableOpacity
-              style={[styles.scanBtn, processing && styles.btnDisabled]}
-              onPress={() => handleScanSubmit()}
-              disabled={processing}
-            >
-              {processing ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.scanBtnText}>Verify</Text>
-              )}
-            </TouchableOpacity>
+        ) : !selectedEventId ? (
+          <View style={[styles.completedLockBox, darkMode && styles.darkCard]}>
+            <View style={styles.completedLockIconCircle}>
+              <Text style={{ fontSize: 36 }}>📋</Text>
+            </View>
+            <Text style={[styles.completedLockTitle, darkMode && styles.darkText]}>
+              WALANG AKTIBONG DISTRIBUTION EVENT
+            </Text>
+            <Text style={styles.completedLockSub}>
+              Walang kasalukuyang ongoing o scheduled na pamamahagi. Ang mga natapos nang event (COMPLETED) ay sarado na at bawal nang buksan para mag-scan uli.
+            </Text>
           </View>
+        ) : (
+          <View style={[styles.scanBox, darkMode && styles.darkCard]}>
+            <View style={styles.rfidIconCircle}>
+              <Text style={{ fontSize: 32 }}>💳</Text>
+            </View>
+            <Text style={[styles.scanBoxTitle, darkMode && styles.darkText]}>Tap or Enter Beneficiary Card</Text>
+            <Text style={styles.scanBoxSub}>
+              I-scan ang RFID card, QR code pass, o i-type ang Card / ID Number
+            </Text>
 
-          {/* Camera QR Scanner Button */}
-          {selectedEventId && (
-            <TouchableOpacity
-              style={styles.openCameraBtn}
-              onPress={() => setCameraActive(true)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.openCameraIcon}>📷</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.openCameraTitle}>Buksan ang Camera QR Scanner</Text>
-                <Text style={styles.openCameraSub}>
-                  Itapat ang QR code pass ng benepisyaryo sa camera
-                </Text>
-              </View>
-              <Text style={styles.openCameraArrow}>›</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+            <View style={styles.inputWrap}>
+              <TextInput
+                ref={inputRef}
+                style={[styles.rfidInput, darkMode && styles.darkInput]}
+                placeholder="e.g. 10452399 o BEN-2024-..."
+                placeholderTextColor="#94a3b8"
+                value={rfidInput}
+                onChangeText={setRfidInput}
+                onSubmitEditing={() => handleScanSubmit()}
+                returnKeyType="done"
+              />
+              <TouchableOpacity
+                style={[styles.scanBtn, processing && styles.btnDisabled]}
+                onPress={() => handleScanSubmit()}
+                disabled={processing}
+              >
+                {processing ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.scanBtnText}>Verify</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Camera QR Scanner Button */}
+            {selectedEventId && currentEvent?.status === 'ongoing' && (
+              <TouchableOpacity
+                style={styles.openCameraBtn}
+                onPress={() => setCameraActive(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.openCameraIcon}>📷</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.openCameraTitle}>Buksan ang Camera QR Scanner</Text>
+                  <Text style={styles.openCameraSub}>
+                    Itapat ang QR code pass ng benepisyaryo sa camera
+                  </Text>
+                </View>
+                <Text style={styles.openCameraArrow}>›</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* Status Alert Banner */}
         {alertMsg && (
@@ -414,23 +458,51 @@ const StaffDistributionScannerScreen = ({ onBack, onOpenDrawer, user, darkMode =
               keyExtractor={(item) => String(item.id)}
               renderItem={({ item }) => {
                 const isSelected = item.id === Number(selectedEventId);
+                const isCompleted = item.status?.toLowerCase() === 'completed';
                 return (
                   <TouchableOpacity
-                    style={[styles.eventOption, isSelected && styles.eventOptionSelected]}
+                    style={[
+                      styles.eventOption,
+                      isSelected && styles.eventOptionSelected,
+                      isCompleted && styles.eventOptionDisabled,
+                    ]}
                     onPress={() => {
+                      if (isCompleted) {
+                        Alert.alert(
+                          'Hindi Maaaring Buksan',
+                          'Ang distribution event na ito ay COMPLETED na. Bawal na itong buksan upang mag-scan muli.'
+                        );
+                        return;
+                      }
                       setSelectedEventId(item.id);
                       setEventSelectModal(false);
                     }}
+                    activeOpacity={isCompleted ? 0.9 : 0.7}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.eventOptionTitle, isSelected && { color: '#2563eb', fontWeight: 'bold' }]}>
-                        {item.title}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text
+                          style={[
+                            styles.eventOptionTitle,
+                            isSelected && { color: '#2563eb', fontWeight: 'bold' },
+                            isCompleted && { color: '#64748b' },
+                          ]}
+                        >
+                          {item.title}
+                        </Text>
+                        {isCompleted && (
+                          <View style={styles.completedTag}>
+                            <Text style={styles.completedTagText}>🔒 COMPLETED</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={styles.eventOptionSub}>
                         {item.Program?.name || 'Program'} • Status: {(item.status || 'scheduled').toUpperCase()}
                       </Text>
                     </View>
-                    {isSelected && <Text style={{ color: '#2563eb', fontWeight: 'bold', fontSize: 16 }}>✓</Text>}
+                    {isSelected && !isCompleted && (
+                      <Text style={{ color: '#2563eb', fontWeight: 'bold', fontSize: 16 }}>✓</Text>
+                    )}
                   </TouchableOpacity>
                 );
               }}
@@ -669,8 +741,69 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
   },
   eventOptionSelected: { backgroundColor: '#eff6ff', borderRadius: 8, paddingHorizontal: 8 },
+  eventOptionDisabled: { backgroundColor: '#f8fafc', opacity: 0.75 },
   eventOptionTitle: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
   eventOptionSub: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  completedTag: {
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  completedTagText: {
+    color: '#be123c',
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  completedLockBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    elevation: 2,
+  },
+  completedLockIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  completedLockTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1e293b',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  completedLockSub: {
+    fontSize: 12.5,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  completedStatusPill: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  completedStatusPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#475569',
+  },
 });
 
 export default StaffDistributionScannerScreen;
