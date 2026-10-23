@@ -16,11 +16,32 @@ const BENEFICIARY_TABS = [
   { key: 'notifications', icon: '🔔',  label: 'Alerts'     },
 ];
 
+const STAFF_ADMIN_ROLES = [
+  'admin',
+  'mswdo_admin',
+  'senior_citizen_admin',
+  'pwd_admin',
+  'staff',
+  'mswdo_staff',
+  'senior_citizen_staff',
+  'pwd_staff',
+  'barangay',
+];
+
 const STAFF_TABS = [
   { key: 'dashboard',           icon: '🏠',  label: 'Home'       },
   { key: 'beneficiaryList',     icon: '👥',  label: 'Roster'     },
   { key: 'distributionScanner', icon: '📱',  label: 'Scanner'    },
   { key: 'assistanceRequests',  icon: '🤲',  label: 'Assistance' },
+  { key: 'announcements',       icon: '📢',  label: 'Anunsyo'    },
+  { key: 'messages',            icon: '💬',  label: 'Messages'   },
+];
+
+const SECTOR_STAFF_TABS = [
+  { key: 'dashboard',           icon: '🏠',  label: 'Home'       },
+  { key: 'beneficiaryList',     icon: '👥',  label: 'Roster'     },
+  { key: 'distributionScanner', icon: '📱',  label: 'Payout QR'  },
+  { key: 'attendanceScanner',   icon: '📅',  label: 'Attendance' },
   { key: 'announcements',       icon: '📢',  label: 'Anunsyo'    },
   { key: 'messages',            icon: '💬',  label: 'Messages'   },
 ];
@@ -33,8 +54,11 @@ const BottomNavBar = ({
   unreadNotifCount = 0,
   darkMode = false,
 }) => {
-  const isStaff = user && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user.role);
-  const tabs = isStaff ? STAFF_TABS : BENEFICIARY_TABS;
+  const isStaff = user && STAFF_ADMIN_ROLES.includes(user.role);
+  const isSectorStaff =
+    user &&
+    ['senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'].includes(user.role);
+  const tabs = isStaff ? (isSectorStaff ? SECTOR_STAFF_TABS : STAFF_TABS) : BENEFICIARY_TABS;
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>

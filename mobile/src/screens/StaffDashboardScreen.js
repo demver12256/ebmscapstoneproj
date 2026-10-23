@@ -58,7 +58,13 @@ export default function StaffDashboardScreen({
   const [showAnnouncementsModal, setShowAnnouncementsModal] = useState(false);
 
   const isMswdoAdmin = user?.role === 'mswdo_admin';
+  const isMswdoStaff = user?.role === 'mswdo_staff';
+  const isMswdo = isMswdoAdmin || isMswdoStaff;
+  const isSenior = ['senior_citizen_admin', 'senior_citizen_staff'].includes(user?.role);
+  const isPwd = ['pwd_admin', 'pwd_staff'].includes(user?.role);
   const isAdmin = user?.role === 'admin';
+  const isDswd = ['admin', 'staff', 'barangay'].includes(user?.role);
+  const hasAssistanceAccess = ['admin', 'mswdo_admin', 'mswdo_staff', 'staff', 'barangay'].includes(user?.role);
 
   const loadData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -139,12 +145,21 @@ export default function StaffDashboardScreen({
   );
   const firstAnnouncement = activeAnnouncements[0] || announcements[0];
 
-  // Category breakdown
-  const categoryData = [
-    { name: '4Ps Program', value: summary?.fourPsCount || 0, color: '#2563EB', bg: '#eff6ff' },
-    { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E11D48', bg: '#ffe4e6' },
-    { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#F59E0B', bg: '#fef3c7' },
-  ];
+  // Category breakdown scoped to the user's sector
+  const categoryData = isSenior
+    ? [{ name: 'Senior Citizens (Social Pension)', value: summary?.seniorCitizensCount || totalBeneficiaries || 0, color: '#E11D48', bg: '#ffe4e6' }]
+    : isPwd
+    ? [{ name: 'Persons with Disabilities (PWD)', value: summary?.pwdCount || totalBeneficiaries || 0, color: '#F59E0B', bg: '#fef3c7' }]
+    : isMswdo
+    ? [
+        { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E11D48', bg: '#ffe4e6' },
+        { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#F59E0B', bg: '#fef3c7' },
+      ]
+    : [
+        { name: '4Ps Program', value: summary?.fourPsCount || 0, color: '#2563EB', bg: '#eff6ff' },
+        { name: 'Senior Citizens', value: summary?.seniorCitizensCount || 0, color: '#E11D48', bg: '#ffe4e6' },
+        { name: 'PWD Program', value: summary?.pwdCount || 0, color: '#F59E0B', bg: '#fef3c7' },
+      ];
   const totalCategorySum = categoryData.reduce((acc, c) => acc + c.value, 0) || 1;
 
   // Monthly chart calculations
@@ -154,9 +169,26 @@ export default function StaffDashboardScreen({
   );
 
   const getScopeBadge = () => {
-    if (isMswdoAdmin) return 'MSWDO FOCUS';
-    if (isAdmin) return 'ADMIN CONSOLE';
-    return 'BARANGAY STAFF';
+    switch (user?.role) {
+      case 'mswdo_admin':
+        return 'MSWDO ADMIN';
+      case 'mswdo_staff':
+        return 'MSWDO STAFF';
+      case 'senior_citizen_admin':
+        return 'OSCA / SENIOR CITIZEN ADMIN';
+      case 'senior_citizen_staff':
+        return 'OSCA / SENIOR CITIZEN STAFF';
+      case 'pwd_admin':
+        return 'PDAO / PWD ADMIN';
+      case 'pwd_staff':
+        return 'PDAO / PWD STAFF';
+      case 'admin':
+        return 'DSWD ADMIN CONSOLE';
+      case 'staff':
+        return 'DSWD / BARANGAY STAFF';
+      default:
+        return 'BARANGAY STAFF';
+    }
   };
 
   return (
@@ -422,33 +454,35 @@ export default function StaffDashboardScreen({
           </TouchableOpacity>
 
           {/* 5. Assistance Requests */}
-          <TouchableOpacity
-            style={[styles.kpiCardFull, darkMode && styles.darkCard]}
-            activeOpacity={0.8}
-            onPress={() => onNavigate && onNavigate('assistanceRequests')}
-          >
-            <View style={styles.kpiTopRow}>
-              <View style={[styles.kpiIconWrap, { backgroundColor: '#fffbeb', borderColor: '#fef3c7' }]}>
-                <Text style={styles.kpiEmoji}>🤲</Text>
+          {hasAssistanceAccess && (
+            <TouchableOpacity
+              style={[styles.kpiCardFull, darkMode && styles.darkCard]}
+              activeOpacity={0.8}
+              onPress={() => onNavigate && onNavigate('assistanceRequests')}
+            >
+              <View style={styles.kpiTopRow}>
+                <View style={[styles.kpiIconWrap, { backgroundColor: '#fffbeb', borderColor: '#fef3c7' }]}>
+                  <Text style={styles.kpiEmoji}>🤲</Text>
+                </View>
+                <View style={[styles.kpiBadge, { backgroundColor: '#fffbeb' }]}>
+                  <Text style={[styles.kpiBadgeText, { color: '#b45309' }]}>
+                    {isMswdo ? 'MSWDO aid' : 'Barangay aid'}
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.kpiBadge, { backgroundColor: '#fffbeb' }]}>
-                <Text style={[styles.kpiBadgeText, { color: '#b45309' }]}>
-                  Barangay aid
-                </Text>
+              <View style={styles.kpiFullBottom}>
+                <View>
+                  <Text style={[styles.kpiValue, darkMode && styles.darkTitle]}>
+                    {pendingRequests}
+                  </Text>
+                  <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
+                    Assistance Requests
+                  </Text>
+                </View>
+                <Text style={styles.kpiFullLink}>View requests ›</Text>
               </View>
-            </View>
-            <View style={styles.kpiFullBottom}>
-              <View>
-                <Text style={[styles.kpiValue, darkMode && styles.darkTitle]}>
-                  {pendingRequests}
-                </Text>
-                <Text style={[styles.kpiLabel, darkMode && styles.darkSubtext]}>
-                  Assistance Requests
-                </Text>
-              </View>
-              <Text style={styles.kpiFullLink}>View requests ›</Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* ━━━ Monthly Distribution Trend Chart ━━━ */}
@@ -717,26 +751,30 @@ export default function StaffDashboardScreen({
             </TouchableOpacity>
 
             {/* 5. Benefit Programs */}
-            <TouchableOpacity
-              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
-              activeOpacity={0.75}
-              onPress={() => onNavigate && onNavigate('programs')}
-            >
-              <Text style={styles.opIcon}>📋</Text>
-              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Benefit Programs</Text>
-              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>4Ps, Senior, PWD</Text>
-            </TouchableOpacity>
+            {isDswd && (
+              <TouchableOpacity
+                style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+                activeOpacity={0.75}
+                onPress={() => onNavigate && onNavigate('programs')}
+              >
+                <Text style={styles.opIcon}>📋</Text>
+                <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Benefit Programs</Text>
+                <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>4Ps, Senior, PWD</Text>
+              </TouchableOpacity>
+            )}
 
             {/* 6. Assistance Requests */}
-            <TouchableOpacity
-              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
-              activeOpacity={0.75}
-              onPress={() => onNavigate && onNavigate('assistanceRequests')}
-            >
-              <Text style={styles.opIcon}>🤲</Text>
-              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Assistance</Text>
-              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Ayuda & Kahilingan</Text>
-            </TouchableOpacity>
+            {hasAssistanceAccess && (
+              <TouchableOpacity
+                style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+                activeOpacity={0.75}
+                onPress={() => onNavigate && onNavigate('assistanceRequests')}
+              >
+                <Text style={styles.opIcon}>🤲</Text>
+                <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Assistance</Text>
+                <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Ayuda & Kahilingan</Text>
+              </TouchableOpacity>
+            )}
 
             {/* 7. Community Announcements */}
             <TouchableOpacity
@@ -750,15 +788,17 @@ export default function StaffDashboardScreen({
             </TouchableOpacity>
 
             {/* 8. Interventions */}
-            <TouchableOpacity
-              style={[styles.opBtn, darkMode && styles.darkOpBtn]}
-              activeOpacity={0.75}
-              onPress={() => onNavigate && onNavigate('interventions')}
-            >
-              <Text style={styles.opIcon}>📄</Text>
-              <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Interventions</Text>
-              <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Tulong & Serbisyo</Text>
-            </TouchableOpacity>
+            {isDswd && (
+              <TouchableOpacity
+                style={[styles.opBtn, darkMode && styles.darkOpBtn]}
+                activeOpacity={0.75}
+                onPress={() => onNavigate && onNavigate('interventions')}
+              >
+                <Text style={styles.opIcon}>📄</Text>
+                <Text style={[styles.opTitle, darkMode && styles.darkTitle]}>Interventions</Text>
+                <Text style={[styles.opDesc, darkMode && styles.darkSubtext]}>Tulong & Serbisyo</Text>
+              </TouchableOpacity>
+            )}
 
             {/* 9. Reports */}
             <TouchableOpacity

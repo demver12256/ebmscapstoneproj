@@ -72,7 +72,7 @@ const resolveDocUrl = (url) => {
 };
 
 const StaffAssistanceRequestsScreen = ({ onBack, onOpenDrawer, onNavigate, user, darkMode = false }) => {
-  const isMswdo = user?.role === 'mswdo_admin';
+  const isMswdo = ['mswdo_admin', 'mswdo_staff'].includes(user?.role);
   const defaultAgency = isMswdo ? 'MSWDO' : 'DSWD';
 
   const [requests, setRequests] = useState([]);

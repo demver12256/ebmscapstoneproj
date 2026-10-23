@@ -35,10 +35,30 @@ const formatDate = (dateStr) => {
   }
 };
 
+const getPartnerRoleLabel = (partner) => {
+  if (!partner) return 'Staff';
+  const r = String(partner.role || '').toLowerCase();
+  if (r === 'admin') return 'DSWD Admin';
+  if (r === 'mswdo_admin') return 'MSWDO Admin';
+  if (r === 'senior_citizen_admin') return 'Senior Citizen Admin (OSCA)';
+  if (r === 'pwd_admin') return 'PWD Admin (PDAO)';
+  if (r === 'mswdo_staff') return 'MSWDO Staff';
+  if (r === 'senior_citizen_staff') return 'Senior Citizen Staff (OSCA)';
+  if (r === 'pwd_staff') return 'PWD Staff (PDAO)';
+  if (r === 'staff') return 'DSWD / Barangay Staff';
+  if (r === 'barangay') return 'Barangay Officer';
+  if (r === 'beneficiary') {
+    const cat = partner.Beneficiary?.category || partner.category || '';
+    return cat ? `Beneficiary • ${cat}` : 'Beneficiary';
+  }
+  return (partner.role || 'Staff').toUpperCase();
+};
+
 export default function MessagesScreen({ onBack, user }) {
   const [activeTab, setActiveTab] = useState('conversations'); // conversations | contacts
   const [conversations, setConversations] = useState([]);
   const [contacts, setContacts] = useState([]);
+  const [contactSearch, setContactSearch] = useState('');
   const [selectedPartner, setSelectedPartner] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -132,7 +152,7 @@ export default function MessagesScreen({ onBack, user }) {
               {selectedPartner.first_name} {selectedPartner.last_name}
             </Text>
             <Text style={styles.chatPartnerRole}>
-              {(selectedPartner.role || 'Staff').toUpperCase()}
+              {getPartnerRoleLabel(selectedPartner)}
             </Text>
           </View>
           <View style={{ width: 60 }} />
@@ -251,7 +271,7 @@ export default function MessagesScreen({ onBack, user }) {
           onPress={() => setActiveTab('contacts')}
         >
           <Text style={[styles.segmentBtnText, activeTab === 'contacts' && styles.segmentBtnTextActive]}>
-            👥 Staff Directory ({contacts.length})
+            👥 {user?.role === 'beneficiary' ? 'Staff Directory' : 'Contacts Directory'} ({contacts.length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -268,7 +288,7 @@ export default function MessagesScreen({ onBack, user }) {
               <Text style={{ fontSize: 36, marginBottom: 10 }}>💬</Text>
               <Text style={styles.emptyTitle}>No Active Conversations</Text>
               <Text style={styles.emptySub}>
-                Pindutin ang "Staff Directory" sa itaas upang magpadala ng mensahe sa DSWD Admin o Barangay Focal Person.
+                Pindutin ang "{user?.role === 'beneficiary' ? 'Staff Directory' : 'Contacts Directory'}" sa itaas upang magsimula ng pag-uusap.
               </Text>
             </View>
           ) : (
@@ -295,7 +315,7 @@ export default function MessagesScreen({ onBack, user }) {
                       </Text>
                       <Text style={styles.convDate}>{formatDate(c.last_message_at)}</Text>
                     </View>
-                    <Text style={styles.convRole}>{(partner.role || 'Staff').toUpperCase()}</Text>
+                    <Text style={styles.convRole}>{getPartnerRoleLabel(partner)}</Text>
                     <Text style={styles.convLastMsg} numberOfLines={1}>
                       {c.last_message || 'Tap to view conversation...'}
                     </Text>
@@ -312,40 +332,73 @@ export default function MessagesScreen({ onBack, user }) {
         </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.scrollList}>
+          <View style={{ marginBottom: 10 }}>
+            <TextInput
+              style={{
+                backgroundColor: '#ffffff',
+                borderWidth: 1,
+                borderColor: '#cbd5e1',
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                fontSize: 13.5,
+                color: '#0f172a',
+              }}
+              placeholder="🔍 Search contact name, role, or barangay..."
+              placeholderTextColor="#94a3b8"
+              value={contactSearch}
+              onChangeText={setContactSearch}
+            />
+          </View>
           {contacts.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={{ fontSize: 36, marginBottom: 10 }}>👥</Text>
               <Text style={styles.emptyTitle}>No Contacts Available</Text>
               <Text style={styles.emptySub}>
-                Walang nakatalagang admin o staff sa kasalukuyan para sa inyong barangay.
+                Walang nakatalagang contact sa kasalukuyan para sa inyong opisina o barangay.
               </Text>
             </View>
           ) : (
-            contacts.map((contact, idx) => (
-              <TouchableOpacity
-                key={contact.id || idx}
-                style={styles.contactCard}
-                onPress={() => openChat(contact)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.avatar, { backgroundColor: '#1d4ed8' }]}>
-                  <Text style={styles.avatarText}>
-                    {(contact.first_name || 'S')[0].toUpperCase()}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.convName}>
-                    {contact.first_name} {contact.last_name}
-                  </Text>
-                  <Text style={styles.convRole}>
-                    {(contact.role || 'Staff').toUpperCase()} {contact.Barangay ? `• ${contact.Barangay.barangay_name}` : ''}
-                  </Text>
-                </View>
-                <View style={styles.chatNowBtn}>
-                  <Text style={styles.chatNowBtnText}>Chat 💬</Text>
-                </View>
-              </TouchableOpacity>
-            ))
+            contacts
+              .filter((contact) => {
+                if (!contactSearch.trim()) return true;
+                const q = contactSearch.toLowerCase().trim();
+                const name = `${contact.first_name || ''} ${contact.last_name || ''}`.toLowerCase();
+                const roleLbl = getPartnerRoleLabel(contact).toLowerCase();
+                const brgy = (contact.Barangay?.barangay_name || contact.Beneficiary?.Barangay?.barangay_name || '').toLowerCase();
+                return name.includes(q) || roleLbl.includes(q) || brgy.includes(q);
+              })
+              .map((contact, idx) => {
+                const brgyName =
+                  contact.Barangay?.barangay_name ||
+                  contact.Beneficiary?.Barangay?.barangay_name ||
+                  '';
+                return (
+                  <TouchableOpacity
+                    key={contact.id || idx}
+                    style={styles.contactCard}
+                    onPress={() => openChat(contact)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.avatar, { backgroundColor: contact.role === 'beneficiary' ? '#059669' : '#1d4ed8' }]}>
+                      <Text style={styles.avatarText}>
+                        {(contact.first_name || 'S')[0].toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.convName}>
+                        {contact.first_name} {contact.last_name}
+                      </Text>
+                      <Text style={styles.convRole}>
+                        {getPartnerRoleLabel(contact)} {brgyName ? `• ${brgyName}` : ''}
+                      </Text>
+                    </View>
+                    <View style={styles.chatNowBtn}>
+                      <Text style={styles.chatNowBtnText}>Chat 💬</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
           )}
         </ScrollView>
       )}

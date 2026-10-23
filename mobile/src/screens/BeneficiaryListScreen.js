@@ -159,11 +159,24 @@ const BeneficiaryListScreen = ({ onBack, user }) => {
     }
   };
 
-  const CATEGORIES = [
-    '4Ps Household Beneficiary',
-    'Senior Citizens (Social Pension)',
-    'Persons with Disabilities (PWD)',
-  ];
+  const isSeniorRole = ['senior_citizen_admin', 'senior_citizen_staff'].includes(user?.role);
+  const isPwdRole = ['pwd_admin', 'pwd_staff'].includes(user?.role);
+  const isMswdoRole = ['mswdo_admin', 'mswdo_staff'].includes(user?.role);
+  const isDswdStaff = ['staff', 'barangay'].includes(user?.role);
+
+  const CATEGORIES = isSeniorRole
+    ? ['Senior Citizens (Social Pension)']
+    : isPwdRole
+    ? ['Persons with Disabilities (PWD)']
+    : isMswdoRole
+    ? ['Senior Citizens (Social Pension)', 'Persons with Disabilities (PWD)']
+    : isDswdStaff
+    ? ['4Ps Household Beneficiary']
+    : [
+        '4Ps Household Beneficiary',
+        'Senior Citizens (Social Pension)',
+        'Persons with Disabilities (PWD)',
+      ];
 
   const loadData = useCallback(async () => {
     try {

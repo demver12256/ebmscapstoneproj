@@ -30,18 +30,21 @@ const formatDate = (value) => {
   });
 };
 
-const REPORT_TYPES = [
+const ALL_REPORT_TYPES = [
   { label: 'All Reports (Distributions)', value: '' },
   { label: 'Beneficiary Reports', value: 'beneficiary' },
   { label: 'Distribution Reports', value: 'distribution' },
-  { label: 'Program Reports', value: 'program' },
-  { label: 'Enrollment Reports', value: 'enrollment' },
+  { label: 'Program Reports', value: 'program', roles: ['admin', 'staff', 'barangay'] },
+  { label: 'Enrollment Reports', value: 'enrollment', roles: ['admin', 'staff', 'barangay'] },
   { label: 'Attendance Reports', value: 'attendance' },
   { label: 'Announcement Reports', value: 'announcement' },
-  { label: 'Assistance Requests', value: 'assistance' },
+  { label: 'Assistance Requests', value: 'assistance', roles: ['admin', 'mswdo_admin', 'mswdo_staff', 'staff', 'barangay'] },
 ];
 
 const StaffReportsScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
+  const REPORT_TYPES = ALL_REPORT_TYPES.filter(
+    (rt) => !rt.roles || rt.roles.includes(user?.role)
+  );
   // Filters State
   const [reportType, setReportType] = useState('');
   const [programFilter, setProgramFilter] = useState('');

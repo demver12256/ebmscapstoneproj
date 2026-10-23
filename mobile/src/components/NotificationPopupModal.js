@@ -28,10 +28,13 @@ export default function NotificationPopupModal({
   visible,
   items = [],
   currentIndex = 0,
+  userRole = 'beneficiary',
   onClose,
   onPrev,
   onNext,
   onMarkAsRead,
+  onMarkAllAsRead,
+  onNavigate,
   onUpdatePayout,
 }) {
   if (!visible || !items || items.length === 0) return null;
@@ -39,6 +42,7 @@ export default function NotificationPopupModal({
   const currentItem = items[currentIndex] || items[0];
   if (!currentItem) return null;
 
+  const isStaffUser = userRole && userRole !== 'beneficiary';
   const isAnnouncement = currentItem?.popupType === 'announcement';
   const titleLc = String(currentItem?.title || '').toLowerCase();
   const isAbsence =
@@ -47,6 +51,57 @@ export default function NotificationPopupModal({
       currentItem?.type === 'announcement_absence' ||
       titleLc.includes('absent') ||
       titleLc.includes('hindi naka-attend'));
+
+  // Staff-specific notification categories (matching Web StaffMswdoNotificationPopupModal)
+  const isDistributionNotice =
+    isStaffUser &&
+    (currentItem?.reference_type === 'DistributionEvent' ||
+      currentItem?.reference_type === 'distribution_staff' ||
+      currentItem?.type === 'distribution' ||
+      titleLc.includes('distribution') ||
+      titleLc.includes('payout'));
+
+  const isStaffAssignment =
+    isStaffUser &&
+    !isDistributionNotice &&
+    (currentItem?.reference_type === 'announcement_staff' ||
+      titleLc.includes('staff duty') ||
+      titleLc.includes('itinalaga'));
+
+  const isSeniorNotice =
+    isStaffUser &&
+    !isDistributionNotice &&
+    !isStaffAssignment &&
+    (currentItem?.reference_type === 'announcement_senior' ||
+      titleLc.includes('senior citizen') ||
+      titleLc.includes('osca'));
+
+  const isPwdNotice =
+    isStaffUser &&
+    !isDistributionNotice &&
+    !isStaffAssignment &&
+    !isSeniorNotice &&
+    (currentItem?.reference_type === 'announcement_pwd' ||
+      titleLc.includes('pwd') ||
+      titleLc.includes('pdao') ||
+      titleLc.includes('disabilit'));
+
+  const isMswdoNotice =
+    isStaffUser &&
+    !isDistributionNotice &&
+    !isStaffAssignment &&
+    !isSeniorNotice &&
+    !isPwdNotice &&
+    (currentItem?.reference_type === 'announcement_mswdo' ||
+      titleLc.includes('mswdo') ||
+      titleLc.includes('social welfare'));
+
+  const isPayoutVerification =
+    isStaffUser &&
+    userRole === 'admin' &&
+    (currentItem?.reference_type === 'payout_verification' ||
+      titleLc.includes('payout account verification') ||
+      titleLc.includes('for verification'));
 
   // Assistance request updates (admin/staff actions: review, approve, reject, claim)
   const isAssistance =
@@ -115,7 +170,19 @@ export default function NotificationPopupModal({
     !isPayoutRejected;
 
   // Header background colors
-  const headerBgColor = isAbsence
+  const headerBgColor = isDistributionNotice
+    ? '#065f46'
+    : isStaffAssignment
+    ? '#002855'
+    : isSeniorNotice
+    ? '#92400e'
+    : isPwdNotice
+    ? '#0f766e'
+    : isMswdoNotice
+    ? '#4c1d95'
+    : isPayoutVerification
+    ? '#0369a1'
+    : isAbsence
     ? '#881337'
     : assistanceRejected
     ? '#881337'
@@ -129,7 +196,19 @@ export default function NotificationPopupModal({
     ? '#78350f'
     : '#002855';
 
-  const iconBgColor = isAbsence
+  const iconBgColor = isDistributionNotice
+    ? '#34d399'
+    : isStaffAssignment
+    ? '#facc15'
+    : isSeniorNotice
+    ? '#fbbf24'
+    : isPwdNotice
+    ? '#2dd4bf'
+    : isMswdoNotice
+    ? '#c084fc'
+    : isPayoutVerification
+    ? '#38bdf8'
+    : isAbsence
     ? '#f43f5e'
     : assistanceRejected
     ? '#fb7185'
@@ -153,7 +232,19 @@ export default function NotificationPopupModal({
     ? '#93c5fd'
     : '#facc15';
 
-  const iconEmoji = isAbsence
+  const iconEmoji = isDistributionNotice
+    ? '📦'
+    : isStaffAssignment
+    ? '📋'
+    : isSeniorNotice
+    ? '👴'
+    : isPwdNotice
+    ? '♿'
+    : isMswdoNotice
+    ? '🏛️'
+    : isPayoutVerification
+    ? '🛡️'
+    : isAbsence
     ? '⚠️'
     : assistanceRejected
     ? '❌'
@@ -177,7 +268,19 @@ export default function NotificationPopupModal({
     ? '🔔'
     : '📢';
 
-  const kickerText = isAbsence
+  const kickerText = isDistributionNotice
+    ? '📦 DISTRIBUTION EVENT & PAYOUT NOTICE'
+    : isStaffAssignment
+    ? '📋 BARANGAY / STAFF DUTY ASSIGNMENT'
+    : isSeniorNotice
+    ? '👴 OSCA / SENIOR CITIZEN COORDINATION ALERT'
+    : isPwdNotice
+    ? '♿ PDAO / PWD OFFICE COORDINATION ALERT'
+    : isMswdoNotice
+    ? '🏛️ MSWDO MUNICIPAL COORDINATION ALERT'
+    : isPayoutVerification
+    ? '🛡️ DSWD DIGITAL PAYOUT VERIFICATION'
+    : isAbsence
     ? '⚠️ PAUNAWA SA HINDI PAGDALO / NOTICE OF ABSENCE'
     : assistanceClaimed
     ? 'ASSISTANCE CLAIMED'
@@ -413,6 +516,79 @@ export default function NotificationPopupModal({
               </TouchableOpacity>
             )}
 
+            {isStaffUser && onNavigate && (
+              <>
+                {isDistributionNotice && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      onMarkAsRead(currentItem);
+                      onNavigate('distributionScanner');
+                    }}
+                    style={[styles.payoutUpdateBtn, { backgroundColor: '#10b981' }]}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.payoutUpdateBtnText, { color: '#ffffff' }]}>
+                      📦 Buksan Distribution Scanner
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {isStaffAssignment && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      onMarkAsRead(currentItem);
+                      onNavigate('attendanceScanner');
+                    }}
+                    style={[styles.payoutUpdateBtn, { backgroundColor: '#2563eb' }]}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.payoutUpdateBtnText, { color: '#ffffff' }]}>
+                      📱 Buksan Attendance Scanner
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {(isSeniorNotice || isPwdNotice || isMswdoNotice) && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      onMarkAsRead(currentItem);
+                      onNavigate('announcements');
+                    }}
+                    style={[styles.payoutUpdateBtn, { backgroundColor: '#7c3aed' }]}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.payoutUpdateBtnText, { color: '#ffffff' }]}>
+                      📢 Tingnan sa Announcements
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {isPayoutVerification && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      onMarkAsRead(currentItem);
+                      onNavigate('beneficiaryList');
+                    }}
+                    style={[styles.payoutUpdateBtn, { backgroundColor: '#0284c7' }]}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.payoutUpdateBtnText, { color: '#ffffff' }]}>
+                      🛡️ I-verify sa Records
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+
+            {items.length > 1 && onMarkAllAsRead && (
+              <TouchableOpacity
+                onPress={onMarkAllAsRead}
+                style={styles.closeForNowBtn}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.closeForNowText, { color: '#1d4ed8' }]}>
+                  Mark All as Read
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               onPress={onClose}
               style={styles.closeForNowBtn}
@@ -425,12 +601,24 @@ export default function NotificationPopupModal({
               onPress={() => onMarkAsRead(currentItem)}
               style={[
                 styles.confirmBtn,
-                { backgroundColor: isAbsence ? '#e11d48' : '#0038A8' },
+                {
+                  backgroundColor: isAbsence
+                    ? '#e11d48'
+                    : isDistributionNotice
+                    ? '#059669'
+                    : isSeniorNotice
+                    ? '#d97706'
+                    : isPwdNotice
+                    ? '#0d9488'
+                    : isMswdoNotice
+                    ? '#6d28d9'
+                    : '#0038A8',
+                },
               ]}
               activeOpacity={0.8}
             >
               <Text style={styles.confirmBtnText}>
-                ✓ {isAbsence ? 'Naintindihan Ko / Nabasa Ko Na' : 'Salamat / Nabasa Ko Na'}
+                ✓ {isAbsence || isStaffUser ? 'Naintindihan Ko / Nabasa Ko Na' : 'Salamat / Nabasa Ko Na'}
               </Text>
             </TouchableOpacity>
           </View>

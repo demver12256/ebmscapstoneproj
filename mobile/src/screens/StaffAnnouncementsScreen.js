@@ -183,7 +183,31 @@ const formatDate = (value) => {
 };
 
 const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, darkMode = false }) => {
-  const isBarangayStaff = user?.role === 'staff' || user?.role === 'barangay';
+  const isBarangayStaff = (user?.role === 'staff' || user?.role === 'barangay') && Boolean(user?.barangay_id);
+  const isStaffNeedsApproval = ['staff', 'barangay', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
+  const isAdminApprover = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role);
+  const isSeniorRole = ['senior_citizen_admin', 'senior_citizen_staff'].includes(user?.role);
+  const isPwdRole = ['pwd_admin', 'pwd_staff'].includes(user?.role);
+  const isMswdoRole = ['mswdo_admin', 'mswdo_staff'].includes(user?.role);
+  const isDswdStaff = ['staff', 'barangay'].includes(user?.role);
+
+  const allowedCategories = isSeniorRole
+    ? ['Senior Citizens (Social Pension)']
+    : isPwdRole
+    ? ['Persons with Disabilities (PWD)']
+    : isMswdoRole
+    ? ['Senior Citizens (Social Pension)', 'Persons with Disabilities (PWD)']
+    : isDswdStaff
+    ? ['4Ps Household Beneficiaries']
+    : TARGET_CATEGORIES;
+
+  const approverLabel = isSeniorRole
+    ? 'Senior Citizen Admin'
+    : isPwdRole
+    ? 'PWD Admin'
+    : isMswdoRole
+    ? 'MSWDO Admin'
+    : 'DSWD Admin';
 
   const [announcements, setAnnouncements] = useState([]);
   const [barangays, setBarangays] = useState([]);
@@ -223,10 +247,10 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
     event_time: '08:00 AM',
     end_time: '12:00 PM',
     priority: 'Medium',
-    status: isBarangayStaff ? 'pending_approval' : 'published',
+    status: isStaffNeedsApproval ? 'pending_approval' : 'published',
     expiration_date: '',
     has_attendance: true,
-    target_categories: [...TARGET_CATEGORIES],
+    target_categories: [...allowedCategories],
     target_barangays: isBarangayStaff && user?.barangay_id ? [Number(user.barangay_id)] : [],
     target_sitios: [],
     notify_mswdo: false,
@@ -309,10 +333,10 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
       event_time: '08:00 AM',
       end_time: '12:00 PM',
       priority: 'Medium',
-      status: isBarangayStaff ? 'pending_approval' : 'published',
+      status: isStaffNeedsApproval ? 'pending_approval' : 'published',
       expiration_date: '',
       has_attendance: true,
-      target_categories: [...TARGET_CATEGORIES],
+      target_categories: [...allowedCategories],
       target_barangays: initialBarangay,
       target_sitios: [],
       notify_mswdo: false,
@@ -340,10 +364,10 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
   };
 
   const toggleAllCategories = () => {
-    if (form.target_categories.length === TARGET_CATEGORIES.length) {
+    if (form.target_categories.length === allowedCategories.length) {
       setForm((prev) => ({ ...prev, target_categories: [] }));
     } else {
-      setForm((prev) => ({ ...prev, target_categories: [...TARGET_CATEGORIES] }));
+      setForm((prev) => ({ ...prev, target_categories: [...allowedCategories] }));
     }
   };
 
@@ -399,7 +423,7 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
     setCreating(true);
     try {
       const finalSitios = sitioSelectionMode === 'all' ? [] : form.target_sitios;
-      const finalStatus = isBarangayStaff
+      const finalStatus = isStaffNeedsApproval
         ? (form.status === 'draft' ? 'draft' : 'pending_approval')
         : form.status;
 
@@ -424,10 +448,10 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
       await announcementApi.create(payload);
       Alert.alert(
         'Tagumpay',
-        isBarangayStaff
+        isStaffNeedsApproval
           ? (finalStatus === 'draft'
               ? 'Nai-save ang draft ng anunsyo.'
-              : 'Naisumite na ang anunsyo para sa DSWD Admin Approval bago mai-publish at ma-text sa mga benepisyaryo.')
+              : `Naisumite na ang anunsyo para sa ${approverLabel} Approval bago mai-publish at ma-text sa mga benepisyaryo.`)
           : 'Matagumpay na nai-publish ang bagong anunsyo!'
       );
       setCreateModal(false);
@@ -718,6 +742,24 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
                 <Text style={[styles.contentBody, darkMode && styles.darkSub]}>{selectedAnn?.message || selectedAnn?.content}</Text>
               </View>
 
+              {isAdminApprover && selectedAnn?.status === 'pending_approval' && (
+                <TouchableOpacity
+                  style={[styles.launchAttendanceBtn, { backgroundColor: '#16a34a', marginBottom: 10 }]}
+                  onPress={async () => {
+                    try {
+                      await announcementApi.approve(selectedAnn.id);
+                      Alert.alert('Approved & Published', 'Matagumpay na na-aprubahan at na-publish ang anunsyo!');
+                      setSelectedAnn(null);
+                      loadAnnouncements();
+                    } catch (err) {
+                      Alert.alert('Approval Error', err?.response?.data?.message || err.message || 'Hindi ma-approve ang anunsyo.');
+                    }
+                  }}
+                >
+                  <Text style={styles.launchAttendanceBtnText}>✓ Approve & Publish Announcement</Text>
+                </TouchableOpacity>
+              )}
+
               {selectedAnn?.has_attendance && (
                 <TouchableOpacity
                   style={styles.launchAttendanceBtn}
@@ -999,13 +1041,13 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
                   </Text>
                   <TouchableOpacity onPress={toggleAllCategories}>
                     <Text style={styles.selectAllBtnText}>
-                      {form.target_categories.length === TARGET_CATEGORIES.length ? 'Deselect All' : 'Select All'}
+                      {form.target_categories.length === allowedCategories.length ? 'Deselect All' : 'Select All'}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
                 <View style={{ gap: 8, marginTop: 8 }}>
-                  {TARGET_CATEGORIES.map((cat) => {
+                  {allowedCategories.map((cat) => {
                     const isSelected = form.target_categories.includes(cat);
                     return (
                       <TouchableOpacity
@@ -1180,13 +1222,13 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
             </View>
 
             {/* ━━━ YELLOW APPROVAL NOTICE BOX (Matches Web Image) ━━━ */}
-            {isBarangayStaff && (
+            {isStaffNeedsApproval && (
               <View style={styles.approvalYellowBox}>
                 <Text style={{ fontSize: 20 }}>⏳</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.approvalYellowTitle}>KINAKAILANGAN NG APPROVAL NG DSWD ADMIN</Text>
+                  <Text style={styles.approvalYellowTitle}>KINAKAILANGAN NG APPROVAL NG {approverLabel.toUpperCase()}</Text>
                   <Text style={styles.approvalYellowSub}>
-                    Ang gagawin mong announcement para sa iyong Barangay ay ipapadala muna sa DSWD Admin para sa review at approval bago ito ma-publish at ma-text sa mga benepisyaryo.
+                    Ang gagawin mong announcement ay ipapadala muna sa {approverLabel} para sa review at approval bago ito ma-publish at ma-text sa mga benepisyaryo.
                   </Text>
                 </View>
               </View>
@@ -1198,13 +1240,13 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                 <TouchableOpacity
                   style={styles.radioOption}
-                  onPress={() => setForm({ ...form, status: isBarangayStaff ? 'pending_approval' : 'published' })}
+                  onPress={() => setForm({ ...form, status: isStaffNeedsApproval ? 'pending_approval' : 'published' })}
                 >
                   <Text style={{ fontSize: 16, color: form.status !== 'draft' ? '#2563eb' : '#94a3b8' }}>
                     {form.status !== 'draft' ? '🔘' : '⚪'}
                   </Text>
                   <Text style={styles.radioOptionText}>
-                    {isBarangayStaff ? 'For DSWD Approval' : 'Publish & Notify'}
+                    {isStaffNeedsApproval ? `For ${approverLabel} Approval` : 'Publish & Notify'}
                   </Text>
                 </TouchableOpacity>
 
@@ -1242,8 +1284,8 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
                   <>
                     <Text style={{ fontSize: 16 }}>✈</Text>
                     <Text style={styles.submitApprovalBtnText}>
-                      {isBarangayStaff
-                        ? (form.status === 'draft' ? 'Save as Draft' : 'Submit for DSWD Approval')
+                      {isStaffNeedsApproval
+                        ? (form.status === 'draft' ? 'Save as Draft' : `Submit for ${approverLabel} Approval`)
                         : (form.status === 'draft' ? 'Save as Draft' : 'Publish & Notify Direct')}
                     </Text>
                   </>
@@ -1269,7 +1311,7 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
             </View>
 
             <ScrollView style={{ maxHeight: 420 }}>
-              {['4Ps Household Beneficiaries', 'Senior Citizens (Social Pension)', 'Persons with Disabilities (PWD)'].map((sec) => {
+              {allowedCategories.map((sec) => {
                 const groupPresets = OFFICIAL_MEETING_PRESETS.filter((p) => p.sector === sec);
                 const groupLabel = sec.includes('4Ps')
                   ? '🔵 DSWD 4Ps Meetings'

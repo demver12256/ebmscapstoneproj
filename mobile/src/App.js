@@ -63,6 +63,7 @@ const FILES_BASE_URL = API_URL.replace(/\/api\/?$/, '');
 const SESSION_TOKEN_KEY = 'beniaid_session_token';
 const SESSION_USER_KEY = 'beniaid_session_user';
 const DEVICE_NOTIFICATION_STATE_KEY = 'beniaid_device_notification_state';
+const STAFF_ADMIN_ROLES = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'];
 
 const saveSession = async (sessionUser, token) => {
   if (!sessionUser || !token) return;
@@ -123,18 +124,18 @@ const isAnnouncementUpcoming = (ann) => {
     let hours = 23;
     let minutes = 59;
     if (timeToCheck) {
-      const match = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+      const match = String(timeToCheck).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
       if (match) {
         let h = parseInt(match[1], 10);
         const m = parseInt(match[2], 10);
-        const ampm = match[3] ? match[3].toUpperCase() : null;
+        const ampm = match[4] ? match[4].toUpperCase() : null;
         if (ampm === 'PM' && h < 12) h += 12;
         if (ampm === 'AM' && h === 12) h = 0;
         hours = h;
         minutes = m;
       }
     }
-    const [y, m, d] = String(ann.event_date).split('-').map(Number);
+    const [y, m, d] = String(ann.event_date).split('T')[0].split('-').map(Number);
     if (y && m && d) {
       const eventEndTime = new Date(y, m - 1, d, hours, minutes, 59);
       if (now > eventEndTime) return false;
@@ -142,7 +143,7 @@ const isAnnouncementUpcoming = (ann) => {
   }
 
   if (ann.expiration_date) {
-    const [y, m, d] = String(ann.expiration_date).split('-').map(Number);
+    const [y, m, d] = String(ann.expiration_date).split('T')[0].split('-').map(Number);
     if (y && m && d) {
       const expirationTime = new Date(y, m - 1, d, 23, 59, 59);
       if (now > expirationTime) return false;
@@ -285,8 +286,15 @@ const App = () => {
     firstLoad: false,
   });
 
+  useEffect(() => {
+    setShownPopupIds(new Set());
+    setModalItems([]);
+    setShowPopupModal(false);
+    setCurrentPopupIndex(0);
+  }, [user?.id]);
+
   const syncDeviceNotifications = async (allItems, unreadItems) => {
-    if (user?.role !== 'beneficiary' || !user?.id) return new Set();
+    if (!user?.id) return new Set();
 
     const userId = String(user.id);
     let state = deviceNotificationStateRef.current;
@@ -363,7 +371,7 @@ const App = () => {
   };
 
   useEffect(() => {
-    if (user?.role !== 'beneficiary' || !user?.id) return undefined;
+    if (!user?.id) return undefined;
     let isActive = true;
 
     const startMonitoring = async () => {
@@ -402,26 +410,35 @@ const App = () => {
           .filter((n) => !n.is_read)
           .map((n) => ({ ...n, popupType: 'notification' }));
 
-        setModalItems((prevModalItems) => {
-          const newItems = unreadList.filter((item) => {
-            const key = getPopupKey(item);
-            return !shownPopupIds.has(key);
-          });
+        syncDeviceNotifications(
+          roleVisibleNotifs.map((n) => ({ ...n, popupType: 'notification' })),
+          unreadList
+        ).catch(() => {});
 
-          if (newItems.length > 0) {
-            setShowPopupModal(true);
-            return newItems;
-          } else if (newItems.length === 0 && unreadList.length === 0) {
-            setShowPopupModal(false);
-            return [];
-          }
-          return prevModalItems;
+        const newItems = unreadList.filter((item) => {
+          const key = getPopupKey(item);
+          return !shownPopupIds.has(key);
         });
+
+        if (newItems.length > 0) {
+          setModalItems(newItems);
+          setCurrentPopupIndex((prev) => (prev >= newItems.length ? 0 : prev));
+          setShowPopupModal(true);
+        } else {
+          setModalItems([]);
+          setShowPopupModal(false);
+        }
       } catch (err) {
         console.warn('Failed to load staff popup notifications:', err?.message);
       }
       return;
     }
+
+    // For beneficiaries, wait until their profile has loaded and is approved so the main screen is mounted
+    if (profileLoading || !profile || String(profile?.status || '').toLowerCase() !== 'approved') {
+      return;
+    }
+
     try {
       const [annRes, notifRes] = await Promise.allSettled([
         announcementApi.list().catch(() => ({ data: { data: [] } })),
@@ -470,32 +487,27 @@ const App = () => {
         .map((n) => ({ ...n, popupType: 'notification' }));
 
       const combined = [...unreadAnn, ...unreadNotif];
-      const notifiedOnPhone = await syncDeviceNotifications(
+      syncDeviceNotifications(
         [
           ...annList.map((item) => ({ ...item, popupType: 'announcement' })),
           ...notifList.map((item) => ({ ...item, popupType: 'notification' })),
         ],
         combined
-      );
-      const modalItemsToShow = combined.filter((item) => (
-        !notifiedOnPhone.has(getDeviceNotificationKey(item))
-      ));
+      ).catch(() => {});
 
-      setModalItems((prevModalItems) => {
-        const newItems = modalItemsToShow.filter((item) => {
-          const key = getPopupKey(item);
-          return !shownPopupIds.has(key);
-        });
-
-        if (newItems.length > 0) {
-          setShowPopupModal(true);
-          return newItems;
-        } else if (newItems.length === 0) {
-          setShowPopupModal(false);
-          return [];
-        }
-        return prevModalItems;
+      const newItems = combined.filter((item) => {
+        const key = getPopupKey(item);
+        return !shownPopupIds.has(key);
       });
+
+      if (newItems.length > 0) {
+        setModalItems(newItems);
+        setCurrentPopupIndex((prev) => (prev >= newItems.length ? 0 : prev));
+        setShowPopupModal(true);
+      } else {
+        setModalItems([]);
+        setShowPopupModal(false);
+      }
     } catch (err) {
       console.warn('Failed to load popup notifications:', err?.message);
     }
@@ -507,7 +519,7 @@ const App = () => {
       const popupInterval = setInterval(loadPopups, 8000);
       return () => clearInterval(popupInterval);
     }
-  }, [user, shownPopupIds]);
+  }, [user, profile?.status, profileLoading, shownPopupIds]);
 
   const handlePopupMarkAsRead = async (item) => {
     try {
@@ -536,10 +548,34 @@ const App = () => {
     }
   };
 
+  const handlePopupMarkAllAsRead = async () => {
+    try {
+      const currentItems = [...modalItems];
+      setShownPopupIds((prev) => {
+        const next = new Set(prev);
+        currentItems.forEach((item) => next.add(getPopupKey(item)));
+        return next;
+      });
+      setModalItems([]);
+      setShowPopupModal(false);
+      setCurrentPopupIndex(0);
+      setUnreadNotifCount(0);
+
+      await Promise.allSettled([
+        notificationApi.markAllAsRead().catch(() => {}),
+        ...currentItems
+          .filter((item) => item.popupType === 'announcement')
+          .map((item) => announcementApi.markAsRead(item.id).catch(() => {})),
+      ]);
+    } catch (err) {
+      console.error('Failed to mark all popups read:', err);
+    }
+  };
+
   const handlePopupCloseForNow = () => {
     setShownPopupIds((prev) => {
       const next = new Set(prev);
-      modalItems.forEach((item) => next.add(`${item.popupType}-${item.id}`));
+      modalItems.forEach((item) => next.add(getPopupKey(item)));
       return next;
     });
     setShowPopupModal(false);
@@ -818,6 +854,10 @@ const App = () => {
     } catch (notificationError) {
       console.warn('Could not stop background notification checks:', notificationError?.message);
     }
+    setShownPopupIds(new Set());
+    setModalItems([]);
+    setShowPopupModal(false);
+    setCurrentPopupIndex(0);
     setUser(null);
     setProfile(null);
     setProfileLoading(false);
@@ -957,7 +997,7 @@ const App = () => {
       <View style={{ flex: 1, backgroundColor: darkMode ? '#0f172a' : '#f8fafc' }}>
         <View style={{ flex: 1 }}>
           {/* Admin/Staff Beneficiary List Screen */}
-          {currentScreen === 'beneficiaryList' && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user.role) && (
+          {currentScreen === 'beneficiaryList' && STAFF_ADMIN_ROLES.includes(user.role) && (
             <BeneficiaryListScreen
               onBack={() => handleNavSelect('dashboard')}
               onOpenDrawer={() => setSidebarOpen(true)}
@@ -985,7 +1025,7 @@ const App = () => {
           )}
 
           {/* Assistance Screen (Beneficiary) */}
-          {currentScreen === 'assistance' && !['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
+          {currentScreen === 'assistance' && !STAFF_ADMIN_ROLES.includes(user?.role) && (
             <AssistanceScreen
               onBack={() => handleNavSelect('dashboard')}
               onOpenDrawer={() => setSidebarOpen(true)}
@@ -1033,14 +1073,14 @@ const App = () => {
           )}
 
           {/* Intervention Screen (Beneficiary) */}
-          {currentScreen === 'interventions' && !['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
+          {currentScreen === 'interventions' && !STAFF_ADMIN_ROLES.includes(user?.role) && (
             <InterventionsScreen
               onBack={() => handleNavSelect('dashboard')}
             />
           )}
 
           {/* Staff Interventions Screen (Staff & Admin) */}
-          {currentScreen === 'interventions' && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
+          {currentScreen === 'interventions' && STAFF_ADMIN_ROLES.includes(user?.role) && (
             <StaffInterventionsScreen
               onBack={() => handleNavSelect('dashboard')}
               onOpenDrawer={() => setSidebarOpen(true)}
@@ -1091,7 +1131,7 @@ const App = () => {
           )}
 
           {/* Staff Assistance Requests Screen */}
-          {(currentScreen === 'assistanceRequests' || (currentScreen === 'assistance' && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role))) && (
+          {(currentScreen === 'assistanceRequests' || (currentScreen === 'assistance' && STAFF_ADMIN_ROLES.includes(user?.role))) && (
             <StaffAssistanceRequestsScreen
               onBack={() => handleNavSelect('dashboard')}
               onOpenDrawer={() => setSidebarOpen(true)}
@@ -1132,8 +1172,8 @@ const App = () => {
             />
           )}
 
-          {/* Staff Dashboard (Admin, MSWDO, Barangay, Staff) */}
-          {currentScreen === 'dashboard' && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
+          {/* Staff Dashboard (Admin, MSWDO, Senior, PWD, Barangay, Staff) */}
+          {currentScreen === 'dashboard' && STAFF_ADMIN_ROLES.includes(user?.role) && (
             <StaffDashboardScreen
               user={user}
               onNavigate={handleNavSelect}
@@ -1145,7 +1185,7 @@ const App = () => {
           )}
 
           {/* Beneficiary Dashboard Home (Image 4) */}
-          {currentScreen === 'dashboard' && !['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user?.role) && (
+          {currentScreen === 'dashboard' && !STAFF_ADMIN_ROLES.includes(user?.role) && (
             <SafeAreaView style={styles.dashboardPage}>
               <StatusBar barStyle="light-content" backgroundColor={darkMode ? '#020617' : '#0f172a'} />
 
@@ -1182,7 +1222,7 @@ const App = () => {
 
 
         {/* Admin/Staff Navigation */}
-        {['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user.role) && (
+        {STAFF_ADMIN_ROLES.includes(user.role) && (
           <View style={styles.adminNav}>
             <TouchableOpacity style={styles.adminNavBtn} onPress={() => setCurrentScreen('beneficiaryList')}>
               <Text style={styles.adminNavIcon}>👥</Text>
@@ -1591,10 +1631,16 @@ const App = () => {
           visible={showPopupModal && modalItems.length > 0}
           items={modalItems}
           currentIndex={currentPopupIndex}
+          userRole={user?.role}
           onClose={handlePopupCloseForNow}
           onPrev={() => setCurrentPopupIndex((prev) => Math.max(0, prev - 1))}
           onNext={() => setCurrentPopupIndex((prev) => Math.min(modalItems.length - 1, prev + 1))}
           onMarkAsRead={handlePopupMarkAsRead}
+          onMarkAllAsRead={handlePopupMarkAllAsRead}
+          onNavigate={(routeKey) => {
+            setShowPopupModal(false);
+            handleNavSelect(routeKey);
+          }}
           onUpdatePayout={() => {
             setShowPopupModal(false);
             setPayoutMethodOpen(false);

@@ -100,22 +100,82 @@ const SidebarDrawer = ({
 
   if (!mounted && !visible) return null;
 
-  const isStaff = user && ['admin', 'staff', 'mswdo_admin', 'barangay'].includes(user.role);
-
-  const staffNavItems = [
-    { key: 'dashboard', label: 'Dashboard', icon: '🏠' },
-    { key: 'beneficiaryList', label: 'Beneficiaries', icon: '👥' },
-    { key: 'programs', label: 'Programs', icon: '📋' },
-    { key: 'distributions', label: 'Distributions', icon: '📦' },
-    { key: 'distributionScanner', label: 'Distribution Scanner', icon: '📱' },
-    { key: 'attendanceScanner', label: 'Attendance Scanner', icon: '📱' },
-    { key: 'assistanceRequests', label: 'Assistance Requests', icon: '🤲' },
-    { key: 'interventions', label: 'Interventions', icon: '📄' },
-    { key: 'announcements', label: 'Announcements', icon: '📢' },
-    { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount },
-    { key: 'reports', label: 'Reports', icon: '📊' },
-    { key: 'users', label: 'Users', icon: '👤⚙' },
+  const STAFF_ADMIN_ROLES = [
+    'admin',
+    'mswdo_admin',
+    'senior_citizen_admin',
+    'pwd_admin',
+    'staff',
+    'mswdo_staff',
+    'senior_citizen_staff',
+    'pwd_staff',
+    'barangay',
   ];
+  const isStaff = user && STAFF_ADMIN_ROLES.includes(user.role);
+
+  const getRoleDisplayLabel = (role) => {
+    switch (role) {
+      case 'admin':
+        return 'DSWD ADMIN';
+      case 'mswdo_admin':
+        return 'MSWDO ADMIN';
+      case 'mswdo_staff':
+        return 'MSWDO STAFF';
+      case 'senior_citizen_admin':
+        return 'SENIOR CITIZEN ADMIN (OSCA)';
+      case 'senior_citizen_staff':
+        return 'SENIOR CITIZEN STAFF (OSCA)';
+      case 'pwd_admin':
+        return 'PWD ADMIN (PDAO)';
+      case 'pwd_staff':
+        return 'PWD STAFF (PDAO)';
+      case 'staff':
+        return 'DSWD / BARANGAY STAFF';
+      case 'barangay':
+        return 'BARANGAY OFFICER';
+      default:
+        return (role || 'beneficiary').toUpperCase();
+    }
+  };
+
+  const allStaffNavItems = [
+    { key: 'dashboard', label: 'Dashboard', icon: '🏠', roles: STAFF_ADMIN_ROLES },
+    { key: 'beneficiaryList', label: 'Beneficiaries', icon: '👥', roles: STAFF_ADMIN_ROLES },
+    { key: 'programs', label: 'Programs', icon: '📋', roles: ['admin', 'staff', 'barangay'] },
+    { key: 'distributions', label: 'Distributions', icon: '📦', roles: STAFF_ADMIN_ROLES },
+    { key: 'distributionScanner', label: 'Distribution Scanner', icon: '📱', roles: STAFF_ADMIN_ROLES },
+    { key: 'attendanceScanner', label: 'Attendance Scanner', icon: '📅', roles: STAFF_ADMIN_ROLES },
+    {
+      key: 'assistanceRequests',
+      label: 'Assistance Requests',
+      icon: '🤲',
+      roles: ['admin', 'mswdo_admin', 'mswdo_staff', 'staff', 'barangay'],
+    },
+    { key: 'interventions', label: 'Interventions', icon: '📄', roles: ['admin', 'staff', 'barangay'] },
+    { key: 'announcements', label: 'Announcements', icon: '📢', roles: STAFF_ADMIN_ROLES },
+    { key: 'messages', label: 'Messages', icon: '💬', badge: unreadMessageCount, roles: STAFF_ADMIN_ROLES },
+    { key: 'notifications', label: 'Notifications', icon: '🔔', badge: unreadNotifCount, roles: STAFF_ADMIN_ROLES },
+    { key: 'reports', label: 'Reports', icon: '📊', roles: STAFF_ADMIN_ROLES },
+    {
+      key: 'users',
+      label: 'Users',
+      icon: '👤⚙',
+      roles: [
+        'admin',
+        'mswdo_admin',
+        'senior_citizen_admin',
+        'pwd_admin',
+        'staff',
+        'mswdo_staff',
+        'senior_citizen_staff',
+        'pwd_staff',
+      ],
+    },
+  ];
+
+  const staffNavItems = allStaffNavItems.filter(
+    (item) => !item.roles || item.roles.includes(user?.role)
+  );
 
   const beneficiaryNavItems = [
     ...(user?.role === 'beneficiary' ? [{ key: 'profile', label: 'My Profile', icon: '👤' }] : []),
@@ -235,7 +295,7 @@ const SidebarDrawer = ({
                           {user.first_name} {user.last_name}
                         </Text>
                         <Text style={styles.userRole}>
-                          {(user.role || 'beneficiary').toUpperCase()}
+                          {getRoleDisplayLabel(user.role)}
                         </Text>
                       </View>
                     </View>
