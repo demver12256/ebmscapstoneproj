@@ -1344,6 +1344,72 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
   const enrStats = enrollmentsData?.stats;
   const enrBadge = enrStats ? `${enrStats.active_count} Aktibo` : null;
 
+  const renderListHeader = () => (
+    <View style={{ marginBottom: 6 }}>
+      {isSectorRole && (
+        <View style={s.sectorOversightCard}>
+          <Text style={{ fontSize: 16, marginRight: 6 }}>📋</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.sectorOversightTitle}>
+              {isSeniorRole
+                ? 'Office of Senior Citizens Affairs (OSCA) Registry'
+                : isPwdRole
+                ? 'Persons with Disability Affairs Office (PDAO) Registry'
+                : 'Municipal Beneficiary Records Oversight (MSWDO)'}
+            </Text>
+            <Text style={s.sectorOversightDesc}>
+              {isSeniorRole
+                ? 'Municipal registry at social pension records para sa mga Senior Citizens ng Bongabong.'
+                : isPwdRole
+                ? 'Municipal registry at disability welfare records para sa Persons with Disabilities (PWD).'
+                : 'Municipal registry para sa Senior Citizens, Persons with Disabilities (PWD), at 4Ps households.'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Top 4 KPI Compact Cards (2x2 Grid) */}
+      <View style={s.topKpiStatsContainer}>
+        <View style={s.topKpiCardBlue}>
+          <Text style={s.topKpiCardLabel}>Total Records</Text>
+          <Text style={s.topKpiCardNumberBlue}>{filteredBeneficiaries.length}</Text>
+          <Text style={s.topKpiCardSub}>Naka-filter sa listahan</Text>
+        </View>
+        <View style={s.topKpiCardGreen}>
+          <Text style={[s.topKpiCardLabel, { color: '#15803d' }]}>Active</Text>
+          <Text style={[s.topKpiCardNumber, { color: '#16a34a' }]}>
+            {filteredBeneficiaries.filter((b) => !isArchivedBeneficiary(b)).length}
+          </Text>
+          <Text style={[s.topKpiCardSub, { color: '#16a34a' }]}>Aktibong rekord</Text>
+        </View>
+        <View style={s.topKpiCardRose}>
+          <Text style={[s.topKpiCardLabel, { color: '#be123c' }]}>Inactive</Text>
+          <Text style={[s.topKpiCardNumber, { color: '#e11d48' }]}>
+            {filteredBeneficiaries.filter((b) => isArchivedBeneficiary(b)).length}
+          </Text>
+          <Text style={[s.topKpiCardSub, { color: '#be123c' }]}>Inaktibo / Archive</Text>
+        </View>
+        {canManageApplications && (
+          <TouchableOpacity
+            style={s.topKpiCardAmber}
+            onPress={() => {
+              setListMode('applications');
+              setCurrentPage(1);
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={[s.topKpiCardLabel, { color: '#b45309' }]}>Pending</Text>
+              <Text style={{ fontSize: 10 }}>⏳</Text>
+            </View>
+            <Text style={[s.topKpiCardNumber, { color: '#d97706' }]}>{pendingApplications.length}</Text>
+            <Text style={[s.topKpiCardSub, { color: '#b45309' }]}>Suriin →</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={s.page}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
@@ -1369,72 +1435,6 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
         <TouchableOpacity onPress={() => setShowFilters(!showFilters)} style={s.filterBtn}>
           <Text style={s.filterIcon}>{showFilters ? '✕' : '⚙'}</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Oversight Callout Card matching Web App (Lines 1010-1030) */}
-      {isSectorRole && (
-        <View style={s.sectorOversightCard}>
-          <Text style={{ fontSize: 18, marginRight: 8 }}>📋</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={s.sectorOversightTitle}>
-              {isSeniorRole
-                ? 'Office of Senior Citizens Affairs (OSCA) Registry'
-                : isPwdRole
-                ? 'Persons with Disability Affairs Office (PDAO) Registry'
-                : 'Municipal Beneficiary Records Oversight (MSWDO)'}
-            </Text>
-            <Text style={s.sectorOversightDesc}>
-              {isSeniorRole
-                ? 'Municipal registry at social pension records para sa mga Senior Citizens ng Bongabong.'
-                : isPwdRole
-                ? 'Municipal registry at disability welfare records para sa Persons with Disabilities (PWD).'
-                : 'Municipal registry para sa Senior Citizens, Persons with Disabilities (PWD), at 4Ps households.'}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Top KPI Stat Cards matching Web App (Lines 1111-1142) */}
-      <View style={s.topKpiStatsContainer}>
-        <View style={s.topKpiCardBlue}>
-          <Text style={s.topKpiCardLabel}>Total Records</Text>
-          <Text style={s.topKpiCardNumberBlue}>{filteredBeneficiaries.length}</Text>
-          <Text style={s.topKpiCardSub}>Naka-filter sa listahan</Text>
-        </View>
-
-        <View style={s.topKpiCardGreen}>
-          <Text style={[s.topKpiCardLabel, { color: '#15803d' }]}>Active</Text>
-          <Text style={[s.topKpiCardNumber, { color: '#16a34a' }]}>
-            {filteredBeneficiaries.filter((b) => !isArchivedBeneficiary(b)).length}
-          </Text>
-          <Text style={[s.topKpiCardSub, { color: '#16a34a' }]}>Aktibong rekord</Text>
-        </View>
-
-        <View style={s.topKpiCardRose}>
-          <Text style={[s.topKpiCardLabel, { color: '#be123c' }]}>Inactive</Text>
-          <Text style={[s.topKpiCardNumber, { color: '#e11d48' }]}>
-            {filteredBeneficiaries.filter((b) => isArchivedBeneficiary(b)).length}
-          </Text>
-          <Text style={[s.topKpiCardSub, { color: '#be123c' }]}>Inaktibo / Archive</Text>
-        </View>
-
-        {canManageApplications && (
-          <TouchableOpacity
-            style={s.topKpiCardAmber}
-            onPress={() => {
-              setListMode('applications');
-              setCurrentPage(1);
-            }}
-            activeOpacity={0.8}
-          >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={[s.topKpiCardLabel, { color: '#b45309' }]}>Pending</Text>
-              <Text style={{ fontSize: 11 }}>⏳</Text>
-            </View>
-            <Text style={[s.topKpiCardNumber, { color: '#d97706' }]}>{pendingApplications.length}</Text>
-            <Text style={[s.topKpiCardSub, { color: '#b45309' }]}>Suriin →</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Roster & Archive Mode Toggle Buttons matching Web App */}
@@ -1597,6 +1597,7 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
           keyExtractor={(item) => String(item.id)}
           renderItem={listMode === 'roster' ? renderBeneficiaryCard : renderApplicationCard}
           contentContainerStyle={s.listContent}
+          ListHeaderComponent={renderListHeader}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={
             <View style={s.centered}>
@@ -3654,96 +3655,101 @@ const s = StyleSheet.create({
   },
   sectorOversightCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     backgroundColor: '#eff6ff',
     borderWidth: 1,
     borderColor: '#bfdbfe',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     marginHorizontal: 12,
-    marginTop: 10,
-    marginBottom: 10,
+    marginTop: 4,
+    marginBottom: 6,
   },
   sectorOversightTitle: {
-    fontSize: 13,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#1e40af',
   },
   sectorOversightDesc: {
-    fontSize: 11,
+    fontSize: 9.5,
     color: '#3b82f6',
-    marginTop: 2,
-    lineHeight: 16,
+    marginTop: 1,
+    lineHeight: 13,
   },
 
-  // ── Top KPI Stat Cards ──
+  // ── Top KPI Stat Cards (Compact 2x2 Grid) ──
   topKpiStatsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'space-between',
     marginHorizontal: 12,
-    marginTop: 10,
-    marginBottom: 10,
+    marginTop: 4,
+    marginBottom: 6,
   },
   topKpiCardBlue: {
-    flex: 1,
-    minWidth: '47%',
+    width: '48.5%',
     backgroundColor: '#eff6ff',
     borderWidth: 1,
     borderColor: '#bfdbfe',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 6,
   },
   topKpiCardGreen: {
-    flex: 1,
-    minWidth: '47%',
+    width: '48.5%',
     backgroundColor: '#f0fdf4',
     borderWidth: 1,
     borderColor: '#bbf7d0',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 6,
   },
   topKpiCardRose: {
-    flex: 1,
-    minWidth: '47%',
+    width: '48.5%',
     backgroundColor: '#fff1f2',
     borderWidth: 1,
     borderColor: '#fecdd3',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 6,
   },
   topKpiCardAmber: {
-    flex: 1,
-    minWidth: '47%',
+    width: '48.5%',
     backgroundColor: '#fffbeb',
     borderWidth: 1,
     borderColor: '#fde68a',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 6,
   },
   topKpiCardLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#64748b',
     textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
   },
   topKpiCardNumber: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '800',
     color: '#0f172a',
-    marginTop: 2,
+    marginTop: 1,
   },
   topKpiCardNumberBlue: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '800',
     color: '#1d4ed8',
-    marginTop: 2,
+    marginTop: 1,
   },
   topKpiCardSub: {
-    fontSize: 10,
+    fontSize: 8.5,
     color: '#64748b',
-    marginTop: 2,
+    marginTop: 1,
   },
 
   // ── Roster & Archive Toggle Row ──

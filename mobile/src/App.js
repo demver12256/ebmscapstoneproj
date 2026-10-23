@@ -1070,6 +1070,8 @@ const App = () => {
               onBack={() => handleNavSelect('dashboard')}
               onOpenDrawer={() => setSidebarOpen(true)}
               user={user}
+              onAllRead={() => setUnreadNotifCount(0)}
+              onReadOne={() => setUnreadNotifCount((prev) => Math.max(0, prev - 1))}
             />
           )}
 

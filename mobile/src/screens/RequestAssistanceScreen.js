@@ -345,8 +345,7 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
                 <Text style={styles.agencyFooter}>Direktang susuriin ng DSWD Admin</Text>
               </TouchableOpacity>
 
-              {/* MSWDO option removed from the beneficiary request form. */}
-              {false && (
+              {/* MSWDO Office Option */}
               <TouchableOpacity
                 style={[styles.agencyCard, selectedAgency === 'MSWDO' && styles.agencyCardSelected]}
                 onPress={() => setSelectedAgency('MSWDO')}
@@ -372,7 +371,6 @@ export default function RequestAssistanceScreen({ onBack, user, profile, onRefre
 
                 <Text style={styles.agencyFooter}>Direktang susuriin ng MSWDO Admin</Text>
               </TouchableOpacity>
-              )}
             </View>
 
             {/* SECTION 2: URI NG TULONG (ASSISTANCE TYPE) (Image 2) */}
