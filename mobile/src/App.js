@@ -404,9 +404,19 @@ const App = () => {
       try {
         const notifRes = await notificationApi.list().catch(() => ({ data: { data: [] } }));
         const notifs = notifRes.data?.data || [];
-        const roleVisibleNotifs = notifs.filter((item) =>
-          user.role === 'admin' || item.reference_type !== 'payout_verification'
-        );
+        const canManageAssistance = ['admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff'].includes(user?.role);
+        const isMswdo = ['mswdo_admin', 'mswdo_staff'].includes(user?.role);
+        const isDswd = ['admin', 'staff', 'barangay'].includes(user?.role);
+
+        const roleVisibleNotifs = notifs.filter((item) => {
+          if (item.reference_type === 'payout_verification' && user.role !== 'admin') return false;
+          if (item.reference_type === 'assistance_request') {
+            if (!canManageAssistance) return false;
+            if (isMswdo && item.title?.includes('(DSWD)')) return false;
+            if (isDswd && item.title?.includes('(MSWDO)')) return false;
+          }
+          return true;
+        });
         const unreadList = roleVisibleNotifs
           .filter((n) => !n.is_read)
           .map((n) => ({ ...n, popupType: 'notification' }));

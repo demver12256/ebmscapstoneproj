@@ -52,11 +52,21 @@ export default function StaffMswdoNotificationPopupModal() {
       const notifRes = await notificationApi.list();
       const notifs = notifRes.data?.data || [];
 
-      // Payout verification requests are DSWD-admin-only, including older
-      // notifications that may already exist in an MSWDO account.
-      const roleVisibleNotifs = notifs.filter((item) =>
-        user.role === 'admin' || item.reference_type !== 'payout_verification'
-      );
+      const canManageAssistance = ['admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff'].includes(user?.role);
+      const isMswdo = ['mswdo_admin', 'mswdo_staff'].includes(user?.role);
+      const isDswd = ['admin', 'staff', 'barangay'].includes(user?.role);
+
+      // Filter notifications: payout verification is DSWD-admin only,
+      // and assistance requests must strictly belong only to DSWD or MSWDO (not Senior or PWD)
+      const roleVisibleNotifs = notifs.filter((item) => {
+        if (item.reference_type === 'payout_verification' && user.role !== 'admin') return false;
+        if (item.reference_type === 'assistance_request') {
+          if (!canManageAssistance) return false;
+          if (isMswdo && item.title?.includes('(DSWD)')) return false;
+          if (isDswd && item.title?.includes('(MSWDO)')) return false;
+        }
+        return true;
+      });
 
       // Filter unread notifications for this user
       const unreadList = roleVisibleNotifs.filter((n) => !n.is_read);

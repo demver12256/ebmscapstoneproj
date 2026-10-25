@@ -47,6 +47,7 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
   const isPwdAdmin = user?.role === 'pwd_admin' || user?.role === 'pwd_staff';
   const isMswdoAdmin = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
   const canReviewApps = isDswdAdmin || isSeniorAdmin || isPwdAdmin;
+  const canReviewAssistance = ['admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff'].includes(user?.role);
   const isAdmin = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role);
   const isStaff = user?.role === 'staff' || user?.role === 'barangay';
 
@@ -69,6 +70,22 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
         return cat.includes('pwd') || cat.includes('disabilit');
       }
       return false; // MSWDO and other roles do not manage applications
+    });
+  }, [user?.role]);
+
+  const filterPendingAssistance = useCallback((requests) => {
+    return (requests || []).filter(r => {
+      const isPending = r.status === 'Pending' || r.status === 'pending' ||
+        r.status === 'Under Review' || r.status === 'under_review';
+      if (!isPending) return false;
+      // DSWD strictly sees only DSWD requests; MSWDO strictly sees only MSWDO requests
+      if (['admin', 'staff', 'barangay'].includes(user?.role)) {
+        return r.agency === 'DSWD';
+      }
+      if (['mswdo_admin', 'mswdo_staff'].includes(user?.role)) {
+        return r.agency === 'MSWDO';
+      }
+      return false; // Senior and PWD never receive assistance requests
     });
   }, [user?.role]);
 
@@ -102,11 +119,15 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
   // Compute total badge count from all sources
   const computeTotalBadge = useCallback(() => {
     let total = unreadCount;
-    total += pendingApplications.length;
-    total += pendingAssistance.length;
+    if (canReviewApps) {
+      total += pendingApplications.length;
+    }
+    if (canReviewAssistance) {
+      total += pendingAssistance.length;
+    }
     if (unreadMessages > 0) total += unreadMessages;
     return total;
-  }, [unreadCount, pendingApplications.length, pendingAssistance.length, unreadMessages]);
+  }, [unreadCount, canReviewApps, pendingApplications.length, canReviewAssistance, pendingAssistance.length, unreadMessages]);
 
   useEffect(() => {
     if (user) {
@@ -123,14 +144,13 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
         setPendingApplications([]);
       }
 
-      if (isAdmin || isStaff) {
+      if (canReviewAssistance) {
         assistanceRequestApi.list().then(res => {
           const requests = res.data?.data || [];
-          setPendingAssistance(requests.filter(r =>
-            r.status === 'Pending' || r.status === 'pending' ||
-            r.status === 'Under Review' || r.status === 'under_review'
-          ));
+          setPendingAssistance(filterPendingAssistance(requests));
         }).catch(() => {});
+      } else {
+        setPendingAssistance([]);
       }
 
       messageApi.unreadCount().then(res => {
@@ -150,14 +170,13 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
             setPendingApplications(filterPendingApps(apps));
           }).catch(() => {});
         }
-        if (isAdmin || isStaff) {
+        if (canReviewAssistance) {
           assistanceRequestApi.list().then(res => {
             const requests = res.data?.data || [];
-            setPendingAssistance(requests.filter(r =>
-              r.status === 'Pending' || r.status === 'pending' ||
-              r.status === 'Under Review' || r.status === 'under_review'
-            ));
+            setPendingAssistance(filterPendingAssistance(requests));
           }).catch(() => {});
+        } else {
+          setPendingAssistance([]);
         }
         messageApi.unreadCount().then(res => {
           setUnreadMessages(res.data?.data?.count || res.data?.count || 0);
@@ -206,17 +225,16 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
       }
 
       // Pending assistance requests
-      if (isAdmin || isStaff) {
+      if (canReviewAssistance) {
         try {
           const assistRes = await assistanceRequestApi.list();
           const requests = assistRes.data?.data || [];
-          setPendingAssistance(requests.filter(r =>
-            r.status === 'Pending' || r.status === 'pending' ||
-            r.status === 'Under Review' || r.status === 'under_review'
-          ));
+          setPendingAssistance(filterPendingAssistance(requests));
         } catch (e) {
           console.error('Failed to load assistance requests:', e);
         }
+      } else {
+        setPendingAssistance([]);
       }
 
       // Unread messages
@@ -309,7 +327,7 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
 
   // Check if there are any items to show
   const hasAnyItems = (isAdmin || isStaff)
-    ? (pendingApplications.length > 0 || pendingAssistance.length > 0 || unreadMessages > 0 || filteredNotifications.length > 0)
+    ? (pendingApplications.length > 0 || (canReviewAssistance && pendingAssistance.length > 0) || unreadMessages > 0 || filteredNotifications.length > 0)
     : (unreadMessages > 0 || filteredNotifications.length > 0);
 
   const totalBadge = computeTotalBadge();
@@ -566,8 +584,8 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
                       </div>
                     )}
 
-                    {/* ━━━ Pending Assistance Requests (Admin/Staff only) ━━━ */}
-                    {(isAdmin || isStaff) && pendingAssistance.length > 0 && (
+                    {/* ━━━ Pending Assistance Requests (DSWD & MSWDO only) ━━━ */}
+                    {canReviewAssistance && pendingAssistance.length > 0 && (
                       <div className="py-1">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 py-2">
                           🆘 Assistance Requests ({pendingAssistance.length})

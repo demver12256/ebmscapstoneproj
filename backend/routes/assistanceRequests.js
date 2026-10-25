@@ -71,9 +71,9 @@ router.get('/stats', async (req, res, next) => {
         whereClause.user_id = currentUser.id;
       }
     } else if (['senior_citizen_admin', 'senior_citizen_staff'].includes(currentUser.role)) {
-      whereClause[Op.or] = [{ agency: 'OSCA' }, { agency: 'MSWDO' }];
+      whereClause.agency = 'OSCA';
     } else if (['pwd_admin', 'pwd_staff'].includes(currentUser.role)) {
-      whereClause[Op.or] = [{ agency: 'PWDO' }, { agency: 'PDAO' }, { agency: 'MSWDO' }];
+      whereClause.agency = { [Op.in]: ['PWDO', 'PDAO'] };
     } else if (currentUser.role === 'mswdo_admin' || currentUser.role === 'mswdo_staff') {
       whereClause.agency = 'MSWDO';
     } else if (currentUser.role === 'admin') {
@@ -125,9 +125,9 @@ router.get('/', async (req, res, next) => {
         whereClause.barangay_id = req.query.barangay_id;
       }
     } else if (['senior_citizen_admin', 'senior_citizen_staff'].includes(currentUser.role)) {
-      whereClause[Op.or] = [{ agency: 'OSCA' }, { agency: 'MSWDO' }];
+      whereClause.agency = 'OSCA';
     } else if (['pwd_admin', 'pwd_staff'].includes(currentUser.role)) {
-      whereClause[Op.or] = [{ agency: 'PWDO' }, { agency: 'PDAO' }, { agency: 'MSWDO' }];
+      whereClause.agency = { [Op.in]: ['PWDO', 'PDAO'] };
     } else if (currentUser.role === 'mswdo_admin' || currentUser.role === 'mswdo_staff') {
       whereClause.agency = 'MSWDO';
     } else if (currentUser.role === 'admin') {
@@ -342,6 +342,41 @@ router.post('/', upload.any(), async (req, res, next) => {
       }
     } catch (notifErr) {
       console.error('Failed to create assistance submission notification:', notifErr);
+    }
+
+    // Automatically dispatch notification ONLY to the agency the request was directed to
+    try {
+      let targetRoles = [];
+      if (targetAgency === 'MSWDO') {
+        targetRoles = ['mswdo_admin', 'mswdo_staff'];
+      } else if (targetAgency === 'DSWD') {
+        targetRoles = ['admin', 'staff', 'barangay'];
+      } else if (targetAgency === 'OSCA') {
+        targetRoles = ['senior_citizen_admin', 'senior_citizen_staff'];
+      } else if (['PWDO', 'PDAO'].includes(targetAgency)) {
+        targetRoles = ['pwd_admin', 'pwd_staff'];
+      }
+
+      if (targetRoles.length > 0) {
+        const staffUsers = await User.findAll({
+          where: { role: { [Op.in]: targetRoles }, status: 'active' },
+          attributes: ['id']
+        });
+        const benName = targetBeneficiary ? `${targetBeneficiary.first_name} ${targetBeneficiary.last_name}`.trim() : 'Benepisyaryo';
+        for (const u of staffUsers) {
+          await Notification.create({
+            user_id: u.id,
+            title: `Bagong Kahilingan sa Ayuda (${targetAgency}): ${type}`,
+            message: `May bagong isinumiteng kahilingan sa tulong (${type}) si ${benName} para sa tanggapan ng ${targetAgency}.`,
+            type: 'system',
+            reference_id: request.id,
+            reference_type: 'assistance_request',
+            is_read: false,
+          });
+        }
+      }
+    } catch (staffNotifErr) {
+      console.error('Failed to notify target agency staff of assistance request:', staffNotifErr);
     }
 
     res.status(201).json({ success: true, data: request, message: `Assistance request submitted successfully to ${targetAgency}.` });

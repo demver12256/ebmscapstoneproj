@@ -286,10 +286,14 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     if (isBarangayScoped && barangayId) {
       assistWhere.barangay_id = barangayId;
     }
-    if (isMswdoRole(req.user.role)) {
+    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
       assistWhere.agency = 'MSWDO';
     } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
       assistWhere.agency = 'DSWD';
+    } else if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
+      assistWhere.agency = 'OSCA';
+    } else if (['pwd_admin', 'pwd_staff'].includes(req.user.role)) {
+      assistWhere.agency = 'PDAO';
     }
     const totalAssistanceRequests = await AssistanceRequest.count({ where: assistWhere });
     const pendingAssistanceRequests = await AssistanceRequest.count({
