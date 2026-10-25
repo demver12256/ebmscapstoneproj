@@ -94,10 +94,11 @@ export default function BeneficiaryListPage() {
   const isSeniorAdmin = user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff';
   const isPwdAdmin = user?.role === 'pwd_admin' || user?.role === 'pwd_staff';
   const isMswdoAdmin = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
-  const isDswdAdmin = user?.role === 'admin';
+  const isDswdStaff = user?.role === 'staff' || user?.role === 'barangay';
+  const isDswdAdmin = user?.role === 'admin' || isDswdStaff;
   const isSectorAdmin = isMswdoAdmin || isSeniorAdmin || isPwdAdmin;
-  const isAdminOrSector = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
-  // Applications approval is strictly delegated by sector: DSWD Admin (4Ps only), Senior Admin (Senior Citizens only), PWD Admin (PWD only).
+  const isAdminOrSector = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'staff', 'barangay'].includes(user?.role);
+  // Applications approval is strictly delegated by sector: DSWD Admin & Staff (4Ps only), Senior Admin (Senior Citizens only), PWD Admin (PWD only).
   // MSWDO Admin / Staff does NOT approve applications.
   const canManageApplications = (isDswdAdmin || isSeniorAdmin || isPwdAdmin) && !isMswdoAdmin;
   const CATEGORIES = [
@@ -162,9 +163,7 @@ export default function BeneficiaryListPage() {
         setPendingApplications([]);
       }
 
-      if (user?.role === 'staff' && user?.barangay_id) {
-        setSelectedBarangayId(String(user.barangay_id));
-      }
+      // DSWD Staff has municipal scope across all barangays
     } catch (err) {
       setError(err.message || 'Unable to load beneficiaries');
     } finally {
@@ -365,7 +364,7 @@ export default function BeneficiaryListPage() {
         sectorName: '4Ps / DSWD',
         message: allowed
           ? ''
-          : 'Bawal mag-rehistro ng RFID: Tanging ang 4Ps / DSWD Administrator o Barangay Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa 4Ps beneficiaries.'
+          : 'Bawal mag-rehistro ng RFID: Tanging ang 4Ps / DSWD Administrator o DSWD Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa 4Ps beneficiaries.'
       };
     }
 
@@ -424,10 +423,7 @@ export default function BeneficiaryListPage() {
   };
 
   const handleEditClick = (beneficiary) => {
-    if (!isAdminOrSector && (user?.role === 'staff' || user?.role === 'barangay') && beneficiary.barangay_id !== user?.barangay_id) {
-      setEditError('You can only edit beneficiaries from your own barangay');
-      return;
-    }
+    // DSWD Staff & Admin can edit beneficiaries from any barangay
     
     setEditingBeneficiary(beneficiary);
     setEditFormData({
@@ -1044,10 +1040,7 @@ export default function BeneficiaryListPage() {
             <select
               value={selectedBarangayId}
               onChange={(e) => setSelectedBarangayId(e.target.value)}
-              disabled={user?.role === 'staff'}
-              className={`w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200 ${
-                user?.role === 'staff' ? 'bg-slate-50 cursor-not-allowed text-slate-500' : ''
-              }`}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
             >
               <option value="">All Barangays</option>
               {barangays.map((b) => (

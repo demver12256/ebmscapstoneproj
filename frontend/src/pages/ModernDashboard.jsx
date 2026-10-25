@@ -43,7 +43,7 @@ export default function ModernDashboard() {
   const isMswdoStaff = user?.role === 'mswdo_staff';
   const isAnyMswdo = isMswdoAdmin || isMswdoStaff;
   const isSectorAdmin = isAnyMswdo || isSeniorAdmin || isPwdAdmin;
-  const canAccessPending = ['admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
+  const canAccessPending = ['admin', 'staff', 'barangay', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
 
   useEffect(() => {
     loadDashboard();
@@ -379,7 +379,7 @@ export default function ModernDashboard() {
       badgeBg: 'bg-teal-50 text-teal-700',
       onClick: () => navigate('/dashboard/beneficiaries')
     },
-    ...(['admin'].includes(user?.role) ? [{
+    ...(['admin', 'staff', 'barangay'].includes(user?.role) ? [{
       title: 'Pending Beneficiaries',
       value: pendingCount,
       badge: pendingApplicationsList.length > 0 ? `${pendingApplicationsList.length} queued` : 'None',
@@ -391,7 +391,7 @@ export default function ModernDashboard() {
     }] : [{
       title: 'Assistance Requests',
       value: summary?.pendingAssistanceRequests || 0,
-      badge: 'Barangay aid',
+      badge: 'Municipal aid',
       trend: 'neutral',
       icon: HandHeart,
       iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
@@ -540,7 +540,7 @@ export default function ModernDashboard() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/60">
-              {isSeniorAdmin ? 'OSCA Focus' : isPwdAdmin ? 'PDAO Focus' : isMswdoStaff ? 'MSWDO Staff' : isMswdoAdmin ? 'MSWDO Focus' : ['admin'].includes(user?.role) ? 'Admin Console' : 'Staff Portal'}
+              {isSeniorAdmin ? 'OSCA Focus' : isPwdAdmin ? 'PDAO Focus' : isMswdoStaff ? 'MSWDO Staff' : isMswdoAdmin ? 'MSWDO Focus' : user?.role === 'admin' ? 'Admin Console' : ['staff', 'barangay'].includes(user?.role) ? 'DSWD Staff' : 'Staff Portal'}
             </span>
             <span className="text-xs text-slate-400">• Bongabong, Oriental Mindoro</span>
           </div>
@@ -895,11 +895,12 @@ export default function ModernDashboard() {
                   { label: 'Municipal Reports', icon: FileText, path: '/dashboard/reports' }
                 ] : [
                   { label: 'New Distribution', icon: PesoIcon, path: '/dashboard/distributions' },
-                  ...(['admin'].includes(user?.role) ? [
+                  ...(['admin', 'staff', 'barangay'].includes(user?.role) ? [
                     { label: 'Review Pending', icon: CheckCircle, path: '/dashboard/beneficiaries?pending=true' }
-                  ] : [
+                  ] : []),
+                  ...(['staff', 'barangay'].includes(user?.role) ? [
                     { label: 'RFID Scanner', icon: Smartphone, path: '/dashboard/rfid-scanner' }
-                  ]),
+                  ] : []),
                   { label: 'Manage Programs', icon: Target, path: '/dashboard/programs' },
                   { label: 'Audit Reports', icon: FileText, path: '/dashboard/reports' }
                 ])

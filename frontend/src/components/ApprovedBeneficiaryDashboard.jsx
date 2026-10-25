@@ -1375,7 +1375,7 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                       <span>Paalala ukol sa Attendance at Compliance:</span>
                     </div>
                     <p className="text-rose-800 leading-relaxed font-medium">
-                      Ang hindi pagdalo sa mga itinakdang opisyal na aktibidad o oryentasyon ng munisipyo ay naitala sa inyong record bilang <strong>Absent</strong>. Kung ikaw ay may balidong dahilan (tulad ng emerhensiya o medikal), mangyaring makipag-ugnayan agad sa inyong Barangay Staff o sa Tanggapan ng DSWD/MSWDO.
+                      Ang hindi pagdalo sa mga itinakdang opisyal na aktibidad o oryentasyon ng munisipyo ay naitala sa inyong record bilang <strong>Absent</strong>. Kung ikaw ay may balidong dahilan (tulad ng emerhensiya o medikal), mangyaring makipag-ugnayan agad sa DSWD/MSWDO Staff o sa Tanggapan ng DSWD/MSWDO.
                     </p>
                   </div>
                 )}

@@ -13,7 +13,7 @@ const staffNavItems = [
 
   // ── Community Master Records ──
   { path: '/dashboard/beneficiaries', label: 'Beneficiaries', icon: Users, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
-  { path: '/dashboard/barangays', label: 'Barangays', icon: MapPin, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'] },
+  { path: '/dashboard/barangays', label: 'Barangays', icon: MapPin, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff', 'staff', 'barangay'] },
 
   // ── Social Welfare & Assistance Services ──
   { path: '/dashboard/programs', label: 'Programs', icon: ListChecks, roles: ['admin', 'staff', 'barangay'] },

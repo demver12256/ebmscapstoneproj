@@ -1220,8 +1220,8 @@ router.get('/', async (req, res, next) => {
       where[Op.and].push({
         [Op.or]: orConditions
       });
-    } else if (req.user.role === 'admin') {
-      // DSWD Admin: strictly see announcements created by DSWD users (NOT MSWDO)
+    } else if (req.user.role === 'admin' || req.user.role === 'staff' || req.user.role === 'barangay') {
+      // DSWD Admin & Staff: strictly see announcements created by DSWD users (NOT MSWDO)
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push({
         created_by_user_id: { [Op.notIn]: mswdoUserIds.length ? mswdoUserIds : [-1] },
@@ -1265,18 +1265,12 @@ router.get('/', async (req, res, next) => {
       );
     }
 
-    // Filter staff view to events that target their barangay if role === 'barangay' OR 'staff'
-    // CRITICAL: Both 'staff' and 'barangay' roles should only see announcements for their assigned barangay
-    if ((req.user.role === 'barangay' || req.user.role === 'staff') && req.user.role !== 'mswdo_staff') {
-      const userBarangayId = req.user.barangay_id ? Number(req.user.barangay_id) : null;
-      if (userBarangayId) {
-        announcements = announcements.filter((a) => {
-          const targetIds = parseTargetBarangayIds(a.target_barangays);
-          return targetIds.includes(userBarangayId);
-        });
-      } else {
-        announcements = [];
-      }
+    // DSWD Staff can view all DSWD announcements or filter by query barangay_id
+    if (barangay_id) {
+      const bIdNum = Number(barangay_id);
+      announcements = announcements.filter((a) =>
+        parseTargetBarangayIds(a.target_barangays).includes(bIdNum)
+      );
     }
 
     // Filter view for Senior / PWD / MSWDO roles (STRICT: Inter-office notices received by ADMIN ONLY, never staff)

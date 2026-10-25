@@ -41,7 +41,8 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
   const [pwSuccess, setPwSuccess] = useState(null);
   const [showPwFields, setShowPwFields] = useState({ current: false, new: false, confirm: false });
 
-  const isDswdAdmin = user?.role === 'admin';
+  const isDswdStaff = user?.role === 'staff' || user?.role === 'barangay';
+  const isDswdAdmin = user?.role === 'admin' || isDswdStaff;
   const isSeniorAdmin = user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff';
   const isPwdAdmin = user?.role === 'pwd_admin' || user?.role === 'pwd_staff';
   const isMswdoAdmin = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
@@ -55,7 +56,7 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
         a.status === 'Pending Review' || a.status === 'pending_review' ||
         a.status === 'Under Review' || a.status === 'under_review';
       if (!isPendingStatus) return false;
-      if (user?.role === 'admin') {
+      if (user?.role === 'admin' || user?.role === 'staff' || user?.role === 'barangay') {
         const cat = String(a.category || '').toLowerCase();
         return cat.includes('4ps') || cat.includes('pantawid');
       }
@@ -321,9 +322,14 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
 
   const getUserRoleLabel = () => {
     if (!user) return '';
-    if (['admin','mswdo_admin'].includes(user.role)) return user.role === 'mswdo_admin' ? 'MSWDO Administrator' : 'Administrator';
-    if (user.role === 'staff') return 'Barangay Staff';
-    if (user.role === 'barangay') return 'Barangay Captain';
+    if (user.role === 'admin') return 'DSWD Administrator';
+    if (user.role === 'mswdo_admin') return 'MSWDO Administrator';
+    if (user.role === 'senior_citizen_admin') return 'OSCA Administrator';
+    if (user.role === 'pwd_admin') return 'PDAO Administrator';
+    if (['staff', 'barangay'].includes(user.role)) return 'DSWD Staff';
+    if (user.role === 'mswdo_staff') return 'MSWDO Staff';
+    if (user.role === 'senior_citizen_staff') return 'OSCA Staff';
+    if (user.role === 'pwd_staff') return 'PDAO Staff';
     if (user.role === 'beneficiary') return 'Beneficiary Member';
     return user.role;
   };

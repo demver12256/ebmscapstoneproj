@@ -254,7 +254,7 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
         sectorName: '4Ps / DSWD',
         message: allowed
           ? ''
-          : 'Bawal mag-rehistro ng RFID: Tanging ang 4Ps / DSWD Administrator o Barangay Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa 4Ps beneficiaries.'
+          : 'Bawal mag-rehistro ng RFID: Tanging ang 4Ps / DSWD Administrator o DSWD Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa 4Ps beneficiaries.'
       };
     }
 
@@ -339,7 +339,7 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
     loadData();
   };
 
-  const canManageApplications = (isDswdAdmin || isSeniorRole || isPwdRole) && !isMswdoRole;
+  const canManageApplications = (isDswdAdmin || isDswdStaff || isSeniorRole || isPwdRole) && !isMswdoRole;
 
   const isArchivedBeneficiary = (b) => {
     return b.User?.status === 'inactive' || b.status === 'inactive' || b.status === 'archived' || (b.inactivation_reason && b.inactivation_reason.includes('Archived'));

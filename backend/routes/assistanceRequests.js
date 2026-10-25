@@ -54,9 +54,15 @@ router.get('/stats', async (req, res, next) => {
     const currentUser = req.user;
     let whereClause = {};
 
-    if (currentUser.role === 'staff' || currentUser.role === 'barangay') {
-      const brgyId = await getUserBarangayId(currentUser);
-      if (brgyId) whereClause.barangay_id = brgyId;
+    if (['admin', 'staff', 'barangay'].includes(currentUser.role)) {
+      if (req.query.agency && req.query.agency !== 'all') {
+        whereClause.agency = req.query.agency;
+      } else if (!req.query.agency) {
+        whereClause.agency = 'DSWD';
+      }
+      if (req.query.barangay_id) {
+        whereClause.barangay_id = req.query.barangay_id;
+      }
     } else if (currentUser.role === 'beneficiary') {
       const ben = await Beneficiary.findOne({ where: { user_id: currentUser.id } });
       if (ben) {
@@ -109,16 +115,14 @@ router.get('/', async (req, res, next) => {
       } else {
         whereClause.user_id = currentUser.id;
       }
-    } else if (currentUser.role === 'staff' || currentUser.role === 'barangay') {
-      // Staff sees requests from their barangay only
-      const brgyId = await getUserBarangayId(currentUser);
-      if (brgyId) {
-        whereClause.barangay_id = brgyId;
-      } else {
-        return res.json({ success: true, data: [] });
-      }
+    } else if (['admin', 'staff', 'barangay'].includes(currentUser.role)) {
       if (req.query.agency && req.query.agency !== 'all') {
         whereClause.agency = req.query.agency;
+      } else if (!req.query.agency) {
+        whereClause.agency = 'DSWD';
+      }
+      if (req.query.barangay_id) {
+        whereClause.barangay_id = req.query.barangay_id;
       }
     } else if (['senior_citizen_admin', 'senior_citizen_staff'].includes(currentUser.role)) {
       whereClause[Op.or] = [{ agency: 'OSCA' }, { agency: 'MSWDO' }];
@@ -498,7 +502,7 @@ router.patch('/:id/status', async (req, res, next) => {
 router.post('/claim-rfid', async (req, res, next) => {
   try {
     const currentUser = req.user;
-    if (!['admin', 'mswdo_admin', 'mswdo_staff'].includes(currentUser.role)) {
+    if (!['admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff'].includes(currentUser.role)) {
       return res.status(403).json({
         success: false,
         message: 'Access Denied: Tanging DSWD o MSWDO Admin / Staff lamang ang may karapatang mag-release ng tulong gamit ang RFID scanner.',

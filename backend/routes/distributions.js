@@ -74,9 +74,9 @@ router.use(authenticate);
 const restrictToAssignedBarangay = async (req, res, next) => {
   console.log('[RESTRICT_BARANGAY] Checking access for user:', req.user.role, req.user.id);
 
-  if (['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(req.user.role)) {
-    console.log('[RESTRICT_BARANGAY] Admin - access granted');
-    return next(); // Admins have full access
+  if (['admin', 'staff', 'barangay', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff', 'mswdo_staff'].includes(req.user.role)) {
+    console.log('[RESTRICT_BARANGAY] Staff/Admin - access granted');
+    return next();
   }
 
   if (req.user.role === 'mswdo_staff') {
@@ -172,16 +172,7 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
     await checkAndProcessExpiredDistributions();
     const where = {};
 
-    if (req.user.role === 'staff' || req.user.role === 'barangay') {
-      // STRICT: Staff sees ONLY events in their assigned barangay
-      if (!req.user.barangay_id) {
-        return res.status(403).json({
-          success: false,
-          message: 'Your account is not assigned to any barangay. Please contact the administrator.'
-        });
-      }
-      where.barangay_id = req.user.barangay_id;
-    } else if (req.user.role === 'beneficiary') {
+    if (req.user.role === 'beneficiary') {
       // Beneficiary sees only events where they have a transaction
       const txns = await DistributionTransaction.findAll({
         include: [{ model: Beneficiary, where: { user_id: req.user.id } }],
@@ -200,7 +191,7 @@ router.get('/events', authorize('admin', 'staff', 'barangay', 'beneficiary'), as
     }
 
     // Apply barangay filter if provided (admin and sector staff)
-    if (req.query.barangay_id && req.query.barangay_id !== 'all' && ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff', 'mswdo_staff'].includes(req.user.role)) {
+    if (req.query.barangay_id && req.query.barangay_id !== 'all' && ['admin', 'staff', 'barangay', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff', 'mswdo_staff'].includes(req.user.role)) {
       where.barangay_id = parseInt(req.query.barangay_id);
     }
 

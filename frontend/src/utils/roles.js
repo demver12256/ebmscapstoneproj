@@ -1,6 +1,6 @@
 export const ADMIN_ROLES = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'];
 export const MSWDO_ROLES = ['mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff'];
-export const STAFF_ROLES = ['staff', 'mswdo_staff'];
+export const STAFF_ROLES = ['staff', 'barangay', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'];
 
 export const isAdminRole = (role) => ADMIN_ROLES.includes(role);
 export const isMswdoRole = (role) => MSWDO_ROLES.includes(role);

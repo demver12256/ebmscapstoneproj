@@ -1202,7 +1202,7 @@ export default function MyBenefitsPage() {
               {/* Barangay Endorsement */}
               {selectedGrant.barangay_endorsement_notes && (
                 <div className="p-4 rounded-2xl bg-purple-50 border border-purple-200 text-purple-950">
-                  <span className="font-bold text-purple-900 block mb-1">Barangay Staff Verification Notes:</span>
+                  <span className="font-bold text-purple-900 block mb-1">DSWD Staff Verification Notes:</span>
                   <p className="text-xs text-purple-900/90 leading-relaxed">
                     {selectedGrant.barangay_endorsement_notes}
                   </p>

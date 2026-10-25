@@ -183,7 +183,7 @@ const formatDate = (value) => {
 };
 
 const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, darkMode = false }) => {
-  const isBarangayStaff = (user?.role === 'staff' || user?.role === 'barangay') && Boolean(user?.barangay_id);
+  const isBarangayStaff = false; // DSWD Staff has municipal coverage, can select target barangays
   const isStaffNeedsApproval = ['staff', 'barangay', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
   const isAdminApprover = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(user?.role);
   const isSeniorRole = ['senior_citizen_admin', 'senior_citizen_staff'].includes(user?.role);

@@ -133,23 +133,19 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (r
   try {
     const where = {};
 
-    if (['admin','mswdo_admin'].includes(req.user.role)) {
-      // Admin can optionally filter by barangay and/or status
+    if (['admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
       if (req.query.barangay_id) {
         where.barangay_id = req.query.barangay_id;
       }
       if (req.query.status) {
         where.status = req.query.status;
       }
-      if (req.user.role === 'mswdo_admin') {
-        // MSWDO Admin strictly sees ONLY MSWDO municipal programs (including MSWDO 4Ps programs)
+      if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
         where.agency = 'MSWDO';
-      } else if (req.user.role === 'admin') {
-        // DSWD Admin strictly manages DSWD programs only
+      } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
         where.agency = 'DSWD';
       }
     } else if (req.user.role === 'beneficiary') {
-      // Beneficiary sees only programs in their barangay that they are enrolled in
       const enrollments = await Enrollment.findAll({
         include: [{ model: Beneficiary, where: { user_id: req.user.id } }],
         attributes: ['program_id'],
@@ -161,21 +157,6 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'beneficiary'), async (r
       where.id = programIds;
       where.barangay_id = req.user.barangay_id;
       where.status = 'active';
-    } else {
-      // Staff / Barangay — scoped to their assigned barangay, or all programs if unassigned/general
-      const staffBrgyId = req.user.barangay_id;
-      if (staffBrgyId) {
-        where[Op.or] = [
-          { barangay_id: staffBrgyId },
-          { barangay_id: String(staffBrgyId) },
-          { barangay_id: Number(staffBrgyId) },
-          { barangay_id: null },
-          { barangay_id: 0 }
-        ];
-      }
-      if (req.query.status) {
-        where.status = req.query.status;
-      }
     }
 
     const programs = await BenefitProgram.findAll({

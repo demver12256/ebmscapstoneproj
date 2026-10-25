@@ -861,7 +861,7 @@ export default function LandingPage() {
     },
     {
       q: 'How long does it take for an online application to be reviewed?',
-      a: 'Online applications are reviewed by your assigned Barangay Staff and Municipal Social Welfare Officers within 2 to 5 working days. You can monitor your application status in real-time through the portal.'
+      a: 'Online applications are reviewed by DSWD and Municipal Social Welfare Officers within 2 to 5 working days. You can monitor your application status in real-time through the portal.'
     },
     {
       q: 'What should I do if I lose my RFID Card?',
@@ -1418,7 +1418,7 @@ export default function LandingPage() {
             {
               step: '02',
               title: 'Verification & RFID Card',
-              desc: 'Barangay Staff approves application and links an encrypted RFID smart card.',
+              desc: 'DSWD or Sector Staff approves application and links an encrypted RFID smart card.',
               icon: CreditCard
             },
             {

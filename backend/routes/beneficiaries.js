@@ -54,10 +54,7 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_st
     const where = {};
     const { category, barangay_id } = req.query;
 
-    if (req.user.role === 'staff' || req.user.role === 'barangay') {
-      where.barangay_id = req.user.barangay_id;
-      console.log(`[Beneficiaries] Fetching for ${req.user.role}: barangay_id=${req.user.barangay_id}`);
-    } else if (barangay_id) {
+    if (barangay_id) {
       where.barangay_id = barangay_id;
       console.log(`[Beneficiaries] Fetching for ${req.user.role}: barangay_id=${barangay_id}`);
     } else {
@@ -129,8 +126,8 @@ router.get('/applications', authorize('admin', 'staff', 'barangay', 'mswdo_admin
           ]
         }
       ];
-      if (['staff', 'barangay'].includes(req.user.role) && req.user.barangay_id) {
-        where.barangay_id = req.user.barangay_id;
+      if (req.query.barangay_id) {
+        where.barangay_id = req.query.barangay_id;
       }
       where[Op.and] = dswdConditions;
       console.log('[Applications] DSWD filter: 4Ps applications only');
@@ -1808,7 +1805,7 @@ router.put('/:id', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo
         if (!canRegister4Ps) {
           return res.status(403).json({
             success: false,
-            message: 'Access Denied: Tanging 4Ps / DSWD Admin at Barangay Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa 4Ps beneficiaries. Bawal mag-rehistro ang Senior Admin o PWD Admin.'
+            message: 'Access Denied: Tanging 4Ps / DSWD Admin at DSWD Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa 4Ps beneficiaries. Bawal mag-rehistro ang Senior Admin o PWD Admin.'
           });
         }
       }
@@ -1909,9 +1906,7 @@ router.post('/:id/verify-payout-account', authorize('admin', 'staff', 'barangay'
       return res.status(404).json({ success: false, message: 'Beneficiary not found' });
     }
 
-    if (['staff', 'barangay'].includes(req.user.role) && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only verify accounts from your own Barangay' });
-    }
+    // DSWD Staff and Admin can verify accounts across barangays
 
     // Must have digital payout preference
     if (beneficiary.payout_preference !== 'digital') {

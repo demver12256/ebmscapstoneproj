@@ -201,8 +201,7 @@ export default function UserListPage() {
           row.role === 'pwd_admin' ? 'bg-blue-100 text-blue-800 font-bold' :
           row.role === 'pwd_staff' ? 'bg-blue-50 text-blue-700 border border-blue-200 font-bold' :
           row.role === 'mswdo_staff' ? 'bg-indigo-100 text-indigo-800 font-bold' :
-          row.role === 'staff' ? 'bg-blue-100 text-blue-800' :
-          row.role === 'barangay' ? 'bg-green-100 text-green-800' :
+          ['staff', 'barangay'].includes(row.role) ? 'bg-blue-100 text-blue-800' :
           'bg-slate-100 text-slate-700'
         }`}>
           {row.role === 'senior_citizen_admin' ? 'Senior Admin (OSCA)' :
@@ -212,8 +211,7 @@ export default function UserListPage() {
            row.role === 'mswdo_admin' ? 'MSWDO Admin' :
            row.role === 'mswdo_staff' ? 'MSWDO Staff' :
            row.role === 'admin' ? 'DSWD Admin' :
-           row.role === 'staff' ? 'DSWD Staff' :
-           row.role === 'barangay' ? 'Barangay Staff' :
+           ['staff', 'barangay'].includes(row.role) ? 'DSWD Staff' :
            row.role}
         </span>
       );
@@ -296,7 +294,7 @@ export default function UserListPage() {
       ? 'Manage PDAO disability staff accounts.'
       : isMswdoRole
       ? 'Manage MSWDO staff and municipal accounts.'
-      : 'Manage DSWD and Barangay staff accounts.';
+      : 'Manage DSWD staff accounts.';
 
   const loadingLabel = activeTab === 'beneficiaries' ? 'Loading beneficiary accounts...' : 'Loading staff accounts...';
   const emptyLabel = activeTab === 'beneficiaries' ? 'No beneficiary accounts found' : 'No staff accounts found';
@@ -313,7 +311,6 @@ export default function UserListPage() {
       ]
     : [
         { value: 'staff', label: 'DSWD Staff' },
-        { value: 'barangay', label: 'Barangay Staff' },
       ];
 
   const handleOpenCreateModal = () => {
@@ -426,7 +423,7 @@ export default function UserListPage() {
               {isSeniorRole ? 'Senior Citizen (OSCA) Staff' :
                isPwdRole ? 'PWD (PDAO) Staff' :
                isMswdoRole ? 'MSWDO Staff' :
-               'DSWD & Barangay Staff'}
+               'DSWD Staff'}
             </span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
               activeTab === 'staff' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'

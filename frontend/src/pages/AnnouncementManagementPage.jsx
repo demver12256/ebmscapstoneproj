@@ -240,7 +240,8 @@ const getSmsStatusDisplay = (status) => {
 export default function AnnouncementManagementPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const isBarangayStaff = user?.role === 'staff' || user?.role === 'barangay';
+  const isDswdStaff = user?.role === 'staff' || user?.role === 'barangay';
+  const isBarangayStaff = false; // DSWD Staff has municipal coverage, not locked to single barangay
   const isMswdoAdmin = user?.role === 'mswdo_admin';
   const isMswdoStaff = user?.role === 'mswdo_staff';
   const isSeniorOnlyAdmin = user?.role === 'senior_citizen_admin';
@@ -755,7 +756,7 @@ export default function AnnouncementManagementPage() {
     }
   };
 
-  // Approve Barangay Staff Announcement (DSWD Admin)
+  // Approve Staff Announcement (DSWD Admin)
   const handleApprove = async (ann) => {
     if (!window.confirm(`Aprubahan at i-publish ang announcement na "${ann.title}"? Agad na ipapadala ang SMS at Notification sa mga benepisyaryo.`)) {
       return;
@@ -770,13 +771,13 @@ export default function AnnouncementManagementPage() {
     }
   };
 
-  // Reject Barangay Staff Announcement (DSWD Admin)
+  // Reject Staff Announcement (DSWD Admin)
   const handleReject = async (ann) => {
     const reason = window.prompt(`Ilagay ang dahilan kung bakit hindi na-approve ang "${ann.title}" (Opsyonal):`, '');
     if (reason === null) return; // Cancelled prompt
     try {
       const res = await announcementApi.reject(ann.id, { reason });
-      setSuccessMessage(res.data?.message || 'Announcement rejected and Barangay Staff notified.');
+      setSuccessMessage(res.data?.message || 'Announcement rejected and Staff notified.');
       fetchAnnouncements();
       setTimeout(() => setSuccessMessage(''), 5000);
     } catch (err) {
@@ -955,7 +956,7 @@ export default function AnnouncementManagementPage() {
             Announcements & Attendance
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Create targeted municipal announcements, notify barangay staff, and monitor RFID attendance in real time.
+            Create targeted municipal announcements, notify staff, and monitor RFID attendance in real time.
           </p>
         </div>
 
@@ -982,7 +983,7 @@ export default function AnnouncementManagementPage() {
         </div>
       </div>
 
-      {/* Pending Approval Banner for DSWD Admin or Barangay Staff */}
+      {/* Pending Approval Banner for DSWD Admin or Staff */}
       {announcements.some((a) => a.status === 'pending_approval') && (
         <div className="bg-amber-50 border-2 border-amber-300 text-amber-950 px-4 py-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
           <div className="flex items-start sm:items-center gap-3">
@@ -990,7 +991,7 @@ export default function AnnouncementManagementPage() {
             <div>
               <p className="font-extrabold text-xs uppercase tracking-wide text-amber-900">
                 {user?.role === 'admin'
-                  ? `⏳ May ${announcements.filter((a) => a.status === 'pending_approval').length} na Barangay Staff Announcement na Naghihintay ng Iyong Approval`
+                  ? `⏳ May ${announcements.filter((a) => a.status === 'pending_approval').length} na Staff Announcement na Naghihintay ng Iyong Approval`
                   : `⏳ May ${announcements.filter((a) => a.status === 'pending_approval').length} na Announcement na Naghihintay ng Approval ng DSWD Admin`}
               </p>
               <p className="text-xs text-amber-800 mt-0.5">
@@ -1212,7 +1213,7 @@ export default function AnnouncementManagementPage() {
                             )}
                             {(ann.CreatedBy?.role === 'staff' || ann.CreatedBy?.role === 'barangay') && (
                               <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded text-[10px] font-bold">
-                                Barangay Staff
+                                DSWD Staff
                               </span>
                             )}
                             {ann.AssignedStaff && (
@@ -1714,6 +1715,7 @@ export default function AnnouncementManagementPage() {
                         s.role === 'senior_citizen_staff' ? 'Senior Staff' :
                         s.role === 'pwd_staff' ? 'PWD Staff' :
                         s.role === 'mswdo_staff' ? 'MSWDO Staff' :
+                        ['staff', 'barangay'].includes(s.role) ? 'DSWD Staff' :
                         (s.email || 'Staff');
                       return (
                         <option key={s.id} value={s.id}>
@@ -2250,7 +2252,7 @@ export default function AnnouncementManagementPage() {
                 </div>
               </div>
 
-              {/* Barangay Staff Approval Notice */}
+              {/* Staff Approval Notice */}
               {isBarangayStaff && (
                 <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-950">
                   <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />

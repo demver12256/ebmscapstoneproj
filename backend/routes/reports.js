@@ -10,15 +10,12 @@ router.use(authenticate);
 
 router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    // Determine scoping based on role
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    // DSWD Staff is DSWD Staff (municipal coverage, same as DSWD Admin)
+    const isBarangayScoped = false;
     const barangayId = req.user.barangay_id;
 
     // Beneficiary where scoping
     const beneficiaryWhere = {};
-    if (isBarangayScoped) {
-      beneficiaryWhere.barangay_id = barangayId;
-    }
     // Scope based on sector role
     if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
       beneficiaryWhere.category = { [Op.like]: '%Senior%' };
@@ -52,7 +49,7 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     } else if (isMswdoRole(req.user.role)) {
       programWhere.agency = 'MSWDO';
       programWhere[Op.or] = MSWDO_ELIGIBILITY_FILTER[Op.or];
-    } else if (req.user.role === 'admin') {
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
       programWhere.agency = 'DSWD';
     }
 
@@ -67,7 +64,7 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     }
     if (isMswdoRole(req.user.role)) {
       eventWhere.agency = 'MSWDO';
-    } else if (req.user.role === 'admin') {
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
       eventWhere.agency = 'DSWD';
     }
 
@@ -100,7 +97,7 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
       txnWhere.distribution_event_id = {
         [Op.in]: sequelize.literal(`(SELECT id FROM distribution_events WHERE agency = 'MSWDO')`)
       };
-    } else if (req.user.role === 'admin') {
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
       txnWhere.distribution_event_id = {
         [Op.in]: sequelize.literal(`(SELECT id FROM distribution_events WHERE agency = 'DSWD')`)
       };
@@ -183,8 +180,8 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
 
     // ── Application counts ──
     let pendingAppWhere = { ...beneficiaryWhere };
-    if (req.user.role === 'admin') {
-      // DSWD Admin strictly manages 4Ps applications
+    if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
+      // DSWD Admin and Staff manage 4Ps applications
       pendingAppWhere = {
         [Op.or]: [
           { category: { [Op.like]: '%4Ps%' } },
@@ -291,7 +288,7 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
     }
     if (isMswdoRole(req.user.role)) {
       assistWhere.agency = 'MSWDO';
-    } else if (req.user.role === 'admin') {
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
       assistWhere.agency = 'DSWD';
     }
     const totalAssistanceRequests = await AssistanceRequest.count({ where: assistWhere });
@@ -420,9 +417,8 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
 
 router.get('/monthly-distribution', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
-    const barangayId = req.user.barangay_id;
     const isMswdo = isMswdoRole(req.user.role);
+    const isDswd = ['admin', 'staff', 'barangay'].includes(req.user.role);
 
     const query = `
       SELECT 
@@ -433,8 +429,7 @@ router.get('/monthly-distribution', authorize('admin', 'staff', 'barangay'), asy
       ${isMswdo ? `INNER JOIN benefit_programs bp ON de.program_id = bp.id` : ''}
       WHERE dt.status = 'released'
         AND dt.released_at IS NOT NULL
-        ${isBarangayScoped ? `AND de.barangay_id = ${sequelize.escape(barangayId)}` : ''}
-      ${isMswdo ? `AND de.agency = 'MSWDO'` : (req.user.role === 'admin' ? `AND de.agency = 'DSWD'` : '')}
+      ${isMswdo ? `AND de.agency = 'MSWDO'` : (isDswd ? `AND de.agency = 'DSWD'` : '')}
       GROUP BY DATE_FORMAT(dt.released_at, '%Y-%m')
       ORDER BY month ASC
     `;

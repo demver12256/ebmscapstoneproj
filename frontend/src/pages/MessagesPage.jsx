@@ -252,19 +252,11 @@ export default function MessagesPage() {
         </span>
       );
     }
-    if (role === 'staff') {
+    if (role === 'staff' || role === 'barangay') {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
           <Building2 className="w-3 h-3 text-blue-600" />
-          {brgyName ? `Barangay Staff • ${brgyName}` : 'Barangay Staff'}
-        </span>
-      );
-    }
-    if (role === 'barangay') {
-      return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-          <Building2 className="w-3 h-3 text-amber-600" />
-          {brgyName ? `Barangay Official • ${brgyName}` : 'Barangay Official'}
+          DSWD Staff
         </span>
       );
     }
@@ -368,7 +360,7 @@ export default function MessagesPage() {
           </div>
           <h2 className="text-lg font-bold text-slate-800 mb-1">Registration Pending Approval</h2>
           <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-            Messaging will become available once your beneficiary registration is reviewed and approved by your Barangay Staff.
+            Messaging will become available once your beneficiary registration is reviewed and approved by DSWD or Sector Staff.
           </p>
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-800 text-xs font-semibold rounded-xl border border-amber-200">
             <Circle className="w-2 h-2 fill-amber-500 text-amber-500" />
@@ -458,21 +450,21 @@ export default function MessagesPage() {
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             {user.role === 'beneficiary'
-              ? 'Direct communication line with your assigned Barangay Staff and Office Administrator.'
+              ? 'Direct communication line with your assigned DSWD / MSWDO Staff and Office Administrator.'
               : ['senior_citizen_admin', 'senior_citizen_staff'].includes(user.role)
               ? 'Communicate with Senior Citizen Beneficiaries and inter-office Administrators in real time.'
               : ['pwd_admin', 'pwd_staff'].includes(user.role)
               ? 'Communicate with PWD Beneficiaries and inter-office Administrators in real time.'
               : ['mswdo_admin', 'mswdo_staff'].includes(user.role)
               ? 'Communicate with Municipal Beneficiaries and inter-office Administrators in real time.'
-              : 'Communicate with DSWD Staff, Barangay Staff, and Beneficiaries in real time.'}
+              : 'Communicate with DSWD Staff, MSWDO Staff, and Beneficiaries in real time.'}
           </p>
         </div>
 
         {user.role === 'beneficiary' && (
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 shadow-2xs">
             <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Direct Contacts:</span>
-            <span className="font-semibold text-slate-900">Barangay Staff & System Admin</span>
+            <span className="font-semibold text-slate-900">DSWD / MSWDO Staff & System Admin</span>
           </div>
         )}
       </div>
@@ -579,7 +571,7 @@ export default function MessagesPage() {
                     <p className="text-xs font-semibold text-slate-600">No contacts available</p>
                     {user?.role === 'beneficiary' && (
                       <p className="text-[11px] text-slate-400 mt-1">
-                        Only registered Barangay Staff and System Administrators will appear here.
+                        Only registered Staff and System Administrators will appear here.
                       </p>
                     )}
                   </div>

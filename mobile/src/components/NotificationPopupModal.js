@@ -271,7 +271,7 @@ export default function NotificationPopupModal({
   const kickerText = isDistributionNotice
     ? '📦 DISTRIBUTION EVENT & PAYOUT NOTICE'
     : isStaffAssignment
-    ? '📋 BARANGAY / STAFF DUTY ASSIGNMENT'
+    ? '📋 STAFF DUTY ASSIGNMENT'
     : isSeniorNotice
     ? '👴 OSCA / SENIOR CITIZEN COORDINATION ALERT'
     : isPwdNotice
@@ -440,7 +440,7 @@ export default function NotificationPopupModal({
               <View style={styles.absenceBox}>
                 <Text style={styles.absenceTitle}>⚠️ Paalala ukol sa Attendance at Compliance:</Text>
                 <Text style={styles.absenceText}>
-                  Ang hindi pagdalo sa mga itinakdang opisyal na aktibidad o oryentasyon ng munisipyo ay naitala sa inyong record bilang Absent. Kung ikaw ay may balidong dahilan (tulad ng emerhensiya o medikal), mangyaring makipag-ugnayan agad sa inyong Barangay Staff o sa Tanggapan ng DSWD/MSWDO.
+                  Ang hindi pagdalo sa mga itinakdang opisyal na aktibidad o oryentasyon ng munisipyo ay naitala sa inyong record bilang Absent. Kung ikaw ay may balidong dahilan (tulad ng emerhensiya o medikal), mangyaring makipag-ugnayan agad sa DSWD/MSWDO Staff o sa Tanggapan ng DSWD/MSWDO.
                 </Text>
               </View>
             )}

@@ -67,8 +67,8 @@ export default function StaffDashboardScreen({
   const isSectorAdmin = isAnyMswdo || isSeniorAdmin || isPwdAdmin;
   const isDswd = ['admin', 'staff', 'barangay'].includes(user?.role);
   const hasAssistanceAccess = ['admin', 'mswdo_admin', 'mswdo_staff', 'staff', 'barangay'].includes(user?.role);
-  const hasBarangaysAccess = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
-  const canAccessPending = ['admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
+  const hasBarangaysAccess = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff', 'staff', 'barangay'].includes(user?.role);
+  const canAccessPending = ['admin', 'staff', 'barangay', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
 
   const loadData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -257,6 +257,7 @@ export default function StaffDashboardScreen({
     if (isMswdoStaff) return 'MSWDO STAFF';
     if (isMswdoAdmin) return 'MSWDO FOCUS';
     if (user?.role === 'admin') return 'ADMIN CONSOLE';
+    if (['staff', 'barangay'].includes(user?.role)) return 'DSWD STAFF';
     return 'STAFF PORTAL';
   };
 
@@ -575,7 +576,7 @@ export default function StaffDashboardScreen({
       {
         title: 'Assistance Requests',
         value: pendingRequests,
-        badge: 'Barangay aid',
+        badge: 'Municipal aid',
         trend: 'neutral',
         icon: '🤲',
         iconBg: '#fffbeb',

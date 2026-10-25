@@ -37,8 +37,8 @@ const STATUS_CONFIG = {
 export default function AssistanceRequestsManagementPage() {
   const { user } = useAuth();
   const isMswdo = user?.role === 'mswdo_admin' || user?.role === 'mswdo_staff';
-  const isBarangayStaff = user?.role === 'barangay' || user?.role === 'staff';
-  const canManageStatus = ['admin', 'mswdo_admin', 'mswdo_staff'].includes(user?.role);
+  const isDswdStaff = user?.role === 'barangay' || user?.role === 'staff';
+  const canManageStatus = ['admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff'].includes(user?.role);
 
   // Unified Requests State
   const [requests, setRequests] = useState([]);

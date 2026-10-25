@@ -84,15 +84,13 @@ router.get('/', async (req, res, next) => {
         ],
       };
     } else if (['staff', 'barangay'].includes(req.user.role)) {
-      // DSWD / Barangay Staff strictly see 4Ps Beneficiaries in their barangay
-      const userBrgyId = req.user.barangay_id;
+      // DSWD Staff sees 4Ps Beneficiaries & DSWD Staff across the municipality
       const dswdBens = await Beneficiary.findAll({
         where: {
           [Op.or]: [
             { category: { [Op.like]: '%4Ps%' } },
             { category: { [Op.like]: '%Pantawid%' } },
           ],
-          ...(userBrgyId ? { barangay_id: userBrgyId } : {}),
         },
         attributes: ['user_id'],
         raw: true,
@@ -101,7 +99,7 @@ router.get('/', async (req, res, next) => {
 
       whereClause = {
         [Op.or]: [
-          { role: { [Op.in]: ['staff', 'barangay'] }, ...(userBrgyId ? { barangay_id: userBrgyId } : {}) },
+          { role: { [Op.in]: ['staff', 'barangay', 'admin'] } },
           { role: 'beneficiary', id: { [Op.in]: dswdUserIds } },
         ],
       };

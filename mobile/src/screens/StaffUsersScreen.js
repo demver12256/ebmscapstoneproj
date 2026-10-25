@@ -60,8 +60,7 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
           { value: 'pwd_staff', label: 'PWD Staff (PDAO)' },
         ]
       : [
-          { value: 'staff', label: 'DSWD / Barangay Staff' },
-          { value: 'barangay', label: 'Barangay Officer' },
+          { value: 'staff', label: 'DSWD Staff' },
         ];
 
   const [form, setForm] = useState({
@@ -128,8 +127,7 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
     if (r === 'mswdo_staff') return { bg: '#f3e8ff', text: '#6d28d9', border: '#ddd6fe', label: 'MSWDO Staff' };
     if (r === 'senior_citizen_staff') return { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa', label: 'Senior Staff (OSCA)' };
     if (r === 'pwd_staff') return { bg: '#cffafe', text: '#0e7490', border: '#a5f3fc', label: 'PWD Staff (PDAO)' };
-    if (r === 'staff') return { bg: '#dbeafe', text: '#1d4ed8', border: '#bfdbfe', label: 'DSWD / Brgy Staff' };
-    if (r === 'barangay') return { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0', label: 'Barangay Officer' };
+    if (r === 'staff' || r === 'barangay') return { bg: '#dbeafe', text: '#1d4ed8', border: '#bfdbfe', label: 'DSWD Staff' };
 
     const cat = (item.Beneficiary?.category || '').toLowerCase();
     if (cat.includes('senior')) {

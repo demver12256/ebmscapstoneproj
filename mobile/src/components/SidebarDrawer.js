@@ -130,9 +130,8 @@ const SidebarDrawer = ({
       case 'pwd_staff':
         return 'PWD STAFF (PDAO)';
       case 'staff':
-        return 'DSWD / BARANGAY STAFF';
       case 'barangay':
-        return 'BARANGAY OFFICER';
+        return 'DSWD STAFF';
       default:
         return (role || 'beneficiary').toUpperCase();
     }
@@ -145,7 +144,7 @@ const SidebarDrawer = ({
       key: 'barangays',
       label: 'Barangays',
       icon: '📍',
-      roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'],
+      roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff', 'staff', 'barangay'],
     },
     { key: 'programs', label: 'Programs', icon: '📋', roles: ['admin', 'staff', 'barangay'] },
     { key: 'distributions', label: 'Distributions', icon: '📦', roles: STAFF_ADMIN_ROLES },

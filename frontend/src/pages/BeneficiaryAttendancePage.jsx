@@ -476,7 +476,7 @@ export default function BeneficiaryAttendancePage() {
                         <div>
                           <p className="font-bold">Hindi naitala ang iyong pagdalo sa aktibidad na ito.</p>
                           <p className="text-red-700 text-[11px] mt-0.5">
-                            Kung mayroon kang balidong dahilan (hal. medikal o emerhensiya), mangyaring makipag-ugnayan sa iyong Barangay Staff upang makapagsumite ng justification.
+                            Kung mayroon kang balidong dahilan (hal. medikal o emerhensiya), mangyaring makipag-ugnayan sa inyong DSWD o MSWDO Staff upang makapagsumite ng justification.
                           </p>
                         </div>
                       </div>
@@ -492,7 +492,7 @@ export default function BeneficiaryAttendancePage() {
                         <div>
                           <p className="font-bold">Paparating na Pulong — Magdala ng RFID Card</p>
                           <p className="text-amber-800 text-[11px] mt-0.5">
-                            Pumunta sa venue bago magsimula ang oras upang mai-tap ang iyong RFID card sa scanner ng Barangay Staff.
+                            Pumunta sa venue bago magsimula ang oras upang mai-tap ang iyong RFID card sa scanner ng DSWD o MSWDO Staff.
                           </p>
                         </div>
                       </div>
@@ -518,7 +518,7 @@ export default function BeneficiaryAttendancePage() {
           </div>
           <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 space-y-1">
             <span className="font-black text-slate-800 block">2. I-tap sa Scanner</span>
-            <p>I-tap ang card sa RFID scanner ng nakatalagang Barangay Staff sa entrada ng venue upang maitalang Present.</p>
+            <p>I-tap ang card sa RFID scanner ng nakatalagang Staff sa entrada ng venue upang maitalang Present.</p>
           </div>
           <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 space-y-1">
             <span className="font-black text-slate-800 block">3. Subaybayan Online</span>

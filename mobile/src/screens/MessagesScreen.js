@@ -45,8 +45,7 @@ const getPartnerRoleLabel = (partner) => {
   if (r === 'mswdo_staff') return 'MSWDO Staff';
   if (r === 'senior_citizen_staff') return 'Senior Citizen Staff (OSCA)';
   if (r === 'pwd_staff') return 'PWD Staff (PDAO)';
-  if (r === 'staff') return 'DSWD / Barangay Staff';
-  if (r === 'barangay') return 'Barangay Officer';
+  if (r === 'staff' || r === 'barangay') return 'DSWD Staff';
   if (r === 'beneficiary') {
     const cat = partner.Beneficiary?.category || partner.category || '';
     return cat ? `Beneficiary • ${cat}` : 'Beneficiary';
