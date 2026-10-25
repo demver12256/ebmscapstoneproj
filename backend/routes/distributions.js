@@ -2289,11 +2289,8 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
 
     const where = {};
 
-    // Staff can only see stats for their assigned barangay
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id) {
-      where.barangay_id = req.user.barangay_id;
-      console.log('[DASHBOARD STATS] Filtering by barangay:', req.user.barangay_id);
-    } else if (req.query.barangay_id && req.query.barangay_id !== 'all') {
+    // DSWD Staff & Admin can view stats across all barangays
+    if (req.query.barangay_id && req.query.barangay_id !== 'all') {
       where.barangay_id = parseInt(req.query.barangay_id, 10);
     }
 
@@ -2330,7 +2327,7 @@ router.get('/dashboard/stats', authorize('admin', 'staff', 'barangay'), async (r
       });
     } else if (isMswdoRole(req.user.role) || req.user.role === 'mswdo_staff') {
       where.agency = 'MSWDO';
-    } else if (req.user.role === 'admin') {
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
       where.agency = req.query.agency || 'DSWD';
     }
 

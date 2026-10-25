@@ -854,10 +854,7 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary', 'mswdo
       return res.status(404).json({ success: false, message: 'Beneficiary not found' });
     }
 
-    // Barangay verification scoping check
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only view applications from your own Barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     // Sector Admin scope: Senior / PWD / MSWDO
     if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
@@ -890,10 +887,7 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
       return res.status(404).json({ success: false, message: 'Beneficiary not found' });
     }
 
-    // Barangay verification scoping check
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only view attendance for beneficiaries in your own Barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     // Sector scoping check
     if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
@@ -1186,10 +1180,7 @@ router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_
       }
     }
 
-    // Barangay verification scoping check
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only view distributions for beneficiaries in your own Barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     // Sector scoping check
     if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
@@ -1329,10 +1320,7 @@ router.get('/:id/enrollments', authorize('admin', 'staff', 'barangay', 'mswdo_ad
       }
     }
 
-    // Barangay verification scoping check
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only view enrollments for beneficiaries in your own Barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     // Sector scoping check
     if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
@@ -1461,9 +1449,7 @@ router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay',
         message: 'MSWDO does not approve applications. Senior Citizen applications are approved by Senior Citizen Admin (OSCA), PWD applications by PWD Admin (PDAO), and 4Ps applications by DSWD Admin.'
       });
     }
-    if (['staff', 'barangay'].includes(req.user.role) && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only approve applications from your own Barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     const cat = String(beneficiary.category || '').toLowerCase();
     const is4Ps = cat.includes('4ps') || cat.includes('pantawid');
@@ -1563,9 +1549,7 @@ router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay', 
         message: 'MSWDO does not reject applications. Senior Citizen applications are handled by Senior Citizen Admin (OSCA), PWD applications by PWD Admin (PDAO), and 4Ps by DSWD Admin.'
       });
     }
-    if (['staff', 'barangay'].includes(req.user.role) && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only reject applications from your own Barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     const cat = String(beneficiary.category || '').toLowerCase();
     const is4Ps = cat.includes('4ps') || cat.includes('pantawid');
@@ -1636,10 +1620,7 @@ router.get('/:id/qr-pass', authorize('admin', 'staff', 'barangay', 'beneficiary'
       return res.status(403).json({ success: false, message: 'Unauthorized' });
     }
 
-    // Staff/Barangay can only access beneficiaries in their barangay
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Access denied: Beneficiary belongs to a different barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     if (beneficiary.status !== 'Approved') {
       return res.status(400).json({ success: false, message: 'QR Pass is only available for Approved beneficiaries' });
@@ -1749,10 +1730,7 @@ router.put('/:id', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo
       return res.status(404).json({ success: false, message: 'Beneficiary not found' });
     }
 
-    // Barangay verification scoping check
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only edit beneficiaries from your own Barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
     // Sector Admin scope: Senior/PWD/MSWDO
     if (isSeniorRole(req.user.role) && !isMswdoCategory(beneficiary.category, req.user.role)) {
       return res.status(403).json({ success: false, message: 'Senior Citizen Admin / Staff can only edit Senior Citizens beneficiaries.' });
@@ -2161,10 +2139,7 @@ router.delete('/:id', authorize('admin', 'staff'), async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Beneficiary not found' });
     }
 
-    // Barangay verification scoping check
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You can only delete beneficiaries from your own Barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
     // MSWDO scope: Senior/PWD only
     if (isMswdoRole(req.user.role) && !isMswdoCategory(beneficiary.category)) {
       return res.status(403).json({ success: false, message: 'MSWDO can only delete Senior Citizens and PWD beneficiaries. 4Ps beneficiaries are managed by DSWD.' });

@@ -296,10 +296,7 @@ router.get('/beneficiary/:beneficiaryId', authorize('admin', 'staff', 'barangay'
       return res.status(404).json({ success: false, message: 'Beneficiary not found' });
     }
 
-    // Staff can only view beneficiaries from their barangay
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     const interventions = await Intervention.findAll({
       where: { beneficiary_id: req.params.beneficiaryId },
@@ -342,10 +339,7 @@ router.post('/:id/verify', authorize('admin', 'staff', 'barangay'), async (req, 
       return res.status(404).json({ success: false, message: 'Intervention not found' });
     }
 
-    // Staff can only verify interventions from their barangay
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && intervention.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     if (intervention.status === 'Verified') {
       return res.status(400).json({ success: false, message: 'Intervention already verified' });
@@ -398,10 +392,7 @@ router.post('/:id/reject', authorize('admin', 'staff', 'barangay'), async (req, 
       return res.status(404).json({ success: false, message: 'Intervention not found' });
     }
 
-    // Staff can only reject interventions from their barangay
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && intervention.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     const { rejection_reason, staff_notes } = req.body;
 
@@ -521,10 +512,7 @@ router.post('/', authorize('admin', 'staff', 'barangay'), upload.single('proof_d
       return res.status(404).json({ success: false, message: 'Beneficiary not found' });
     }
 
-    // Staff can only create for their barangay
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && beneficiary.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Access denied: Beneficiary belongs to a different barangay' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     const proofDocumentUrl = req.file ? `/uploads/interventions/${req.file.filename}` : null;
     const finalStatus = status && ['Pending', 'Verified', 'Rejected'].includes(status) ? status : 'Verified';
@@ -576,9 +564,7 @@ router.put('/:id', authorize('admin', 'staff', 'barangay'), upload.single('proof
       return res.status(404).json({ success: false, message: 'Intervention not found' });
     }
 
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && intervention.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     const {
       agency_name,
@@ -649,9 +635,7 @@ router.post('/:id/document', authorize('admin', 'staff', 'barangay', 'beneficiar
       return res.status(403).json({ success: false, message: 'Unauthorized' });
     }
 
-    if ((req.user.role === 'staff' || req.user.role === 'barangay') && req.user.barangay_id && intervention.barangay_id !== req.user.barangay_id) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
+    // DSWD Staff has municipal access across all barangays
 
     // Delete old file if exists
     if (intervention.proof_document_url) {
