@@ -42,6 +42,7 @@ export default function UserListPage() {
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   
   const [form, setForm] = useState({
     first_name: '',
@@ -125,6 +126,7 @@ export default function UserListPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError(null);
+    setSuccessMessage(null);
     setSubmitting(true);
     try {
       const is4Ps = form.role === 'beneficiary' && form.category && form.category.toLowerCase().includes('4ps');
@@ -133,7 +135,7 @@ export default function UserListPage() {
         ...form,
         barangay_id: form.barangay_id ? Number(form.barangay_id) : null,
         category: form.role === 'beneficiary' ? form.category : undefined,
-        household_id_number: is4Ps ? form.household_id_number.trim() : undefined,
+        household_id_number: is4Ps && form.household_id_number.trim() ? form.household_id_number.trim() : undefined,
       });
       setShowModal(false);
       setForm({
@@ -148,6 +150,10 @@ export default function UserListPage() {
         category: '',
         household_id_number: '',
       });
+      setSuccessMessage(form.role === 'beneficiary'
+        ? '✓ Matagumpay na nalikha at direktang naaprubahan ang benepisyaryo! Agad itong napasama sa opisyal na listahan ng mga aprubado nang hindi na dadaan sa pending review.'
+        : '✓ Matagumpay na nalikha ang bagong account!'
+      );
       await loadUsers();
     } catch (err) {
       setFormError(err.response?.data?.message || err.message || 'Failed to create user');
@@ -383,6 +389,21 @@ export default function UserListPage() {
         </div>
       )}
 
+      {successMessage && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-bold text-emerald-600">✓</span>
+            <span className="font-medium">{successMessage}</span>
+          </div>
+          <button
+            onClick={() => setSuccessMessage(null)}
+            className="text-emerald-700 hover:text-emerald-900 text-xs font-bold px-2 py-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Navigation Tabs (Beneficiary Accounts vs Staff Accounts) */}
       {(isAdmin || staffUsers.length > 0) && (
         <div className="flex items-center gap-2 border-b border-slate-200">
@@ -538,14 +559,25 @@ export default function UserListPage() {
 
                   {form.category && form.category.toLowerCase().includes('4ps') && (
                     <Input
-                      label="Household Number"
+                      label="4Ps Household Number (Opsyonal)"
                       name="household_id_number"
                       value={form.household_id_number}
                       onChange={handleChange}
-                      placeholder="e.g. HH-2024-001"
-                      required
+                      placeholder="e.g. 4PS-2026-0001 (o hayaang blangko para auto-generate)"
                       autoComplete="off"
                     />
+                  )}
+
+                  {form.role === 'beneficiary' && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-800 flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Direktang Aprobado (Approved)
+                      </p>
+                      <p className="mt-1 text-xs text-emerald-700 leading-relaxed">
+                        Ang benepisyaryong ito ay <strong>agad na magiging Approved</strong> at magkakaroon ng opisyal na ID Code at QR Pass nang <strong>hindi na dadaan sa Pending Beneficiaries</strong>.
+                      </p>
+                    </div>
                   )}
 
                   {form.category && (

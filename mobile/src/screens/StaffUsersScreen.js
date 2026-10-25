@@ -159,6 +159,7 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
       role: 'beneficiary',
       category: allowedCategories[0],
       barangay_id: defaultBrgy,
+      household_id_number: '',
     });
     setCreateModalVisible(true);
   };
@@ -175,6 +176,7 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
     try {
       setCreating(true);
       const isBen = form.account_type === 'beneficiary';
+      const is4Ps = isBen && form.category && form.category.toLowerCase().includes('4ps');
       const payload = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
@@ -184,10 +186,16 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
         contact_number: form.contact_number.trim() || undefined,
         role: isBen ? 'beneficiary' : form.role,
         category: isBen ? form.category : undefined,
+        household_id_number: is4Ps && form.household_id_number?.trim() ? form.household_id_number.trim() : undefined,
         barangay_id: form.barangay_id ? Number(form.barangay_id) : undefined,
       };
       await userApi.create(payload);
-      Alert.alert('Tagumpay', 'Matagumpay na nalikha ang bagong user account!');
+      Alert.alert(
+        'Tagumpay',
+        isBen
+          ? 'Matagumpay na nalikha at direktang naaprubahan ang benepisyaryo! Hindi na ito dadaan sa pending review at agad nang kasama sa listahan ng mga aprubadong benepisyaryo.'
+          : 'Matagumpay na nalikha ang bagong user account!'
+      );
       setCreateModalVisible(false);
       loadUsers();
     } catch (err) {
@@ -332,8 +340,8 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
 
                 <View style={styles.cardFooter}>
                   <Text style={styles.footerDate}>
-                    {item.Beneficiary?.beneficiary_id_code
-                      ? `ID: ${item.Beneficiary.beneficiary_id_code}`
+                    {(item.Beneficiary?.beneficiary_id_code || item.Beneficiaries?.[0]?.beneficiary_id_code)
+                      ? `ID: ${item.Beneficiary?.beneficiary_id_code || item.Beneficiaries?.[0]?.beneficiary_id_code}`
                       : `Joined ${formatDate(item.created_at)}`}
                   </Text>
                   <View style={styles.activeTag}>
@@ -408,6 +416,24 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
                       </TouchableOpacity>
                     );
                   })}
+
+                  {form.category?.includes('4Ps') && (
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={styles.formLabel}>4PS HOUSEHOLD ID (OPSYONAL)</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={form.household_id_number}
+                        onChangeText={(v) => setForm({ ...form, household_id_number: v })}
+                        placeholder="Hal. 4PS-2026-0001 (o blangko para auto-generate)"
+                      />
+                    </View>
+                  )}
+
+                  <View style={styles.directApprovalNotice}>
+                    <Text style={styles.directApprovalText}>
+                      ⚡ Direktang Aprobado: Ang benepisyaryong ito ay agad na magiging opisyal na aprubado at magkakaroon ng sariling ID code at QR pass nang hindi na dadaan sa pending review.
+                    </Text>
+                  </View>
                 </View>
               ) : (
                 <View style={styles.formGroup}>
@@ -737,6 +763,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   submitBtnText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
+  directApprovalNotice: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 10,
+  },
+  directApprovalText: {
+    fontSize: 11,
+    color: '#065f46',
+    lineHeight: 16,
+    fontWeight: '600',
+  },
 });
 
 export default StaffUsersScreen;

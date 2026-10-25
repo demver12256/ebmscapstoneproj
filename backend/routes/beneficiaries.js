@@ -79,6 +79,116 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_st
   }
 });
 
+// Directly create an approved beneficiary (Admin & Staff) - Bypasses Pending Review
+router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
+  try {
+    const {
+      first_name,
+      last_name,
+      middle_name,
+      sex = 'Other',
+      birthdate = '2000-01-01',
+      barangay_id,
+      category,
+      contact_number,
+      address,
+      household_id_number,
+      user_id
+    } = req.body;
+
+    if (!first_name || !last_name) {
+      return res.status(400).json({ success: false, message: 'First name and last name are required.' });
+    }
+
+    const normalizedCategory = category || (
+      isSeniorRole(req.user.role) ? 'Senior Citizens (Social Pension)' :
+      isPwdRole(req.user.role) ? 'Persons with Disabilities (PWD)' :
+      '4Ps Household Beneficiaries'
+    );
+    const is4Ps = normalizedCategory.toLowerCase().includes('4ps');
+    const currentYear = new Date().getFullYear();
+    let customId;
+
+    if (is4Ps) {
+      const trimmedHh = household_id_number ? String(household_id_number).trim() : null;
+      if (trimmedHh) {
+        const existing = await Beneficiary.findOne({
+          where: {
+            [Op.or]: [{ household_id_number: trimmedHh }, { beneficiary_id_code: trimmedHh }]
+          }
+        });
+        if (existing) {
+          return res.status(409).json({ success: false, message: 'Ang 4Ps Household Number / Beneficiary ID na ito ay nakatala na sa sistema.' });
+        }
+        customId = trimmedHh;
+      } else {
+        const count = await Beneficiary.count({ where: { beneficiary_id_code: { [Op.like]: `4PS-${currentYear}-%` } } });
+        let seq = count + 1;
+        customId = `4PS-${currentYear}-${String(seq).padStart(4, '0')}`;
+        while (await Beneficiary.findOne({ where: { [Op.or]: [{ beneficiary_id_code: customId }, { household_id_number: customId }] } })) {
+          seq++;
+          customId = `4PS-${currentYear}-${String(seq).padStart(4, '0')}`;
+        }
+      }
+    } else {
+      const count = await Beneficiary.count({ where: { beneficiary_id_code: { [Op.like]: `BEN-${currentYear}-%` } } });
+      let seq = count + 1;
+      customId = `BEN-${currentYear}-${String(seq).padStart(4, '0')}`;
+      while (await Beneficiary.findOne({ where: { beneficiary_id_code: customId } })) {
+        seq++;
+        customId = `BEN-${currentYear}-${String(seq).padStart(4, '0')}`;
+      }
+    }
+
+    let resolvedBarangayId = barangay_id || req.user.barangay_id;
+    if (!resolvedBarangayId) {
+      const firstBrgy = await Barangay.findOne({ order: [['id', 'ASC']] });
+      resolvedBarangayId = firstBrgy ? firstBrgy.id : 37;
+    }
+
+    const qrToken = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
+
+    const beneficiary = await Beneficiary.create({
+      user_id: user_id || null,
+      first_name,
+      last_name,
+      middle_name,
+      sex,
+      birthdate,
+      barangay_id: resolvedBarangayId,
+      category: normalizedCategory,
+      contact_number,
+      address,
+      status: 'Approved',
+      household_id_number: is4Ps ? customId : null,
+      beneficiary_id_code: customId,
+      approval_date: new Date(),
+      approved_at: new Date(),
+      approving_staff_id: req.user.id,
+      qr_token: qrToken,
+      qr_generated_at: new Date()
+    });
+
+    try {
+      await AuditLog.create({
+        user_id: req.user.id,
+        action: `Directly created and approved beneficiary ${first_name} ${last_name}. Assigned ${is4Ps ? 'Household Number' : 'Beneficiary ID'}: ${customId}`,
+        module: 'Beneficiary Management'
+      });
+    } catch (auditErr) {
+      console.error('[AUDIT LOG ERROR]', auditErr);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Matagumpay na nalikha at direktang naaprubahan ang benepisyaryo! Hindi na ito dadaan sa pending review.',
+      data: beneficiary
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Admin & Staff Applications list: Return registrations (Pending Review, Under Review, Rejected, Approved)
 // DSWD Admin -> 4Ps applications only
 // Senior Citizen Admin -> Senior Citizens applications only

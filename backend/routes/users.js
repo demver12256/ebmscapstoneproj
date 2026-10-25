@@ -2,7 +2,7 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
-const { User, Beneficiary, AuditLog, Message, SMSNotification, BeneficiaryDocument } = require('../db');
+const { User, Beneficiary, AuditLog, Message, SMSNotification, BeneficiaryDocument, Barangay } = require('../db');
 
 const normalizeBeneficiaryCategory = (category) => {
   const value = String(category || '').trim();
@@ -132,7 +132,7 @@ router.get('/', async (req, res, next) => {
       include: [
         {
           model: Beneficiary,
-          attributes: ['id', 'category', 'status', 'household_id_number', 'RFID_number', 'barangay_id'],
+          attributes: ['id', 'category', 'status', 'household_id_number', 'beneficiary_id_code', 'RFID_number', 'barangay_id', 'qr_token', 'approval_date', 'approved_at'],
           required: false,
         },
       ],
@@ -167,7 +167,9 @@ router.post('/', async (req, res, next) => {
     } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
       if (role === 'beneficiary' || req.user.role === 'staff' || req.user.role === 'barangay') {
         role = 'beneficiary';
-        category = '4Ps Household Beneficiaries';
+        if (!category) {
+          category = '4Ps Household Beneficiaries';
+        }
         if (req.user.barangay_id && !barangay_id) {
           barangay_id = req.user.barangay_id;
         }
@@ -199,11 +201,7 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Please select the beneficiary category (4Ps, Senior, or PWD).' });
     }
 
-    if (normalizedCategory.toLowerCase().includes('4ps') && !trimmedHouseholdId) {
-      return res.status(400).json({ success: false, message: 'Household Number is required for 4Ps Household Beneficiaries.' });
-    }
-
-    if (normalizedCategory.toLowerCase().includes('4ps') && trimmedHouseholdId) {
+    if (trimmedHouseholdId) {
       const existingHousehold = await Beneficiary.findOne({
         where: {
           [Op.or]: [
@@ -213,7 +211,7 @@ router.post('/', async (req, res, next) => {
         }
       });
       if (existingHousehold) {
-        return res.status(409).json({ success: false, message: 'This 4Ps Household Number is already registered in the system.' });
+        return res.status(409).json({ success: false, message: 'Ang 4Ps Household Number / Beneficiary ID na ito ay nakatala na sa sistema.' });
       }
     }
 
@@ -243,28 +241,113 @@ router.post('/', async (req, res, next) => {
       role
     });
 
+    let createdBen = null;
+
+    // Beneficiaries created by any Admin or Staff are directly approved and bypass Pending Review
     if (role === 'beneficiary') {
       const is4Ps = normalizedCategory.toLowerCase().includes('4ps');
-      await Beneficiary.create({
+      const currentYear = new Date().getFullYear();
+      let customId;
+
+      if (is4Ps) {
+        if (trimmedHouseholdId) {
+          customId = trimmedHouseholdId;
+        } else {
+          const count = await Beneficiary.count({
+            where: {
+              beneficiary_id_code: {
+                [Op.like]: `4PS-${currentYear}-%`
+              }
+            }
+          });
+          let seq = count + 1;
+          customId = `4PS-${currentYear}-${String(seq).padStart(4, '0')}`;
+          while (await Beneficiary.findOne({ where: { [Op.or]: [{ beneficiary_id_code: customId }, { household_id_number: customId }] } })) {
+            seq++;
+            customId = `4PS-${currentYear}-${String(seq).padStart(4, '0')}`;
+          }
+        }
+      } else {
+        const count = await Beneficiary.count({
+          where: {
+            beneficiary_id_code: {
+              [Op.like]: `BEN-${currentYear}-%`
+            }
+          }
+        });
+        let seq = count + 1;
+        customId = `BEN-${currentYear}-${String(seq).padStart(4, '0')}`;
+        while (await Beneficiary.findOne({ where: { beneficiary_id_code: customId } })) {
+          seq++;
+          customId = `BEN-${currentYear}-${String(seq).padStart(4, '0')}`;
+        }
+      }
+
+      let resolvedBarangayId = barangay_id || req.user.barangay_id;
+      if (!resolvedBarangayId) {
+        const firstBrgy = await Barangay.findOne({ order: [['id', 'ASC']] });
+        resolvedBarangayId = firstBrgy ? firstBrgy.id : 37;
+      }
+
+      const qrToken = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
+
+      createdBen = await Beneficiary.create({
         user_id: user.id,
         first_name,
         last_name,
         sex: 'Other',
         birthdate: '2000-01-01',
-        barangay_id: barangay_id,
+        barangay_id: resolvedBarangayId,
         category: normalizedCategory,
         ip_classification: 'Non-IP',
         contact_number,
         address,
-        status: 'Pending Review',
-        household_id_number: is4Ps ? trimmedHouseholdId : null,
-        beneficiary_id_code: is4Ps ? trimmedHouseholdId : null,
+        status: 'Approved',
+        household_id_number: is4Ps ? customId : null,
+        beneficiary_id_code: customId,
+        approval_date: new Date(),
+        approved_at: new Date(),
+        approving_staff_id: req.user.id,
+        qr_token: qrToken,
+        qr_generated_at: new Date(),
       });
+
+      try {
+        await AuditLog.create({
+          user_id: req.user.id,
+          action: `Created and directly approved beneficiary ${first_name} ${last_name}. Assigned ${is4Ps ? 'Household Number' : 'Beneficiary ID'}: ${customId}`,
+          module: 'Beneficiary Management'
+        });
+      } catch (auditErr) {
+        console.error('[AUDIT LOG ERROR]', auditErr);
+      }
+
+      if (contact_number) {
+        try {
+          await SMSNotification.create({
+            beneficiary_id: createdBen.id,
+            message: `Magandang araw ${first_name}! Ang iyong BeniAid account bilang benepisyaryo (${normalizedCategory}) ay direktang naaprubahan ni ${req.user.first_name || 'Admin'}. Ang iyong opisyal na ${is4Ps ? 'Household Number' : 'Beneficiary ID'} ay ${customId}.`,
+            status: 'sent',
+            sent_at: new Date()
+          });
+        } catch (smsErr) {
+          console.warn('[SMS CREATION WARNING]', smsErr.message);
+        }
+      }
     }
 
     const userData = user.toJSON();
     delete userData.password;
-    res.status(201).json({ success: true, data: userData });
+    if (createdBen) {
+      userData.Beneficiaries = [createdBen.toJSON()];
+    }
+    res.status(201).json({
+      success: true,
+      message: role === 'beneficiary'
+        ? 'Matagumpay na nalikha at direktang naaprubahan ang benepisyaryo! Hindi na ito dadaan sa pending review at agad nang kasama sa opisyal na listahan.'
+        : 'User account created successfully.',
+      data: userData
+    });
   } catch (error) {
     next(error);
   }
