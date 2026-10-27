@@ -192,7 +192,10 @@ export default function BeneficiaryListPage() {
     } else if (user?.role === 'pwd_admin' || user?.role === 'pwd_staff') {
       setSelectedCategory('Persons with Disabilities (PWD)');
     }
-  }, [user?.role]);
+    if (user?.barangay_id && ['staff', 'barangay', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role)) {
+      setSelectedBarangayId(String(user.barangay_id));
+    }
+  }, [user?.role, user?.barangay_id]);
 
   useEffect(() => {
     if (location.state?.selectedBeneficiaryId && beneficiaries.length > 0) {
@@ -1040,12 +1043,13 @@ export default function BeneficiaryListPage() {
             <select
               value={selectedBarangayId}
               onChange={(e) => setSelectedBarangayId(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              disabled={Boolean(user?.barangay_id && ['staff', 'barangay', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role))}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200 disabled:bg-slate-100 disabled:text-slate-500"
             >
-              <option value="">All Barangays</option>
+              {!user?.barangay_id && <option value="">All Barangays</option>}
               {barangays.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.barangay_name}
+                  {b.barangay_name} {user?.barangay_id === b.id ? '(Assigned)' : ''}
                 </option>
               ))}
             </select>

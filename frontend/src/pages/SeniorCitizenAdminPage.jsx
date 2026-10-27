@@ -48,6 +48,13 @@ export default function SeniorCitizenAdminPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  // Lock selectedBarangay to assigned barangay for staff
+  useEffect(() => {
+    if (user?.barangay_id && ['senior_citizen_staff', 'staff', 'barangay', 'pwd_staff'].includes(user?.role)) {
+      setSelectedBarangay(String(user.barangay_id));
+    }
+  }, [user]);
+
   // Selected beneficiary for profile modal
   const [viewingBeneficiary, setViewingBeneficiary] = useState(null);
   const [activeModalTab, setActiveModalTab] = useState('overview'); // 'overview' | 'documents' | 'attendance' | 'payout'
@@ -716,11 +723,14 @@ export default function SeniorCitizenAdminPage() {
                 <select
                   value={selectedBarangay}
                   onChange={(e) => { setSelectedBarangay(e.target.value); setCurrentPage(1); }}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none bg-white text-slate-700"
+                  disabled={Boolean(user?.barangay_id && ['senior_citizen_staff', 'staff', 'barangay', 'pwd_staff'].includes(user?.role))}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none bg-white text-slate-700 disabled:bg-slate-100 disabled:text-slate-500"
                 >
-                  <option value="">All Barangays (36)</option>
+                  {!user?.barangay_id && <option value="">All Barangays (36)</option>}
                   {barangays.map(b => (
-                    <option key={b.id} value={b.id}>{b.barangay_name}</option>
+                    <option key={b.id} value={b.id}>
+                      {b.barangay_name} {user?.barangay_id === b.id ? '(Assigned)' : ''}
+                    </option>
                   ))}
                 </select>
               </div>

@@ -128,6 +128,12 @@ export default function UserListPage() {
     setFormError(null);
     setSuccessMessage(null);
     setSubmitting(true);
+    if (form.role !== 'beneficiary' && ['admin', 'senior_citizen_admin', 'pwd_admin'].includes(currentUser?.role) && !form.barangay_id) {
+      setFormError('Mangyaring pumili ng Barangay kung saan itatalaga ang staff.');
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const is4Ps = form.role === 'beneficiary' && form.category && form.category.toLowerCase().includes('4ps');
 
@@ -225,7 +231,9 @@ export default function UserListPage() {
     { header: 'Barangay', accessor: 'barangay_id', cell: (row) => {
       const brgyId = row.barangay_id || row.Beneficiaries?.[0]?.barangay_id;
       const brgy = barangays.find((b) => b.id === brgyId);
-      return brgy ? brgy.barangay_name : '—';
+      if (brgy) return brgy.barangay_name;
+      if (['admin', 'mswdo_admin'].includes(row.role)) return 'All (Municipal)';
+      return '—';
     }},
     { header: 'Contact', accessor: 'contact_number', cell: (row) => row.contact_number || '—' },
     { header: 'Status', accessor: 'status', cell: (row) => (
@@ -614,22 +622,24 @@ export default function UserListPage() {
               
               {form.role !== 'beneficiary' && (
                 <>
-                  {['admin', 'mswdo_admin'].includes(currentUser?.role) && (
-                    <label className="block text-sm font-semibold text-slate-700">
-                      Barangay
-                      <select
-                        name="barangay_id"
-                        value={form.barangay_id}
-                        onChange={handleChange}
-                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                      >
-                        <option value="">Select Barangay (Optional)</option>
-                        {barangays.map((b) => (
-                          <option key={b.id} value={b.id}>{b.barangay_name}</option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Barangay Assignment <span className="text-red-500">*</span>
+                    <select
+                      name="barangay_id"
+                      value={form.barangay_id}
+                      onChange={handleChange}
+                      required={['admin', 'senior_citizen_admin', 'pwd_admin'].includes(currentUser?.role)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                    >
+                      <option value="">Pumili ng Barangay...</option>
+                      {barangays.map((b) => (
+                        <option key={b.id} value={b.id}>{b.barangay_name}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      Ang staff na ito ay magkakaroon lamang ng access sa mga benepisyaryo na nasa itinalagang barangay.
+                    </p>
+                  </label>
                   <label className="block text-sm font-semibold text-slate-700">
                     Role
                     <select

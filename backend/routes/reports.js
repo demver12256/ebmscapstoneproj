@@ -5,17 +5,23 @@ const { authorize } = require('../middleware/role.middleware');
 const { sequelize, Beneficiary, BenefitProgram, DistributionEvent, DistributionTransaction, Barangay, Enrollment, AssistanceRequest, Attendance, Announcement, AnnouncementRecipient, AuditLog, User } = require('../db');
 const { isMswdoRole, MSWDO_CATEGORY_FILTER, MSWDO_ELIGIBILITY_FILTER, isMswdoCategory, isSeniorRole, isPwdRole } = require('../utils/roles');
 
+const getIsBarangayScoped = (user) => {
+  return Boolean(user?.barangay_id) && ['staff', 'barangay', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
+};
+
 const router = express.Router();
 router.use(authenticate);
 
 router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    // DSWD Staff is DSWD Staff (municipal coverage, same as DSWD Admin)
-    const isBarangayScoped = false;
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
 
     // Beneficiary where scoping
     const beneficiaryWhere = {};
+    if (isBarangayScoped && barangayId) {
+      beneficiaryWhere.barangay_id = barangayId;
+    }
     // Scope based on sector role
     if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
       beneficiaryWhere.category = { [Op.like]: '%Senior%' };
@@ -461,7 +467,7 @@ router.get('/debug/distributions-count', authenticate, async (req, res, next) =>
 // ── Reports Page Endpoints ──
 router.get('/beneficiaries-by-program', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
 
     const programWhere = {};
@@ -510,7 +516,7 @@ router.get('/beneficiaries-by-program', authorize('admin', 'staff', 'barangay'),
 
 router.get('/recent-distributions', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
 
     // Get filter parameters from query string
@@ -653,7 +659,7 @@ router.get('/recent-distributions', authorize('admin', 'staff', 'barangay'), asy
 
 router.get('/distribution-status', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
 
     const eventWhere = {};
@@ -687,7 +693,7 @@ router.get('/distribution-status', authorize('admin', 'staff', 'barangay'), asyn
 
 router.get('/monthly-aid', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const isMswdo = isMswdoRole(req.user.role);
 
@@ -733,7 +739,7 @@ function toCSV(headers, rows) {
 // Export Beneficiary List as CSV — MSWDO limited to Senior/PWD
 router.get('/export/beneficiaries', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { program_id, barangay_id: qBarangay, category } = req.query;
 
@@ -790,7 +796,7 @@ router.get('/export/beneficiaries', authorize('admin', 'staff', 'barangay'), asy
 // Export Distribution Report as CSV
 router.get('/export/distributions', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { program_id, barangay_id: qBarangay, start_date, end_date, status: qStatus } = req.query;
 
@@ -848,7 +854,7 @@ router.get('/export/distributions', authorize('admin', 'staff', 'barangay'), asy
 // Export Program Summary as CSV — MSWDO limited to Senior/PWD programs
 router.get('/export/programs', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
 
     const programWhere = {};
@@ -899,7 +905,7 @@ router.get('/export/programs', authorize('admin', 'staff', 'barangay'), async (r
 // Export Enrollment Report as CSV — MSWDO limited to Senior/PWD
 router.get('/export/enrollments', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { program_id } = req.query;
 
@@ -960,7 +966,7 @@ router.get('/export/enrollments', authorize('admin', 'staff', 'barangay'), async
 // Beneficiaries table JSON — MSWDO limited to Senior/PWD
 router.get('/table/beneficiaries', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, program_id, category, page = 1, limit = 10 } = req.query;
 
@@ -1037,7 +1043,7 @@ router.get('/table/beneficiaries', authorize('admin', 'staff', 'barangay'), asyn
 // Programs table JSON — MSWDO limited to Senior/PWD programs
 router.get('/table/programs', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, page = 1, limit = 10 } = req.query;
 
@@ -1099,7 +1105,7 @@ router.get('/table/programs', authorize('admin', 'staff', 'barangay'), async (re
 // Enrollments table JSON — MSWDO limited to Senior/PWD
 router.get('/table/enrollments', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { program_id, barangay_id: qBarangay, page = 1, limit = 10 } = req.query;
 
@@ -1165,7 +1171,7 @@ router.get('/table/enrollments', authorize('admin', 'staff', 'barangay'), async 
 // ── Assistance Requests Table JSON ──
 router.get('/table/assistance-requests', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, status: qStatus, page = 1, limit = 10 } = req.query;
 
@@ -1224,7 +1230,7 @@ router.get('/table/assistance-requests', authorize('admin', 'staff', 'barangay')
 // ── Attendance Table JSON ──
 router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, category, start_date, end_date, page = 1, limit = 10 } = req.query;
 
@@ -1357,7 +1363,7 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
 // ── Announcements Table JSON ──
 router.get('/table/announcements', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, category, priority, status, start_date, end_date, page = 1, limit = 10 } = req.query;
 
@@ -1522,7 +1528,7 @@ router.get('/table/audit-logs', authorize('admin'), async (req, res, next) => {
 // ── Export Assistance Requests as CSV ──
 router.get('/export/assistance-requests', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, status: qStatus } = req.query;
 
@@ -1570,7 +1576,7 @@ router.get('/export/assistance-requests', authorize('admin', 'staff', 'barangay'
 // ── Export Attendance as CSV ──
 router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, category, start_date, end_date } = req.query;
 
@@ -1694,7 +1700,7 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
 // ── Export Announcements as CSV ──
 router.get('/export/announcements', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
   try {
-    const isBarangayScoped = req.user.role === 'staff' || req.user.role === 'barangay';
+    const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, category, priority, status, start_date, end_date } = req.query;
 

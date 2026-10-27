@@ -24,47 +24,73 @@ router.get('/', async (req, res, next) => {
 
     if (['senior_citizen_admin', 'senior_citizen_staff'].includes(req.user.role)) {
       // Senior Citizen Admin & Staff strictly see Senior Citizen Beneficiaries & Senior Staff
+      const seniorWhere = {
+        category: { [Op.like]: '%Senior%' },
+        [Op.and]: [
+          { category: { [Op.notLike]: '%4Ps%' } },
+          { category: { [Op.notLike]: '%Pantawid%' } },
+        ],
+      };
+      if (req.user.role === 'senior_citizen_staff' && req.user.barangay_id) {
+        seniorWhere.barangay_id = req.user.barangay_id;
+      }
       const seniorBens = await Beneficiary.findAll({
-        where: {
-          category: { [Op.like]: '%Senior%' },
-          [Op.and]: [
-            { category: { [Op.notLike]: '%4Ps%' } },
-            { category: { [Op.notLike]: '%Pantawid%' } },
-          ],
-        },
+        where: seniorWhere,
         attributes: ['user_id'],
         raw: true,
       });
       const seniorUserIds = seniorBens.map((b) => b.user_id).filter(Boolean);
 
-      whereClause = {
-        [Op.or]: [
-          { role: { [Op.in]: ['senior_citizen_staff', 'senior_citizen_admin'] } },
-          { role: 'beneficiary', id: { [Op.in]: seniorUserIds } },
-        ],
-      };
+      if (req.user.role === 'senior_citizen_staff' && req.user.barangay_id) {
+        whereClause = {
+          [Op.or]: [
+            { id: req.user.id },
+            { role: 'beneficiary', id: { [Op.in]: seniorUserIds } },
+          ],
+        };
+      } else {
+        whereClause = {
+          [Op.or]: [
+            { role: { [Op.in]: ['senior_citizen_staff', 'senior_citizen_admin'] } },
+            { role: 'beneficiary', id: { [Op.in]: seniorUserIds } },
+          ],
+        };
+      }
     } else if (['pwd_admin', 'pwd_staff'].includes(req.user.role)) {
       // PWD Admin & Staff strictly see PWD Beneficiaries & PWD Staff
+      const pwdWhere = {
+        [Op.or]: [
+          { category: { [Op.like]: '%PWD%' } },
+          { category: { [Op.like]: '%Disabilit%' } },
+        ],
+      };
+      if (req.user.role === 'pwd_staff' && req.user.barangay_id) {
+        pwdWhere.barangay_id = req.user.barangay_id;
+      }
       const pwdBens = await Beneficiary.findAll({
-        where: {
-          [Op.or]: [
-            { category: { [Op.like]: '%PWD%' } },
-            { category: { [Op.like]: '%Disabilit%' } },
-          ],
-        },
+        where: pwdWhere,
         attributes: ['user_id'],
         raw: true,
       });
       const pwdUserIds = pwdBens.map((b) => b.user_id).filter(Boolean);
 
-      whereClause = {
-        [Op.or]: [
-          { role: { [Op.in]: ['pwd_staff', 'pwd_admin'] } },
-          { role: 'beneficiary', id: { [Op.in]: pwdUserIds } },
-        ],
-      };
+      if (req.user.role === 'pwd_staff' && req.user.barangay_id) {
+        whereClause = {
+          [Op.or]: [
+            { id: req.user.id },
+            { role: 'beneficiary', id: { [Op.in]: pwdUserIds } },
+          ],
+        };
+      } else {
+        whereClause = {
+          [Op.or]: [
+            { role: { [Op.in]: ['pwd_staff', 'pwd_admin'] } },
+            { role: 'beneficiary', id: { [Op.in]: pwdUserIds } },
+          ],
+        };
+      }
     } else if (req.user.role === 'admin') {
-      // DSWD Admin strictly sees 4Ps Beneficiaries & DSWD/Barangay Staff
+      // DSWD Admin strictly sees 4Ps Beneficiaries & DSWD/Barangay Staff across the municipality
       const dswdBens = await Beneficiary.findAll({
         where: {
           [Op.or]: [
@@ -84,25 +110,38 @@ router.get('/', async (req, res, next) => {
         ],
       };
     } else if (['staff', 'barangay'].includes(req.user.role)) {
-      // DSWD Staff sees 4Ps Beneficiaries & DSWD Staff across the municipality
+      // DSWD Staff: if barangay_id is assigned, strictly see 4Ps beneficiaries of that barangay
+      const dswdWhere = {
+        [Op.or]: [
+          { category: { [Op.like]: '%4Ps%' } },
+          { category: { [Op.like]: '%Pantawid%' } },
+        ],
+      };
+      if (req.user.barangay_id) {
+        dswdWhere.barangay_id = req.user.barangay_id;
+      }
       const dswdBens = await Beneficiary.findAll({
-        where: {
-          [Op.or]: [
-            { category: { [Op.like]: '%4Ps%' } },
-            { category: { [Op.like]: '%Pantawid%' } },
-          ],
-        },
+        where: dswdWhere,
         attributes: ['user_id'],
         raw: true,
       });
       const dswdUserIds = dswdBens.map((b) => b.user_id).filter(Boolean);
 
-      whereClause = {
-        [Op.or]: [
-          { role: { [Op.in]: ['staff', 'barangay', 'admin'] } },
-          { role: 'beneficiary', id: { [Op.in]: dswdUserIds } },
-        ],
-      };
+      if (req.user.barangay_id) {
+        whereClause = {
+          [Op.or]: [
+            { id: req.user.id },
+            { role: 'beneficiary', id: { [Op.in]: dswdUserIds } },
+          ],
+        };
+      } else {
+        whereClause = {
+          [Op.or]: [
+            { role: { [Op.in]: ['staff', 'barangay', 'admin'] } },
+            { role: 'beneficiary', id: { [Op.in]: dswdUserIds } },
+          ],
+        };
+      }
     } else if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
       // MSWDO Admin & Staff strictly see Municipal Beneficiaries (Senior Citizens and PWD)
       const mswdoBens = await Beneficiary.findAll({
@@ -152,17 +191,21 @@ router.post('/', async (req, res, next) => {
       if (role === 'beneficiary' || req.user.role === 'senior_citizen_staff') {
         role = 'beneficiary';
         category = 'Senior Citizens (Social Pension)';
+        if (req.user.barangay_id && !barangay_id) {
+          barangay_id = req.user.barangay_id;
+        }
       } else {
         role = 'senior_citizen_staff';
-        barangay_id = null;
       }
     } else if (['pwd_admin', 'pwd_staff'].includes(req.user.role)) {
       if (role === 'beneficiary' || req.user.role === 'pwd_staff') {
         role = 'beneficiary';
         category = 'Persons with Disabilities (PWD)';
+        if (req.user.barangay_id && !barangay_id) {
+          barangay_id = req.user.barangay_id;
+        }
       } else {
         role = 'pwd_staff';
-        barangay_id = null;
       }
     } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
       if (role === 'beneficiary' || req.user.role === 'staff' || req.user.role === 'barangay') {
@@ -182,9 +225,19 @@ router.post('/', async (req, res, next) => {
         if (!category || category.toLowerCase().includes('4ps')) {
           category = 'Senior Citizens (Social Pension)';
         }
+        if (req.user.barangay_id && !barangay_id) {
+          barangay_id = req.user.barangay_id;
+        }
       } else {
         if (!role || role === 'staff') role = 'mswdo_staff';
         if (role === 'mswdo_staff') barangay_id = null;
+      }
+    }
+
+    // Kapag si Senior Admin o DSWD Admin ay lumikha ng staff, kinakailangan ang barangay assignment
+    if (['senior_citizen_admin', 'admin'].includes(req.user.role) && role !== 'beneficiary') {
+      if (!barangay_id) {
+        return res.status(400).json({ success: false, message: 'Mangyaring pumili ng Barangay kung saan itatalaga ang staff.' });
       }
     }
 
@@ -237,7 +290,7 @@ router.post('/', async (req, res, next) => {
       password,
       contact_number,
       address,
-      barangay_id: ['mswdo_staff', 'senior_citizen_staff', 'pwd_staff'].includes(role) ? null : barangay_id,
+      barangay_id: ['mswdo_staff'].includes(role) ? null : (barangay_id ? Number(barangay_id) : null),
       role
     });
 
@@ -360,9 +413,16 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    if (req.user.role === 'staff') {
-      if (user.role !== 'beneficiary' || user.barangay_id !== req.user.barangay_id) {
-        return res.status(403).json({ success: false, message: 'Forbidden: You do not have access to this user' });
+    if (['staff', 'barangay', 'senior_citizen_staff', 'pwd_staff'].includes(req.user.role) && req.user.barangay_id) {
+      if (user.id !== req.user.id) {
+        if (user.role !== 'beneficiary') {
+          return res.status(403).json({ success: false, message: 'Forbidden: You do not have access to this user' });
+        }
+        const ben = await Beneficiary.findOne({ where: { user_id: user.id } });
+        const targetBrgyId = ben?.barangay_id || user.barangay_id;
+        if (Number(targetBrgyId) !== Number(req.user.barangay_id)) {
+          return res.status(403).json({ success: false, message: 'Forbidden: You only have access to beneficiaries in your assigned barangay' });
+        }
       }
     }
 
@@ -379,9 +439,16 @@ router.put('/:id', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    if (req.user.role === 'staff') {
-      if (user.role !== 'beneficiary' || user.barangay_id !== req.user.barangay_id) {
-        return res.status(403).json({ success: false, message: 'Forbidden: You do not have access to update this user' });
+    if (['staff', 'barangay', 'senior_citizen_staff', 'pwd_staff'].includes(req.user.role) && req.user.barangay_id) {
+      if (user.id !== req.user.id) {
+        if (user.role !== 'beneficiary') {
+          return res.status(403).json({ success: false, message: 'Forbidden: You do not have access to update this user' });
+        }
+        const ben = await Beneficiary.findOne({ where: { user_id: user.id } });
+        const targetBrgyId = ben?.barangay_id || user.barangay_id;
+        if (Number(targetBrgyId) !== Number(req.user.barangay_id)) {
+          return res.status(403).json({ success: false, message: 'Forbidden: You can only update beneficiaries in your assigned barangay' });
+        }
       }
     }
 
@@ -411,9 +478,14 @@ router.delete('/:id', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    if (req.user.role === 'staff') {
-      if (user.role !== 'beneficiary' || user.barangay_id !== req.user.barangay_id) {
+    if (['staff', 'barangay', 'senior_citizen_staff', 'pwd_staff'].includes(req.user.role) && req.user.barangay_id) {
+      if (user.role !== 'beneficiary') {
         return res.status(403).json({ success: false, message: 'Forbidden: You do not have access to delete this user' });
+      }
+      const ben = await Beneficiary.findOne({ where: { user_id: user.id } });
+      const targetBrgyId = ben?.barangay_id || user.barangay_id;
+      if (Number(targetBrgyId) !== Number(req.user.barangay_id)) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only delete beneficiaries in your assigned barangay' });
       }
     }
 
