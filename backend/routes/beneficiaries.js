@@ -196,7 +196,9 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
 // MSWDO Admin / Staff -> Not authorized to manage applicant registrations (empty list)
 router.get('/applications', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
-    if (isMswdoRole(req.user.role)) {
+    // Only MSWDO Admin / Staff are excluded. Note: isMswdoRole() also matches Senior & PWD roles,
+    // which must still receive their own sector's applications for review.
+    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
       console.log('[Applications] MSWDO role: applications approval disabled for MSWDO');
       return res.json({ success: true, data: [] });
     }
