@@ -76,6 +76,20 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshUser = async () => {
+    try {
+      const response = await authApi.getMe();
+      if (response?.data?.user) {
+        setUser(response.data.user);
+        localStorage.setItem('ebms_user', JSON.stringify(response.data.user));
+        return response.data.user;
+      }
+    } catch (e) {
+      console.warn('[AuthContext] Failed to refresh user profile:', e);
+    }
+    return null;
+  };
+
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -85,7 +99,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, googleLogin, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, googleLogin, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -197,6 +197,9 @@ router.post('/', upload.any(), async (req, res, next) => {
     let targetAgency = req.body.agency || 'DSWD';
 
     if (currentUser.role === 'beneficiary') {
+      if (currentUser.status === 'inactive') {
+        return res.status(403).json({ success: false, message: 'Ang iyong account ay kasalukuyang inactive. Mangyaring magsadya sa tanggapan ng admin upang sumunod sa mga rekisito o ma-reactivate ang iyong account.' });
+      }
       targetBeneficiary = await Beneficiary.findOne({ where: { user_id: currentUser.id } });
       if (!targetBeneficiary || targetBeneficiary.status !== 'Approved') {
         return res.status(403).json({ success: false, message: 'Your beneficiary registration must be approved first.' });

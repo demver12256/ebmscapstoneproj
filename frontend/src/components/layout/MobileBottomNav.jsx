@@ -31,6 +31,9 @@ const staffItems = [
 
 export default function MobileBottomNav() {
   const { user } = useAuth();
+  if (user?.role === 'beneficiary' && user?.status === 'inactive') {
+    return null;
+  }
   const items = user?.role === 'beneficiary' ? beneficiaryItems : staffItems;
 
   return (

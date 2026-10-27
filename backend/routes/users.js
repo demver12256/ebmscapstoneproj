@@ -463,6 +463,17 @@ router.put('/:id', async (req, res, next) => {
       delete updates.barangay_id;
     }
 
+    if (updates.status) {
+      if (updates.status === 'inactive') {
+        const reason = updates.inactive_reason || 'Inactivated by Administrator';
+        updates.inactive_reason = reason;
+        await Beneficiary.update({ inactivation_reason: reason }, { where: { user_id: req.params.id } });
+      } else if (updates.status === 'active') {
+        updates.inactive_reason = null;
+        await Beneficiary.update({ inactivation_reason: null }, { where: { user_id: req.params.id } });
+      }
+    }
+
     await User.update(updates, { where: { id: req.params.id } });
     const updatedUser = await User.findByPk(req.params.id, { attributes: { exclude: ['password'] } });
     res.json({ success: true, data: updatedUser });

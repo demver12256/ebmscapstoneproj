@@ -426,6 +426,9 @@ router.get('/me', authorize('beneficiary'), async (req, res, next) => {
 // Update beneficiary profile (category, national id, psa cert number, etc.)
 router.put('/me', authorize('beneficiary'), async (req, res, next) => {
   try {
+    if (req.user.status === 'inactive') {
+      return res.status(403).json({ success: false, message: 'Your account is currently inactive. Please proceed to the admin to comply or reactivate your account.' });
+    }
     const beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id } });
     if (!beneficiary) {
       return res.status(404).json({ success: false, message: 'Beneficiary profile not found' });
@@ -926,6 +929,9 @@ router.delete('/me/documents/:docId', authorize('beneficiary'), async (req, res,
 // Submit Application: updates status to Pending Review
 router.post('/me/submit', authorize('beneficiary'), async (req, res, next) => {
   try {
+    if (req.user.status === 'inactive') {
+      return res.status(403).json({ success: false, message: 'Your account is currently inactive. Please proceed to the admin to comply or reactivate your account.' });
+    }
     const beneficiary = await Beneficiary.findOne({
       where: { user_id: req.user.id },
       include: [{ model: BeneficiaryDocument, as: 'Documents' }]
@@ -1898,21 +1904,27 @@ router.put('/:id', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo
 
     const { status, inactivation_reason, ...otherUpdates } = req.body;
 
-    // If status is 'active' or 'inactive', update the beneficiary's User status
-    // (This is safe now because each beneficiary has their own user account)
+    // If status is 'active' or 'inactive', update the beneficiary's User status and inactive_reason
     if (status && (status === 'active' || status === 'inactive')) {
-      console.log(`[UPDATE BENEFICIARY] Updating user (ID: ${beneficiary.User?.id}) status to: ${status}`);
+      const reasonVal = status === 'inactive' ? (inactivation_reason || 'Inactivated by Administrator') : null;
+      console.log(`[UPDATE BENEFICIARY] Updating user (ID: ${beneficiary.User?.id}) status to: ${status}, reason: ${reasonVal}`);
       if (beneficiary.User && beneficiary.User.id) {
-        await User.update({ status }, { where: { id: beneficiary.User.id } });
+        await User.update({ 
+          status,
+          inactive_reason: reasonVal
+        }, { where: { id: beneficiary.User.id } });
       }
 
       if (status === 'inactive') {
-        otherUpdates.inactivation_reason = inactivation_reason || null;
+        otherUpdates.inactivation_reason = reasonVal;
       } else {
         otherUpdates.inactivation_reason = null;
       }
     } else if (inactivation_reason !== undefined) {
       otherUpdates.inactivation_reason = inactivation_reason;
+      if (beneficiary.User && beneficiary.User.id) {
+        await User.update({ inactive_reason: inactivation_reason }, { where: { id: beneficiary.User.id } });
+      }
     }
 
     // If household_id_number updated for 4Ps, also sync beneficiary_id_code

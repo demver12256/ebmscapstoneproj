@@ -11,6 +11,7 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import ApprovedBeneficiaryDashboard from '../components/ApprovedBeneficiaryDashboard';
+import InactiveBeneficiaryScreen from '../components/InactiveBeneficiaryScreen';
 import { usePagination } from '../hooks/usePagination';
 import Pagination from '../components/ui/Pagination';
 
@@ -397,7 +398,11 @@ export default function DashboardPage() {
       beneficiaryId: beneficiary?.id
     });
 
-    // If approved (regardless of active/inactive user status), show the approved dashboard
+    // If beneficiary account is inactive, show the InactiveBeneficiaryScreen instead of the main dashboard
+    if (user?.status === 'inactive' || beneficiary?.User?.status === 'inactive') {
+      return <InactiveBeneficiaryScreen beneficiary={beneficiary} />;
+    }
+
     if (isApproved) {
       return <ApprovedBeneficiaryDashboard beneficiary={beneficiary} />;
     }

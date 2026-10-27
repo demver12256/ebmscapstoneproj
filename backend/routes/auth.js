@@ -811,6 +811,44 @@ router.post('/register', authenticate, authorize('admin'), async (req, res, next
   }
 });
 
+// ─── GET /api/auth/me (authenticated, returns current user status & category) ───
+router.get('/me', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password'] },
+      include: [
+        {
+          model: Beneficiary,
+          attributes: ['id', 'first_name', 'last_name', 'category', 'status', 'household_id_number', 'beneficiary_id_code', 'inactivation_reason', 'barangay_id'],
+          required: false,
+        }
+      ]
+    });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const ben = user.Beneficiary || (user.Beneficiaries && user.Beneficiaries[0]) || null;
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        inactive_reason: user.inactive_reason || ben?.inactivation_reason || null,
+        barangay_id: user.barangay_id || ben?.barangay_id || null,
+        category: ben?.category || null,
+        beneficiary: ben,
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ─── POST /api/auth/change-password (authenticated, any role) ───
 router.post('/change-password', authenticate, async (req, res, next) => {
   try {

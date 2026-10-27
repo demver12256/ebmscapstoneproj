@@ -34,6 +34,7 @@ import InterventionsManagementPage from './pages/InterventionsManagementPage';
 import SeniorCitizenAdminPage from './pages/SeniorCitizenAdminPage';
 import PwdAdminPage from './pages/PwdAdminPage';
 import MainLayout from './components/layout/MainLayout';
+import InactiveBeneficiaryScreen from './components/InactiveBeneficiaryScreen';
 
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth();
@@ -56,8 +57,11 @@ const DashboardRouter = () => {
     );
   }
 
-  // Beneficiaries see the application portal dashboard
+  // Beneficiaries see the application portal dashboard (or Inactive notice if account is inactive)
   if (user?.role === 'beneficiary') {
+    if (user?.status === 'inactive') {
+      return <InactiveBeneficiaryScreen />;
+    }
     return <DashboardPage />;
   }
 

@@ -138,12 +138,20 @@ export default function Sidebar({ mobileOpen = false, onClose = () => {} }) {
   }, [user]);
 
   const isBeneficiary = user?.role === 'beneficiary';
-  const isApprovedBeneficiary = isBeneficiary && beneficiaryStatus === 'Approved';
+  const isInactiveBeneficiary = isBeneficiary && user?.status === 'inactive';
+  const isApprovedBeneficiary = isBeneficiary && beneficiaryStatus === 'Approved' && !isInactiveBeneficiary;
   
-  // Filter beneficiary nav items based on approval status
-  const beneficiaryNav = isApprovedBeneficiary 
-    ? beneficiaryNavItems.filter(item => !item.hideWhenApproved)
-    : beneficiaryNavItems.filter(item => !item.requiresApproval);
+  // Filter beneficiary nav items based on approval status and inactivity
+  let beneficiaryNav;
+  if (isInactiveBeneficiary) {
+    beneficiaryNav = [
+      { path: '/dashboard', label: 'Account Inactive', icon: Home, requiresApproval: false, section: 'main' }
+    ];
+  } else if (isApprovedBeneficiary) {
+    beneficiaryNav = beneficiaryNavItems.filter(item => !item.hideWhenApproved);
+  } else {
+    beneficiaryNav = beneficiaryNavItems.filter(item => !item.requiresApproval);
+  }
   
   const navItems = isBeneficiary 
     ? beneficiaryNav
