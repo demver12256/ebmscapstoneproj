@@ -292,7 +292,7 @@ export default function UserListPage() {
   // Filter users by tab
   const beneficiaryUsers = users.filter((u) => u.role === 'beneficiary');
   const filteredBeneficiaryUsers = beneficiaryUsers.filter((u) => matchesCategoryFilter(u, selectedCategoryFilter));
-  const staffUsers = users.filter((u) => u.role !== 'beneficiary');
+  const staffUsers = users.filter((u) => (isMswdoRole ? u.role === 'mswdo_staff' : u.role !== 'beneficiary'));
   const displayUsers = activeTab === 'beneficiaries' ? filteredBeneficiaryUsers : staffUsers;
 
   const pageTitle = activeTab === 'beneficiaries'
@@ -328,7 +328,7 @@ export default function UserListPage() {
       : isPwdRole
       ? 'Manage PDAO disability staff accounts.'
       : isMswdoRole
-      ? 'Manage MSWDO staff and municipal accounts.'
+      ? 'Manage MSWDO staff accounts.'
       : 'Manage DSWD staff accounts.';
 
   const loadingLabel = activeTab === 'beneficiaries' ? 'Loading beneficiary accounts...' : 'Loading staff accounts...';
@@ -341,8 +341,6 @@ export default function UserListPage() {
     : isMswdoRole
     ? [
         { value: 'mswdo_staff', label: 'MSWDO Staff' },
-        { value: 'senior_citizen_admin', label: 'Senior Citizen Admin (OSCA)' },
-        { value: 'pwd_admin', label: 'PWD Admin (PDAO)' },
       ]
     : [
         { value: 'staff', label: 'DSWD Staff' },

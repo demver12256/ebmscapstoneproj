@@ -162,7 +162,7 @@ router.get('/', async (req, res, next) => {
 
       whereClause = {
         [Op.or]: [
-          { role: { [Op.in]: ['mswdo_staff', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'] } },
+          { role: 'mswdo_staff' },
           { role: 'beneficiary', id: { [Op.in]: mswdoUserIds } },
         ],
       };
@@ -232,8 +232,13 @@ router.post('/', async (req, res, next) => {
           barangay_id = req.user.barangay_id;
         }
       } else {
-        if (!role || role === 'staff') role = 'mswdo_staff';
-        if (role === 'mswdo_staff') barangay_id = null;
+        if (role === 'senior_citizen_admin' || role === 'pwd_admin') {
+          return res.status(403).json({
+            success: false,
+            message: 'Hindi maaaring gumawa ng Senior Citizen Admin o PWD Admin account ang MSWDO Admin. MSWDO Staff lamang ang maaaring likhain.',
+          });
+        }
+        role = 'mswdo_staff';
       }
     }
 
