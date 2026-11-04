@@ -1044,40 +1044,6 @@ export default function BeneficiaryListPage() {
         </div>
       )}
 
-      {/* Quick Sector Filter Tabs for MSWDO Admin & DSWD Admin */}
-      {!isSeniorAdmin && !isPwdAdmin && (
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { label: 'All Beneficiaries', value: '', icon: '📋', count: beneficiaries.filter(b => showArchivedOnly ? isArchivedBeneficiary(b) : !isArchivedBeneficiary(b)).length },
-            { label: 'Senior Citizens (OSCA)', value: 'Senior Citizens (Social Pension)', icon: '👴', count: beneficiaries.filter(b => (showArchivedOnly ? isArchivedBeneficiary(b) : !isArchivedBeneficiary(b)) && categoryMatches(b.category, 'Senior Citizens (Social Pension)')).length },
-            { label: 'Persons with Disabilities (PWD)', value: 'Persons with Disabilities (PWD)', icon: '♿', count: beneficiaries.filter(b => (showArchivedOnly ? isArchivedBeneficiary(b) : !isArchivedBeneficiary(b)) && categoryMatches(b.category, 'Persons with Disabilities (PWD)')).length },
-            { label: '4Ps Households (DSWD)', value: '4Ps Household Beneficiary', icon: '👨‍👩‍👧', count: beneficiaries.filter(b => (showArchivedOnly ? isArchivedBeneficiary(b) : !isArchivedBeneficiary(b)) && categoryMatches(b.category, '4Ps Household Beneficiary')).length },
-          ].map((tab) => {
-            const isActive = selectedCategory === tab.value;
-            return (
-              <button
-                key={tab.label}
-                type="button"
-                onClick={() => setSelectedCategory(tab.value)}
-                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-2xs ${
-                  isActive
-                    ? 'bg-blue-600 text-white border border-blue-600'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                  isActive ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600'
-                }`}>
-                  {tab.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* Filters */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md sm:p-6">
         <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${isSectorAdmin ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
