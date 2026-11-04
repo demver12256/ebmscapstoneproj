@@ -29,7 +29,7 @@ const staffNavItems = [
 
   // ── Analytics & System Administration ──
   { path: '/dashboard/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'barangay'] },
-  { path: '/dashboard/users', label: 'Users', icon: UserCog, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'staff', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff'] },
+  { path: '/dashboard/users', label: 'Users', icon: UserCog, roles: ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'] },
   { 
     path: '/dashboard/logs', 
     label: 'Logs', 

@@ -251,88 +251,81 @@ export default function UserListPage() {
     ) : null },
   ];
 
-  // Sector helpers
-  const isSeniorRole = ['senior_citizen_admin', 'senior_citizen_staff'].includes(currentUser?.role);
-  const isPwdRole = ['pwd_admin', 'pwd_staff'].includes(currentUser?.role);
-  const isMswdoRole = ['mswdo_admin', 'mswdo_staff'].includes(currentUser?.role);
-  const isDswdRole = ['admin', 'staff', 'barangay'].includes(currentUser?.role);
+  // Sector helpers — Users page is strictly for Admin roles only
+  const isSeniorRole = currentUser?.role === 'senior_citizen_admin';
+  const isPwdRole = currentUser?.role === 'pwd_admin';
+  const isMswdoRole = currentUser?.role === 'mswdo_admin';
+  const isDswdRole = currentUser?.role === 'admin';
   const isAdmin = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(currentUser?.role);
 
-  // Beneficiary category options tailored to the current user's sector
+  // Beneficiary category options tailored strictly to each category admin
   const sectorCategoryOptions = isSeniorRole
     ? [{ value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' }]
     : isPwdRole
     ? [{ value: 'Persons with Disabilities (PWD)', label: 'Persons with Disabilities (PWD)' }]
-    : currentUser?.role === 'admin'
-    ? [
-        { value: '4Ps Household Beneficiaries', label: '4Ps Household Beneficiaries' },
-        { value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' },
-        { value: 'Persons with Disabilities (PWD)', label: 'Persons with Disabilities (PWD)' },
-      ]
-    : isDswdRole
-    ? [{ value: '4Ps Household Beneficiaries', label: '4Ps Household Beneficiaries' }]
-    : [
-        { value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' },
-        { value: 'Persons with Disabilities (PWD)', label: 'Persons with Disabilities (PWD)' },
-      ];
+    : [{ value: '4Ps Household Beneficiaries', label: '4Ps Household Beneficiaries' }];
 
-  // Tab State: 'beneficiaries' | 'staff'
-  const [activeTab, setActiveTab] = useState('beneficiaries');
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+  // Tab State: 'beneficiaries' | 'staff' (MSWDO Admin only manages MSWDO Staff on Users page)
+  const [activeTab, setActiveTab] = useState(currentUser?.role === 'mswdo_admin' ? 'staff' : 'beneficiaries');
 
-  const matchesCategoryFilter = (userRow, filterVal) => {
-    if (!filterVal || filterVal === 'all') return true;
-    const cat = String(userRow.Beneficiaries?.[0]?.category || '').toLowerCase();
-    if (filterVal === 'senior') return cat.includes('senior');
-    if (filterVal === 'pwd') return cat.includes('pwd') || cat.includes('disabilit');
-    if (filterVal === '4ps') return cat.includes('4ps') || cat.includes('pantawid');
-    return true;
-  };
+  useEffect(() => {
+    if (currentUser?.role === 'mswdo_admin') {
+      setActiveTab('staff');
+    }
+  }, [currentUser?.role]);
 
-  // Filter users by tab
-  const beneficiaryUsers = users.filter((u) => u.role === 'beneficiary');
-  const filteredBeneficiaryUsers = beneficiaryUsers.filter((u) => matchesCategoryFilter(u, selectedCategoryFilter));
-  const staffUsers = users.filter((u) => (isMswdoRole ? u.role === 'mswdo_staff' : u.role !== 'beneficiary'));
-  const displayUsers = activeTab === 'beneficiaries' ? filteredBeneficiaryUsers : staffUsers;
+  // Filter users by tab and strictly by the Admin's own category
+  const beneficiaryUsers = users.filter((u) => {
+    if (u.role !== 'beneficiary') return false;
+    const cat = String(u.Beneficiaries?.[0]?.category || '').toLowerCase();
+    if (isSeniorRole) return cat.includes('senior') && !cat.includes('4ps') && !cat.includes('pantawid');
+    if (isPwdRole) return (cat.includes('pwd') || cat.includes('disabilit')) && !cat.includes('4ps') && !cat.includes('pantawid');
+    if (isDswdRole) return (cat.includes('4ps') || cat.includes('pantawid')) && !cat.includes('senior') && !cat.includes('pwd') && !cat.includes('disabilit');
+    return false;
+  });
+  const staffUsers = users.filter((u) => {
+    if (isSeniorRole) return u.role === 'senior_citizen_staff';
+    if (isPwdRole) return u.role === 'pwd_staff';
+    if (isMswdoRole) return u.role === 'mswdo_staff';
+    if (isDswdRole) return ['staff', 'barangay'].includes(u.role);
+    return false;
+  });
+  const displayUsers = isMswdoRole
+    ? staffUsers
+    : activeTab === 'beneficiaries'
+      ? beneficiaryUsers
+      : staffUsers;
 
-  const pageTitle = activeTab === 'beneficiaries'
+  const pageTitle = isMswdoRole || activeTab === 'staff'
     ? isSeniorRole
-      ? 'Senior Citizen Beneficiary Accounts'
-      : isPwdRole
-      ? 'PWD Beneficiary Accounts'
-      : currentUser?.role === 'admin'
-      ? 'Beneficiary Accounts (4Ps, Senior Citizens & PWD)'
-      : isDswdRole
-      ? '4Ps Household Beneficiary Accounts'
-      : 'Municipal Beneficiary Accounts (Senior Citizens & PWD)'
-    : isSeniorRole
       ? 'Senior Citizen (OSCA) Staff Accounts'
       : isPwdRole
       ? 'PWD (PDAO) Staff Accounts'
       : isMswdoRole
       ? 'MSWDO Staff Accounts'
-      : 'DSWD Staff & Barangay Accounts';
-
-  const pageDescription = activeTab === 'beneficiaries'
-    ? isSeniorRole
-      ? 'Manage official Senior Citizens (Social Pension) beneficiary user accounts.'
-      : isPwdRole
-      ? 'Manage official Persons with Disabilities (PWD) beneficiary user accounts.'
-      : currentUser?.role === 'admin'
-      ? 'Manage official 4Ps, Senior Citizens, and PWD beneficiary user accounts.'
-      : isDswdRole
-      ? 'Manage official 4Ps Household beneficiary user accounts.'
-      : 'Manage official municipal beneficiary user accounts (Senior Citizens & PWD).'
+      : 'DSWD Staff & Barangay Accounts'
     : isSeniorRole
+      ? 'Senior Citizen Beneficiary Accounts'
+      : isPwdRole
+      ? 'PWD Beneficiary Accounts'
+      : '4Ps Household Beneficiary Accounts';
+
+  const pageDescription = isMswdoRole || activeTab === 'staff'
+    ? isSeniorRole
       ? 'Manage OSCA senior staff accounts.'
       : isPwdRole
       ? 'Manage PDAO disability staff accounts.'
       : isMswdoRole
       ? 'Manage MSWDO staff accounts.'
-      : 'Manage DSWD staff accounts.';
+      : 'Manage DSWD staff accounts.'
+    : isSeniorRole
+      ? 'Manage official Senior Citizens (Social Pension) beneficiary user accounts.'
+      : isPwdRole
+      ? 'Manage official Persons with Disabilities (PWD) beneficiary user accounts.'
+      : 'Manage official 4Ps Household beneficiary user accounts.';
 
-  const loadingLabel = activeTab === 'beneficiaries' ? 'Loading beneficiary accounts...' : 'Loading staff accounts...';
-  const emptyLabel = activeTab === 'beneficiaries' ? 'No beneficiary accounts found' : 'No staff accounts found';
+  const loadingLabel = (!isMswdoRole && activeTab === 'beneficiaries') ? 'Loading beneficiary accounts...' : 'Loading staff accounts...';
+  const emptyLabel = (!isMswdoRole && activeTab === 'beneficiaries') ? 'No beneficiary accounts found' : 'No staff accounts found';
 
   const availableRoles = isSeniorRole
     ? [{ value: 'senior_citizen_staff', label: 'Senior Citizen Staff (OSCA)' }]
@@ -348,7 +341,7 @@ export default function UserListPage() {
 
   const handleOpenCreateModal = () => {
     setFormError(null);
-    if (activeTab === 'beneficiaries') {
+    if (!isMswdoRole && activeTab === 'beneficiaries') {
       setForm({
         first_name: '',
         last_name: '',
@@ -377,6 +370,15 @@ export default function UserListPage() {
     }
     setShowModal(true);
   };
+
+  if (!isAdmin) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center">
+        <p className="text-base font-bold text-red-800">Access Restricted</p>
+        <p className="text-xs text-red-600 mt-1">Ang Users Management page ay para sa mga Admin lamang.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -432,8 +434,8 @@ export default function UserListPage() {
       )}
 
       {/* Navigation Tabs (Beneficiary Accounts vs Staff Accounts) */}
-      {(isAdmin || staffUsers.length > 0) && (
-        <div className="flex items-center gap-2 border-b border-slate-200">
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        {!isMswdoRole && (
           <button
             type="button"
             onClick={() => setActiveTab('beneficiaries')}
@@ -447,9 +449,7 @@ export default function UserListPage() {
             <span>
               {isSeniorRole ? 'Senior Citizen Beneficiaries' :
                isPwdRole ? 'PWD Beneficiaries' :
-               currentUser?.role === 'admin' ? 'All Beneficiaries (4Ps, Senior & PWD)' :
-               isDswdRole ? '4Ps Household Beneficiaries' :
-               'Senior Citizen & PWD Beneficiaries'}
+               '4Ps Household Beneficiaries'}
             </span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
               activeTab === 'beneficiaries' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
@@ -457,67 +457,31 @@ export default function UserListPage() {
               {beneficiaryUsers.length}
             </span>
           </button>
+        )}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('staff')}
-            className={`pb-2.5 px-3 text-xs font-bold transition border-b-2 flex items-center gap-2 ${
-              activeTab === 'staff'
-                ? 'border-indigo-600 text-indigo-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <UserCog className="w-3.5 h-3.5" />
-            <span>
-              {isSeniorRole ? 'Senior Citizen (OSCA) Staff' :
-               isPwdRole ? 'PWD (PDAO) Staff' :
-               isMswdoRole ? 'MSWDO Staff' :
-               'DSWD Staff'}
-            </span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              activeTab === 'staff' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
-            }`}>
-              {staffUsers.length}
-            </span>
-          </button>
-        </div>
-      )}
-
-      {/* Sector Filter Pills for MSWDO Admin & DSWD Admin on Beneficiaries Tab */}
-      {activeTab === 'beneficiaries' && (currentUser?.role === 'admin' || isMswdoRole) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { label: 'All Beneficiaries', value: 'all', icon: '📋', count: beneficiaryUsers.length },
-            { label: 'Senior Citizens (OSCA)', value: 'senior', icon: '👴', count: beneficiaryUsers.filter(u => matchesCategoryFilter(u, 'senior')).length },
-            { label: 'Persons with Disabilities (PWD)', value: 'pwd', icon: '♿', count: beneficiaryUsers.filter(u => matchesCategoryFilter(u, 'pwd')).length },
-            ...(currentUser?.role === 'admin' ? [
-              { label: '4Ps Households (DSWD)', value: '4ps', icon: '👨‍👩‍👧', count: beneficiaryUsers.filter(u => matchesCategoryFilter(u, '4ps')).length }
-            ] : []),
-          ].map((pill) => {
-            const isActive = selectedCategoryFilter === pill.value;
-            return (
-              <button
-                key={pill.value}
-                type="button"
-                onClick={() => setSelectedCategoryFilter(pill.value)}
-                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs ${
-                  isActive
-                    ? 'bg-indigo-600 text-white border border-indigo-600'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <span>{pill.icon}</span>
-                <span>{pill.label}</span>
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                  isActive ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-600'
-                }`}>
-                  {pill.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+        <button
+          type="button"
+          onClick={() => setActiveTab('staff')}
+          className={`pb-2.5 px-3 text-xs font-bold transition border-b-2 flex items-center gap-2 ${
+            (isMswdoRole || activeTab === 'staff')
+              ? 'border-indigo-600 text-indigo-700'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <UserCog className="w-3.5 h-3.5" />
+          <span>
+            {isSeniorRole ? 'Senior Citizen (OSCA) Staff' :
+             isPwdRole ? 'PWD (PDAO) Staff' :
+             isMswdoRole ? 'MSWDO Staff' :
+             'DSWD Staff'}
+          </span>
+          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+            (isMswdoRole || activeTab === 'staff') ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {staffUsers.length}
+          </span>
+        </button>
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
