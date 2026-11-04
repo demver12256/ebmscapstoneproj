@@ -219,13 +219,11 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
   }
 });
 
-// Admin & Staff Applications list: Return registrations (Pending Review, Under Review, Rejected, Approved)
-// Senior Citizen Admin -> Senior Citizens applications only
-// PWD Admin -> Persons with Disabilities (PWD) applications only
-// MSWDO Admin / Staff -> Senior Citizens and PWD applications
-// DSWD Admin -> 4Ps, Senior Citizens, and PWD applications
-// DSWD Staff / Barangay -> 4Ps applications
-router.get('/applications', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
+// Admin & Staff Applications list: Return registrations strictly by sector category
+// Senior Citizen Admin / Staff -> Senior Citizens applications only
+// PWD Admin / Staff -> Persons with Disabilities (PWD) applications only
+// DSWD Admin / Staff / Barangay -> 4Ps applications only
+router.get('/applications', authorize('admin', 'staff', 'barangay', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const where = {
       status: {
@@ -259,44 +257,20 @@ router.get('/applications', authorize('admin', 'staff', 'barangay', 'mswdo_admin
         { category: { [Op.notLike]: '%Pantawid%' } }
       ];
       console.log('[Applications] PWD Admin filter: PWD only');
-    } else if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
-      // MSWDO Admin & Staff: Senior Citizens and PWD applications
-      where[Op.and] = [
-        {
-          [Op.or]: [
-            { category: { [Op.like]: '%Senior%' } },
-            { category: { [Op.like]: '%PWD%' } },
-            { category: { [Op.like]: '%Disabilit%' } },
-          ]
-        }
-      ];
-      console.log('[Applications] MSWDO filter: Senior & PWD applications');
-    } else if (req.user.role === 'admin') {
-      // DSWD Admin: 4Ps, Senior Citizens, and PWD applications
-      where[Op.and] = [
-        {
-          [Op.or]: [
-            { category: { [Op.like]: '%4Ps%' } },
-            { category: { [Op.like]: '%Pantawid%' } },
-            { category: { [Op.like]: '%Senior%' } },
-            { category: { [Op.like]: '%PWD%' } },
-            { category: { [Op.like]: '%Disabilit%' } },
-          ]
-        }
-      ];
-      console.log('[Applications] DSWD Admin filter: 4Ps, Senior, and PWD applications');
     } else {
-      // DSWD Barangay Staff: 4Ps applications
-      const dswdConditions = [
+      // DSWD Admin & DSWD Staff: strictly 4Ps applications only
+      where[Op.and] = [
         {
           [Op.or]: [
             { category: { [Op.like]: '%4Ps%' } },
             { category: { [Op.like]: '%Pantawid%' } }
           ]
-        }
+        },
+        { category: { [Op.notLike]: '%Senior%' } },
+        { category: { [Op.notLike]: '%PWD%' } },
+        { category: { [Op.notLike]: '%Disabilit%' } }
       ];
-      where[Op.and] = dswdConditions;
-      console.log('[Applications] DSWD Staff filter: 4Ps applications only');
+      console.log('[Applications] DSWD Admin/Staff filter: 4Ps applications only');
     }
 
     const applications = await Beneficiary.findAll({
@@ -1548,8 +1522,8 @@ router.get('/:id/enrollments', authorize('admin', 'staff', 'barangay', 'mswdo_ad
   }
 });
 
-// Update application status to Under Review
-router.put('/applications/:id/review', authorize('admin', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
+// Update application status to Under Review — strictly by category admin
+router.put('/applications/:id/review', authorize('admin', 'staff', 'barangay', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
@@ -1569,8 +1543,8 @@ router.put('/applications/:id/review', authorize('admin', 'mswdo_admin', 'mswdo_
     if (['pwd_admin', 'pwd_staff'].includes(req.user.role) && !isPwd) {
       return res.status(403).json({ success: false, message: 'PWD Admin (PDAO) can only review Persons with Disabilities (PWD) applications.' });
     }
-    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role) && !isSenior && !isPwd) {
-      return res.status(403).json({ success: false, message: 'MSWDO can only review Senior Citizens and PWD applications.' });
+    if (['admin', 'staff', 'barangay'].includes(req.user.role) && !is4Ps) {
+      return res.status(403).json({ success: false, message: 'DSWD Admin/Staff can only review 4Ps applications.' });
     }
 
     if (beneficiary.status === 'Pending Review') {
@@ -1597,8 +1571,8 @@ router.put('/applications/:id/review', authorize('admin', 'mswdo_admin', 'mswdo_
   }
 });
 
-// Approve application — DSWD Admin (4Ps, Senior, PWD), MSWDO Admin (Senior, PWD), Senior Admin (Senior), PWD Admin (PWD)
-router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
+// Approve application — strictly by category admin: DSWD Admin/Staff (4Ps), Senior Admin/Staff (Senior), PWD Admin/Staff (PWD)
+router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
@@ -1619,13 +1593,10 @@ router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay',
     if (['pwd_admin', 'pwd_staff'].includes(req.user.role) && !isPwd) {
       return res.status(403).json({ success: false, message: 'PWD (PDAO) staff/admin can only approve Persons with Disabilities (PWD) applications.' });
     }
-    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role) && !isSenior && !isPwd) {
-      return res.status(403).json({ success: false, message: 'MSWDO can only approve Senior Citizens and PWD applications.' });
-    }
-    if (['staff', 'barangay'].includes(req.user.role) && !is4Ps) {
+    if (['admin', 'staff', 'barangay'].includes(req.user.role) && !is4Ps) {
       return res.status(403).json({
         success: false,
-        message: 'DSWD Barangay Staff can only approve 4Ps applications.'
+        message: 'DSWD Admin/Staff can only approve 4Ps applications.'
       });
     }
 
@@ -1696,8 +1667,8 @@ router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay',
   }
 });
 
-// Reject application — DSWD Admin (4Ps, Senior, PWD), MSWDO Admin (Senior, PWD), Senior Admin (Senior), PWD Admin (PWD)
-router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
+// Reject application — strictly by category admin: DSWD Admin/Staff (4Ps), Senior Admin/Staff (Senior), PWD Admin/Staff (PWD)
+router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
@@ -1718,13 +1689,10 @@ router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay', 
     if (['pwd_admin', 'pwd_staff'].includes(req.user.role) && !isPwd) {
       return res.status(403).json({ success: false, message: 'PWD (PDAO) staff/admin can only reject Persons with Disabilities (PWD) applications.' });
     }
-    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role) && !isSenior && !isPwd) {
-      return res.status(403).json({ success: false, message: 'MSWDO can only reject Senior Citizens and PWD applications.' });
-    }
-    if (['staff', 'barangay'].includes(req.user.role) && !is4Ps) {
+    if (['admin', 'staff', 'barangay'].includes(req.user.role) && !is4Ps) {
       return res.status(403).json({
         success: false,
-        message: 'DSWD Barangay Staff can only reject 4Ps applications.'
+        message: 'DSWD Admin/Staff can only reject 4Ps applications.'
       });
     }
 

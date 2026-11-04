@@ -98,7 +98,7 @@ export default function BeneficiaryListPage() {
   const isDswdAdmin = user?.role === 'admin' || isDswdStaff;
   const isSectorAdmin = isMswdoAdmin || isSeniorAdmin || isPwdAdmin;
   const isAdminOrSector = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'staff', 'barangay'].includes(user?.role);
-  const canManageApplications = isDswdAdmin || isSeniorAdmin || isPwdAdmin || isMswdoAdmin;
+  const canManageApplications = isDswdAdmin || isSeniorAdmin || isPwdAdmin;
   const CATEGORIES = [
     '4Ps Household Beneficiary',
     'Senior Citizens (Social Pension)',
@@ -140,24 +140,18 @@ export default function BeneficiaryListPage() {
       
       if (canManageApplications && results[2]) {
         const apps = results[2].data?.data || [];
-        // Filter non-approved applications for the role's allowed sectors
+        // Filter non-approved applications strictly for the role's category
         const pendingList = apps.filter(a => {
           if (a.status === 'Approved') return false;
           const c = String(a.category || '').toLowerCase();
           if (isSeniorAdmin) {
-            return c.includes('senior');
+            return c.includes('senior') && !c.includes('4ps') && !c.includes('pantawid');
           }
           if (isPwdAdmin) {
-            return c.includes('pwd') || c.includes('disabilit');
+            return (c.includes('pwd') || c.includes('disabilit')) && !c.includes('4ps') && !c.includes('pantawid');
           }
-          if (isMswdoAdmin) {
-            return c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
-          }
-          if (user?.role === 'admin') {
-            return c.includes('4ps') || c.includes('pantawid') || c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
-          }
-          if (isDswdStaff) {
-            return c.includes('4ps') || c.includes('pantawid');
+          if (isDswdAdmin) {
+            return (c.includes('4ps') || c.includes('pantawid')) && !c.includes('senior') && !c.includes('pwd') && !c.includes('disabilit');
           }
           return false;
         });
@@ -230,18 +224,15 @@ export default function BeneficiaryListPage() {
         if (a.status === 'Approved') return false;
         const c = String(a.category || '').toLowerCase();
         if (isSeniorAdmin) {
-          return c.includes('senior');
+          return c.includes('senior') && !c.includes('4ps') && !c.includes('pantawid');
         }
         if (isPwdAdmin) {
-          return c.includes('pwd') || c.includes('disabilit');
+          return (c.includes('pwd') || c.includes('disabilit')) && !c.includes('4ps') && !c.includes('pantawid');
         }
-        if (isMswdoAdmin) {
-          return c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
+        if (isDswdAdmin) {
+          return (c.includes('4ps') || c.includes('pantawid')) && !c.includes('senior') && !c.includes('pwd') && !c.includes('disabilit');
         }
-        if (isDswdStaff) {
-          return c.includes('4ps') || c.includes('pantawid');
-        }
-        return true;
+        return false;
       });
       setPendingApplications(pendingList);
     } catch (err) {
@@ -2829,9 +2820,7 @@ export default function BeneficiaryListPage() {
                       ? 'Review, verify, and approve pending Senior Citizens (Social Pension) applicant submissions.'
                       : isPwdAdmin
                         ? 'Review, verify, and approve pending Persons with Disabilities (PWD) applicant submissions.'
-                        : isMswdoAdmin 
-                          ? 'Review, verify, and approve pending Senior Citizens and PWD applicant submissions (4Ps is processed by DSWD).'
-                          : 'Review, verify, and approve pending applicant submissions (4Ps, Senior Citizens, and PWD).'}
+                        : 'Review, verify, and approve pending 4Ps Household Beneficiary applicant submissions.'}
                   </p>
                 </div>
               </div>

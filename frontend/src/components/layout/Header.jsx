@@ -61,11 +61,11 @@ export default function Header({ mobileMenuOpen = false, onOpenMobileMenu }) {
         const cat = String(a.category || '').toLowerCase();
         return cat.includes('4ps') || cat.includes('pantawid');
       }
-      if (user?.role === 'senior_citizen_admin') {
+      if (user?.role === 'senior_citizen_admin' || user?.role === 'senior_citizen_staff') {
         const cat = String(a.category || '').toLowerCase();
         return cat.includes('senior');
       }
-      if (user?.role === 'pwd_admin') {
+      if (user?.role === 'pwd_admin' || user?.role === 'pwd_staff') {
         const cat = String(a.category || '').toLowerCase();
         return cat.includes('pwd') || cat.includes('disabilit');
       }
