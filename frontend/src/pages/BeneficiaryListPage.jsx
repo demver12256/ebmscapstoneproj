@@ -98,9 +98,7 @@ export default function BeneficiaryListPage() {
   const isDswdAdmin = user?.role === 'admin' || isDswdStaff;
   const isSectorAdmin = isMswdoAdmin || isSeniorAdmin || isPwdAdmin;
   const isAdminOrSector = ['admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin', 'mswdo_staff', 'senior_citizen_staff', 'pwd_staff', 'staff', 'barangay'].includes(user?.role);
-  // Applications approval is strictly delegated by sector: DSWD Admin & Staff (4Ps only), Senior Admin (Senior Citizens only), PWD Admin (PWD only).
-  // MSWDO Admin / Staff does NOT approve applications.
-  const canManageApplications = (isDswdAdmin || isSeniorAdmin || isPwdAdmin) && !isMswdoAdmin;
+  const canManageApplications = isDswdAdmin || isSeniorAdmin || isPwdAdmin || isMswdoAdmin;
   const CATEGORIES = [
     '4Ps Household Beneficiary',
     'Senior Citizens (Social Pension)',
@@ -142,18 +140,23 @@ export default function BeneficiaryListPage() {
       
       if (canManageApplications && results[2]) {
         const apps = results[2].data?.data || [];
-        // Filter non-approved applications strictly for the role's sector
+        // Filter non-approved applications for the role's allowed sectors
         const pendingList = apps.filter(a => {
           if (a.status === 'Approved') return false;
+          const c = String(a.category || '').toLowerCase();
           if (isSeniorAdmin) {
-            return String(a.category || '').toLowerCase().includes('senior');
+            return c.includes('senior');
           }
           if (isPwdAdmin) {
-            const c = String(a.category || '').toLowerCase();
             return c.includes('pwd') || c.includes('disabilit');
           }
-          if (isDswdAdmin) {
-            const c = String(a.category || '').toLowerCase();
+          if (isMswdoAdmin) {
+            return c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
+          }
+          if (user?.role === 'admin') {
+            return c.includes('4ps') || c.includes('pantawid') || c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
+          }
+          if (isDswdStaff) {
             return c.includes('4ps') || c.includes('pantawid');
           }
           return false;
@@ -183,6 +186,16 @@ export default function BeneficiaryListPage() {
     const payoutParam = params.get('payout_status') || location.state?.payout_status;
     if (payoutParam && !isSectorAdmin) {
       setSelectedPayoutStatus(payoutParam);
+    }
+    const categoryParam = (params.get('category') || '').toLowerCase();
+    if (categoryParam && !isSeniorAdmin && !isPwdAdmin) {
+      if (categoryParam.includes('senior')) {
+        setSelectedCategory('Senior Citizens (Social Pension)');
+      } else if (categoryParam.includes('pwd') || categoryParam.includes('disabilit')) {
+        setSelectedCategory('Persons with Disabilities (PWD)');
+      } else if (categoryParam.includes('4ps')) {
+        setSelectedCategory('4Ps Household Beneficiary');
+      }
     }
   }, [location, user, isMswdoAdmin, isSeniorAdmin, isPwdAdmin]);
 
@@ -215,14 +228,19 @@ export default function BeneficiaryListPage() {
       const apps = appsRes.data.data || [];
       const pendingList = apps.filter(a => {
         if (a.status === 'Approved') return false;
+        const c = String(a.category || '').toLowerCase();
         if (isSeniorAdmin) {
-          return String(a.category || '').toLowerCase().includes('senior');
+          return c.includes('senior');
         }
         if (isPwdAdmin) {
-          const c = String(a.category || '').toLowerCase();
           return c.includes('pwd') || c.includes('disabilit');
         }
-        if (isMswdoAdmin && is4PsCategory(a.category)) return false;
+        if (isMswdoAdmin) {
+          return c.includes('senior') || c.includes('pwd') || c.includes('disabilit');
+        }
+        if (isDswdStaff) {
+          return c.includes('4ps') || c.includes('pantawid');
+        }
         return true;
       });
       setPendingApplications(pendingList);
@@ -372,24 +390,24 @@ export default function BeneficiaryListPage() {
     }
 
     if (isBenSenior) {
-      const allowed = isSeniorAdmin; // senior_citizen_admin or senior_citizen_staff
+      const allowed = isSeniorAdmin || isMswdoAdmin || user.role === 'admin';
       return {
         canRegister: allowed,
         sectorName: 'OSCA / Senior Citizen',
         message: allowed
           ? ''
-          : 'Bawal mag-rehistro ng RFID: Tanging ang OSCA / Senior Citizen Administrator lamang ang may pahintulot na mag-rehistro ng RFID card para sa Senior Citizens.'
+          : 'Bawal mag-rehistro ng RFID: Tanging ang OSCA / Senior Citizen Admin, MSWDO Admin, o DSWD Admin lamang ang may pahintulot na mag-rehistro ng RFID card para sa Senior Citizens.'
       };
     }
 
     if (isBenPwd) {
-      const allowed = isPwdAdmin; // pwd_admin or pwd_staff
+      const allowed = isPwdAdmin || isMswdoAdmin || user.role === 'admin';
       return {
         canRegister: allowed,
         sectorName: 'PDAO / PWD',
         message: allowed
           ? ''
-          : 'Bawal mag-rehistro ng RFID: Tanging ang PDAO / PWD Administrator lamang ang may pahintulot na mag-rehistro ng RFID card para sa Persons with Disabilities (PWD).'
+          : 'Bawal mag-rehistro ng RFID: Tanging ang PDAO / PWD Admin, MSWDO Admin, o DSWD Admin lamang ang may pahintulot na mag-rehistro ng RFID card para sa Persons with Disabilities (PWD).'
       };
     }
 
@@ -510,12 +528,12 @@ export default function BeneficiaryListPage() {
   };
 
   const handleApproveApplication = (appId) => {
-    if (isDswdAdmin && selectedApp && !is4PsCategory(selectedApp.category)) {
-      alert('Access Denied: DSWD Admin can only approve 4Ps applications. Senior Citizen applications must be approved by OSCA, and PWD applications by PDAO.');
+    if (isDswdStaff && selectedApp && !is4PsCategory(selectedApp.category)) {
+      alert('Access Denied: DSWD Barangay Staff can only approve 4Ps applications.');
       return;
     }
-    if (isMswdoAdmin) {
-      alert('Access Denied: MSWDO does not approve applications. Senior applications are approved by OSCA, PWD by PDAO, and 4Ps by DSWD.');
+    if (isMswdoAdmin && selectedApp && is4PsCategory(selectedApp.category)) {
+      alert('Access Denied: MSWDO can only approve Senior Citizens and PWD applications.');
       return;
     }
     setShowApproveConfirm(true);
@@ -542,12 +560,12 @@ export default function BeneficiaryListPage() {
 
   const handleRejectApplication = async (e) => {
     e.preventDefault();
-    if (isDswdAdmin && selectedApp && !is4PsCategory(selectedApp.category)) {
-      alert('Access Denied: DSWD Admin can only handle 4Ps applications. Senior Citizen applications must be handled by OSCA, and PWD applications by PDAO.');
+    if (isDswdStaff && selectedApp && !is4PsCategory(selectedApp.category)) {
+      alert('Access Denied: DSWD Barangay Staff can only handle 4Ps applications.');
       return;
     }
-    if (isMswdoAdmin) {
-      alert('Access Denied: MSWDO does not process applications. Senior applications are handled by OSCA, PWD by PDAO, and 4Ps by DSWD.');
+    if (isMswdoAdmin && selectedApp && is4PsCategory(selectedApp.category)) {
+      alert('Access Denied: MSWDO can only handle Senior Citizens and PWD applications.');
       return;
     }
     if (!rejectionReason.trim()) {
@@ -1032,6 +1050,40 @@ export default function BeneficiaryListPage() {
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-start gap-3">
           <span className="text-lg">⚠️</span>
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* Quick Sector Filter Tabs for MSWDO Admin & DSWD Admin */}
+      {!isSeniorAdmin && !isPwdAdmin && (
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { label: 'All Beneficiaries', value: '', icon: '📋', count: beneficiaries.filter(b => showArchivedOnly ? isArchivedBeneficiary(b) : !isArchivedBeneficiary(b)).length },
+            { label: 'Senior Citizens (OSCA)', value: 'Senior Citizens (Social Pension)', icon: '👴', count: beneficiaries.filter(b => (showArchivedOnly ? isArchivedBeneficiary(b) : !isArchivedBeneficiary(b)) && categoryMatches(b.category, 'Senior Citizens (Social Pension)')).length },
+            { label: 'Persons with Disabilities (PWD)', value: 'Persons with Disabilities (PWD)', icon: '♿', count: beneficiaries.filter(b => (showArchivedOnly ? isArchivedBeneficiary(b) : !isArchivedBeneficiary(b)) && categoryMatches(b.category, 'Persons with Disabilities (PWD)')).length },
+            { label: '4Ps Households (DSWD)', value: '4Ps Household Beneficiary', icon: '👨‍👩‍👧', count: beneficiaries.filter(b => (showArchivedOnly ? isArchivedBeneficiary(b) : !isArchivedBeneficiary(b)) && categoryMatches(b.category, '4Ps Household Beneficiary')).length },
+          ].map((tab) => {
+            const isActive = selectedCategory === tab.value;
+            return (
+              <button
+                key={tab.label}
+                type="button"
+                onClick={() => setSelectedCategory(tab.value)}
+                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-2xs ${
+                  isActive
+                    ? 'bg-blue-600 text-white border border-blue-600'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  isActive ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 

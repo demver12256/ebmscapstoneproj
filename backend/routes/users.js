@@ -90,12 +90,15 @@ router.get('/', async (req, res, next) => {
         };
       }
     } else if (req.user.role === 'admin') {
-      // DSWD Admin strictly sees 4Ps Beneficiaries & DSWD/Barangay Staff across the municipality
+      // DSWD Admin sees 4Ps, Senior Citizens, and PWD Beneficiaries & DSWD/Barangay Staff across the municipality
       const dswdBens = await Beneficiary.findAll({
         where: {
           [Op.or]: [
             { category: { [Op.like]: '%4Ps%' } },
             { category: { [Op.like]: '%Pantawid%' } },
+            { category: { [Op.like]: '%Senior%' } },
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } },
           ],
         },
         attributes: ['user_id'],

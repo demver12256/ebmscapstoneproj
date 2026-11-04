@@ -82,7 +82,22 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_st
         { category: { [Op.like]: '%Disabilit%' } }
       ];
     } else if (category) {
-      where.category = { [Op.like]: `%${category}%` };
+      const lowerCat = String(category).toLowerCase();
+      if (lowerCat.includes('senior')) {
+        where.category = { [Op.like]: '%Senior%' };
+      } else if (lowerCat.includes('pwd') || lowerCat.includes('disabilit')) {
+        where[Op.or] = [
+          { category: { [Op.like]: '%PWD%' } },
+          { category: { [Op.like]: '%Disabilit%' } }
+        ];
+      } else if (lowerCat.includes('4ps') || lowerCat.includes('pantawid')) {
+        where[Op.or] = [
+          { category: { [Op.like]: '%4Ps%' } },
+          { category: { [Op.like]: '%Pantawid%' } }
+        ];
+      } else {
+        where.category = { [Op.like]: `%${category}%` };
+      }
     }
     const beneficiaries = await Beneficiary.findAll({ where, include: [Barangay, User] });
     console.log(`[Beneficiaries] Found ${beneficiaries.length} records`);
@@ -205,19 +220,13 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
 });
 
 // Admin & Staff Applications list: Return registrations (Pending Review, Under Review, Rejected, Approved)
-// DSWD Admin -> 4Ps applications only
 // Senior Citizen Admin -> Senior Citizens applications only
 // PWD Admin -> Persons with Disabilities (PWD) applications only
-// MSWDO Admin / Staff -> Not authorized to manage applicant registrations (empty list)
+// MSWDO Admin / Staff -> Senior Citizens and PWD applications
+// DSWD Admin -> 4Ps, Senior Citizens, and PWD applications
+// DSWD Staff / Barangay -> 4Ps applications
 router.get('/applications', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
-    // Only MSWDO Admin / Staff are excluded. Note: isMswdoRole() also matches Senior & PWD roles,
-    // which must still receive their own sector's applications for review.
-    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
-      console.log('[Applications] MSWDO role: applications approval disabled for MSWDO');
-      return res.json({ success: true, data: [] });
-    }
-
     const where = {
       status: {
         [Op.ne]: 'Approved'
@@ -250,8 +259,34 @@ router.get('/applications', authorize('admin', 'staff', 'barangay', 'mswdo_admin
         { category: { [Op.notLike]: '%Pantawid%' } }
       ];
       console.log('[Applications] PWD Admin filter: PWD only');
+    } else if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
+      // MSWDO Admin & Staff: Senior Citizens and PWD applications
+      where[Op.and] = [
+        {
+          [Op.or]: [
+            { category: { [Op.like]: '%Senior%' } },
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } },
+          ]
+        }
+      ];
+      console.log('[Applications] MSWDO filter: Senior & PWD applications');
+    } else if (req.user.role === 'admin') {
+      // DSWD Admin: 4Ps, Senior Citizens, and PWD applications
+      where[Op.and] = [
+        {
+          [Op.or]: [
+            { category: { [Op.like]: '%4Ps%' } },
+            { category: { [Op.like]: '%Pantawid%' } },
+            { category: { [Op.like]: '%Senior%' } },
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } },
+          ]
+        }
+      ];
+      console.log('[Applications] DSWD Admin filter: 4Ps, Senior, and PWD applications');
     } else {
-      // DSWD Admin & Barangay Staff: Strictly 4Ps applications only
+      // DSWD Barangay Staff: 4Ps applications
       const dswdConditions = [
         {
           [Op.or]: [
@@ -261,7 +296,7 @@ router.get('/applications', authorize('admin', 'staff', 'barangay', 'mswdo_admin
         }
       ];
       where[Op.and] = dswdConditions;
-      console.log('[Applications] DSWD filter: 4Ps applications only');
+      console.log('[Applications] DSWD Staff filter: 4Ps applications only');
     }
 
     const applications = await Beneficiary.findAll({
@@ -1060,10 +1095,7 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
     } else if (isPwd) {
       // PWD Admin / Staff sees ONLY announcements created by PWD Admin / Staff
       announcementWhere.created_by_user_id = { [Op.in]: pwdUserIds.length ? pwdUserIds : [-1] };
-    } else if (isMswdo) {
-      // MSWDO sees announcements created by MSWDO users
-      announcementWhere.created_by_user_id = { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] };
-    } else if (req.user.role !== 'beneficiary') {
+    } else if (['staff', 'barangay'].includes(req.user.role)) {
       announcementWhere.created_by_user_id = { [Op.notIn]: mswdoUserIds.length ? mswdoUserIds : [-1] };
     }
     const publishedAnnouncements = await Announcement.findAll({
@@ -1201,15 +1233,8 @@ router.get('/:id/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_adm
           continue;
         }
       }
-      // MSWDO Admin / Staff: can see attendance for announcements created by MSWDO
-      else if (isMswdo) {
-        const isMswdoCreated = r.Announcement.created_by_user_id && mswdoUserIds.includes(r.Announcement.created_by_user_id);
-        if (!isMswdoCreated) {
-          continue;
-        }
-      }
-      // DSWD Admin & Staff can ONLY see attendance for announcements created by DSWD (NOT MSWDO)
-      else if (req.user.role !== 'beneficiary' && mswdoUserIds.includes(r.Announcement.created_by_user_id)) {
+      // DSWD Staff can ONLY see attendance for announcements created by DSWD (MSWDO Admin & DSWD Admin see all)
+      else if (['staff', 'barangay'].includes(req.user.role) && mswdoUserIds.includes(r.Announcement.created_by_user_id)) {
         continue;
       }
 
@@ -1346,8 +1371,7 @@ router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_
     // Agency-level & Sector scoping:
     // Senior Admin / Staff ONLY accesses distributions created under Senior Admin / Staff
     // PWD Admin / Staff ONLY accesses distributions created under PWD Admin / Staff
-    // MSWDO Admin can access distributions created under MSWDO
-    // DSWD Admin & Staff can access distributions created under DSWD
+    // MSWDO Admin / Staff and DSWD Admin can access distributions for any beneficiary they inspect
     const eventWhere = {};
     if (isSenior) {
       eventWhere.agency = 'MSWDO';
@@ -1355,9 +1379,7 @@ router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_
     } else if (isPwd) {
       eventWhere.agency = 'MSWDO';
       eventWhere.created_by = { [Op.in]: pwdUserIds.length ? pwdUserIds : [-1] };
-    } else if (isMswdo) {
-      eventWhere.agency = 'MSWDO';
-    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
+    } else if (['staff', 'barangay'].includes(req.user.role)) {
       eventWhere.agency = 'DSWD';
     }
 
@@ -1442,7 +1464,7 @@ router.get('/:id/distributions', authorize('admin', 'staff', 'barangay', 'mswdo_
 });
 
 // ── GET /:id/enrollments ── Beneficiary Enrolled Programs & Stats
-router.get('/:id/enrollments', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'beneficiary'), async (req, res, next) => {
+router.get('/:id/enrollments', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff', 'beneficiary'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id, {
       include: [
@@ -1476,11 +1498,11 @@ router.get('/:id/enrollments', authorize('admin', 'staff', 'barangay', 'mswdo_ad
     }
 
     // Agency-level scoping:
-    // MSWDO Admin can ONLY access programs under MSWDO; DSWD Admin sees DSWD; Staff sees both
+    // MSWDO Admin & DSWD Admin see all enrolled programs of the beneficiary
     const programWhere = {};
-    if (isMswdoRole(req.user.role)) {
+    if (isSeniorRole(req.user.role) || isPwdRole(req.user.role)) {
       programWhere.agency = 'MSWDO';
-    } else if (req.user.role === 'admin') {
+    } else if (['staff', 'barangay'].includes(req.user.role)) {
       programWhere.agency = 'DSWD';
     }
 
@@ -1527,7 +1549,7 @@ router.get('/:id/enrollments', authorize('admin', 'staff', 'barangay', 'mswdo_ad
 });
 
 // Update application status to Under Review
-router.put('/applications/:id/review', authorize('admin', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
+router.put('/applications/:id/review', authorize('admin', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
@@ -1535,12 +1557,6 @@ router.put('/applications/:id/review', authorize('admin', 'senior_citizen_admin'
     }
     if (isBarangayRestricted(req.user, beneficiary.barangay_id)) {
       return res.status(403).json({ success: false, message: 'Forbidden: You can only review applications from your assigned barangay.' });
-    }
-    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: 'MSWDO does not review applications. Senior Citizen applications are reviewed by Senior Citizen Admin (OSCA), PWD applications by PWD Admin (PDAO), and 4Ps applications by DSWD Admin.'
-      });
     }
     const cat = String(beneficiary.category || '').toLowerCase();
     const is4Ps = cat.includes('4ps') || cat.includes('pantawid');
@@ -1553,11 +1569,8 @@ router.put('/applications/:id/review', authorize('admin', 'senior_citizen_admin'
     if (['pwd_admin', 'pwd_staff'].includes(req.user.role) && !isPwd) {
       return res.status(403).json({ success: false, message: 'PWD Admin (PDAO) can only review Persons with Disabilities (PWD) applications.' });
     }
-    if (req.user.role === 'admin' && !is4Ps) {
-      return res.status(403).json({
-        success: false,
-        message: 'DSWD Admin can only review 4Ps applications. Senior Citizen applications must be reviewed by Senior Citizen Admin (OSCA), and PWD applications by PWD Admin (PDAO).'
-      });
+    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role) && !isSenior && !isPwd) {
+      return res.status(403).json({ success: false, message: 'MSWDO can only review Senior Citizens and PWD applications.' });
     }
 
     if (beneficiary.status === 'Pending Review') {
@@ -1584,8 +1597,8 @@ router.put('/applications/:id/review', authorize('admin', 'senior_citizen_admin'
   }
 });
 
-// Approve application — DSWD (4Ps), Senior Admin (Senior), PWD Admin (PWD)
-router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
+// Approve application — DSWD Admin (4Ps, Senior, PWD), MSWDO Admin (Senior, PWD), Senior Admin (Senior), PWD Admin (PWD)
+router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
@@ -1593,12 +1606,6 @@ router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay',
     }
     if (isBarangayRestricted(req.user, beneficiary.barangay_id)) {
       return res.status(403).json({ success: false, message: 'Forbidden: You can only approve applications from your assigned barangay.' });
-    }
-    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: 'MSWDO does not approve applications. Senior Citizen applications are approved by Senior Citizen Admin (OSCA), PWD applications by PWD Admin (PDAO), and 4Ps applications by DSWD Admin.'
-      });
     }
 
     const cat = String(beneficiary.category || '').toLowerCase();
@@ -1612,10 +1619,13 @@ router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay',
     if (['pwd_admin', 'pwd_staff'].includes(req.user.role) && !isPwd) {
       return res.status(403).json({ success: false, message: 'PWD (PDAO) staff/admin can only approve Persons with Disabilities (PWD) applications.' });
     }
-    if (['admin', 'staff', 'barangay'].includes(req.user.role) && !is4Ps) {
+    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role) && !isSenior && !isPwd) {
+      return res.status(403).json({ success: false, message: 'MSWDO can only approve Senior Citizens and PWD applications.' });
+    }
+    if (['staff', 'barangay'].includes(req.user.role) && !is4Ps) {
       return res.status(403).json({
         success: false,
-        message: 'DSWD Admin can only approve 4Ps applications. Senior Citizen applications must be approved by Senior Citizen Admin (OSCA), and PWD applications must be approved by PWD Admin (PDAO).'
+        message: 'DSWD Barangay Staff can only approve 4Ps applications.'
       });
     }
 
@@ -1686,8 +1696,8 @@ router.post('/applications/:id/approve', authorize('admin', 'staff', 'barangay',
   }
 });
 
-// Reject application — DSWD (4Ps), Senior Admin (Senior), PWD Admin (PWD)
-router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
+// Reject application — DSWD Admin (4Ps, Senior, PWD), MSWDO Admin (Senior, PWD), Senior Admin (Senior), PWD Admin (PWD)
+router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const beneficiary = await Beneficiary.findByPk(req.params.id);
     if (!beneficiary) {
@@ -1695,12 +1705,6 @@ router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay', 
     }
     if (isBarangayRestricted(req.user, beneficiary.barangay_id)) {
       return res.status(403).json({ success: false, message: 'Forbidden: You can only reject applications from your assigned barangay.' });
-    }
-    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: 'MSWDO does not reject applications. Senior Citizen applications are handled by Senior Citizen Admin (OSCA), PWD applications by PWD Admin (PDAO), and 4Ps by DSWD Admin.'
-      });
     }
 
     const cat = String(beneficiary.category || '').toLowerCase();
@@ -1714,10 +1718,13 @@ router.post('/applications/:id/reject', authorize('admin', 'staff', 'barangay', 
     if (['pwd_admin', 'pwd_staff'].includes(req.user.role) && !isPwd) {
       return res.status(403).json({ success: false, message: 'PWD (PDAO) staff/admin can only reject Persons with Disabilities (PWD) applications.' });
     }
-    if (['admin', 'staff', 'barangay'].includes(req.user.role) && !is4Ps) {
+    if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role) && !isSenior && !isPwd) {
+      return res.status(403).json({ success: false, message: 'MSWDO can only reject Senior Citizens and PWD applications.' });
+    }
+    if (['staff', 'barangay'].includes(req.user.role) && !is4Ps) {
       return res.status(403).json({
         success: false,
-        message: 'DSWD Admin can only reject 4Ps applications. Senior Citizen applications must be handled by Senior Citizen Admin (OSCA), and PWD applications by PWD Admin (PDAO).'
+        message: 'DSWD Barangay Staff can only reject 4Ps applications.'
       });
     }
 
@@ -1953,21 +1960,23 @@ router.put('/:id', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo
           });
         }
       }
-      // 2. Senior Citizen beneficiaries: Only Senior Citizen Admin / Staff can register RFID
+      // 2. Senior Citizen beneficiaries: Senior Citizen Admin / Staff, MSWDO Admin / Staff, and DSWD Admin can register RFID
       else if (isBenSenior) {
-        if (!isSeniorRole(req.user.role)) {
+        const canRegisterSenior = isSeniorRole(req.user.role) || ['mswdo_admin', 'mswdo_staff', 'admin'].includes(req.user.role);
+        if (!canRegisterSenior) {
           return res.status(403).json({
             success: false,
-            message: 'Access Denied: Tanging Senior Citizen Admin (OSCA) at Senior Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa Senior Citizen beneficiaries. Bawal mag-rehistro ang 4Ps/DSWD at PWD Admin.'
+            message: 'Access Denied: Tanging Senior Citizen Admin (OSCA), MSWDO Admin, at DSWD Admin lamang ang may pahintulot na mag-rehistro ng RFID card para sa Senior Citizen beneficiaries.'
           });
         }
       }
-      // 3. PWD beneficiaries: Only PWD Admin / Staff can register RFID
+      // 3. PWD beneficiaries: PWD Admin / Staff, MSWDO Admin / Staff, and DSWD Admin can register RFID
       else if (isBenPwd) {
-        if (!isPwdRole(req.user.role)) {
+        const canRegisterPwd = isPwdRole(req.user.role) || ['mswdo_admin', 'mswdo_staff', 'admin'].includes(req.user.role);
+        if (!canRegisterPwd) {
           return res.status(403).json({
             success: false,
-            message: 'Access Denied: Tanging PWD Admin (PDAO) at PWD Staff lamang ang may pahintulot na mag-rehistro ng RFID card para sa PWD beneficiaries. Bawal mag-rehistro ang 4Ps/DSWD at Senior Admin.'
+            message: 'Access Denied: Tanging PWD Admin (PDAO), MSWDO Admin, at DSWD Admin lamang ang may pahintulot na mag-rehistro ng RFID card para sa PWD beneficiaries.'
           });
         }
       }

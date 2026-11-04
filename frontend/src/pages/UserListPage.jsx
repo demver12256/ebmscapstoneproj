@@ -263,6 +263,12 @@ export default function UserListPage() {
     ? [{ value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' }]
     : isPwdRole
     ? [{ value: 'Persons with Disabilities (PWD)', label: 'Persons with Disabilities (PWD)' }]
+    : currentUser?.role === 'admin'
+    ? [
+        { value: '4Ps Household Beneficiaries', label: '4Ps Household Beneficiaries' },
+        { value: 'Senior Citizens (Social Pension)', label: 'Senior Citizens (Social Pension)' },
+        { value: 'Persons with Disabilities (PWD)', label: 'Persons with Disabilities (PWD)' },
+      ]
     : isDswdRole
     ? [{ value: '4Ps Household Beneficiaries', label: '4Ps Household Beneficiaries' }]
     : [
@@ -272,20 +278,33 @@ export default function UserListPage() {
 
   // Tab State: 'beneficiaries' | 'staff'
   const [activeTab, setActiveTab] = useState('beneficiaries');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+
+  const matchesCategoryFilter = (userRow, filterVal) => {
+    if (!filterVal || filterVal === 'all') return true;
+    const cat = String(userRow.Beneficiaries?.[0]?.category || '').toLowerCase();
+    if (filterVal === 'senior') return cat.includes('senior');
+    if (filterVal === 'pwd') return cat.includes('pwd') || cat.includes('disabilit');
+    if (filterVal === '4ps') return cat.includes('4ps') || cat.includes('pantawid');
+    return true;
+  };
 
   // Filter users by tab
   const beneficiaryUsers = users.filter((u) => u.role === 'beneficiary');
+  const filteredBeneficiaryUsers = beneficiaryUsers.filter((u) => matchesCategoryFilter(u, selectedCategoryFilter));
   const staffUsers = users.filter((u) => u.role !== 'beneficiary');
-  const displayUsers = activeTab === 'beneficiaries' ? beneficiaryUsers : staffUsers;
+  const displayUsers = activeTab === 'beneficiaries' ? filteredBeneficiaryUsers : staffUsers;
 
   const pageTitle = activeTab === 'beneficiaries'
     ? isSeniorRole
       ? 'Senior Citizen Beneficiary Accounts'
       : isPwdRole
       ? 'PWD Beneficiary Accounts'
+      : currentUser?.role === 'admin'
+      ? 'Beneficiary Accounts (4Ps, Senior Citizens & PWD)'
       : isDswdRole
       ? '4Ps Household Beneficiary Accounts'
-      : 'Municipal Beneficiary Accounts'
+      : 'Municipal Beneficiary Accounts (Senior Citizens & PWD)'
     : isSeniorRole
       ? 'Senior Citizen (OSCA) Staff Accounts'
       : isPwdRole
@@ -299,6 +318,8 @@ export default function UserListPage() {
       ? 'Manage official Senior Citizens (Social Pension) beneficiary user accounts.'
       : isPwdRole
       ? 'Manage official Persons with Disabilities (PWD) beneficiary user accounts.'
+      : currentUser?.role === 'admin'
+      ? 'Manage official 4Ps, Senior Citizens, and PWD beneficiary user accounts.'
       : isDswdRole
       ? 'Manage official 4Ps Household beneficiary user accounts.'
       : 'Manage official municipal beneficiary user accounts (Senior Citizens & PWD).'
@@ -428,8 +449,9 @@ export default function UserListPage() {
             <span>
               {isSeniorRole ? 'Senior Citizen Beneficiaries' :
                isPwdRole ? 'PWD Beneficiaries' :
+               currentUser?.role === 'admin' ? 'All Beneficiaries (4Ps, Senior & PWD)' :
                isDswdRole ? '4Ps Household Beneficiaries' :
-               'Municipal Beneficiaries'}
+               'Senior Citizen & PWD Beneficiaries'}
             </span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
               activeTab === 'beneficiaries' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
@@ -460,6 +482,42 @@ export default function UserListPage() {
               {staffUsers.length}
             </span>
           </button>
+        </div>
+      )}
+
+      {/* Sector Filter Pills for MSWDO Admin & DSWD Admin on Beneficiaries Tab */}
+      {activeTab === 'beneficiaries' && (currentUser?.role === 'admin' || isMswdoRole) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { label: 'All Beneficiaries', value: 'all', icon: '📋', count: beneficiaryUsers.length },
+            { label: 'Senior Citizens (OSCA)', value: 'senior', icon: '👴', count: beneficiaryUsers.filter(u => matchesCategoryFilter(u, 'senior')).length },
+            { label: 'Persons with Disabilities (PWD)', value: 'pwd', icon: '♿', count: beneficiaryUsers.filter(u => matchesCategoryFilter(u, 'pwd')).length },
+            ...(currentUser?.role === 'admin' ? [
+              { label: '4Ps Households (DSWD)', value: '4ps', icon: '👨‍👩‍👧', count: beneficiaryUsers.filter(u => matchesCategoryFilter(u, '4ps')).length }
+            ] : []),
+          ].map((pill) => {
+            const isActive = selectedCategoryFilter === pill.value;
+            return (
+              <button
+                key={pill.value}
+                type="button"
+                onClick={() => setSelectedCategoryFilter(pill.value)}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs ${
+                  isActive
+                    ? 'bg-indigo-600 text-white border border-indigo-600'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span>{pill.icon}</span>
+                <span>{pill.label}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  isActive ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {pill.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 

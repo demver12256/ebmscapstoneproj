@@ -186,17 +186,15 @@ router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res,
 
     // ── Application counts ──
     let pendingAppWhere = { ...beneficiaryWhere };
-    if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
-      // DSWD Admin and Staff manage 4Ps applications
+    if (['staff', 'barangay'].includes(req.user.role)) {
+      // DSWD Staff manage 4Ps applications
       pendingAppWhere = {
+        ...(isBarangayScoped && barangayId ? { barangay_id: barangayId } : {}),
         [Op.or]: [
           { category: { [Op.like]: '%4Ps%' } },
           { category: { [Op.like]: '%Pantawid%' } }
         ]
       };
-    } else if (req.user.role === 'mswdo_admin' || req.user.role === 'mswdo_staff') {
-      // MSWDO does not manage applications
-      pendingAppWhere = { id: -1 };
     }
 
     const pendingApplications = await Beneficiary.count({

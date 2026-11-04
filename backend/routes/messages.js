@@ -85,13 +85,16 @@ router.get('/contacts', async (req, res, next) => {
       // DSWD Admin:
       // 1. Inter-office Admins (MSWDO Admin, Senior Admin, PWD Admin)
       // 2. DSWD Staff & Barangay Staff
-      // 3. ONLY APPROVED 4Ps Beneficiaries
+      // 3. Approved 4Ps, Senior Citizen, and PWD Beneficiaries
       const dswdApprovedBenUserIds = (await Beneficiary.findAll({
         where: {
           status: 'Approved',
           [Op.or]: [
             { category: { [Op.like]: '%4Ps%' } },
             { category: { [Op.like]: '%Pantawid%' } },
+            { category: { [Op.like]: '%Senior%' } },
+            { category: { [Op.like]: '%PWD%' } },
+            { category: { [Op.like]: '%Disabilit%' } },
           ],
         },
         attributes: ['user_id'],
