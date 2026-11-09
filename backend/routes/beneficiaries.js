@@ -120,6 +120,7 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
       category,
       contact_number,
       address,
+      sitio,
       household_id_number,
       user_id,
       ip_classification
@@ -180,6 +181,8 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
     const qrToken = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
     const resolvedIpClassification = String(ip_classification || '').trim().toUpperCase() === 'IP' ? 'IP' : 'Non-IP';
     const trimmedContact = contact_number && String(contact_number).trim() !== '' ? String(contact_number).trim() : null;
+    const trimmedSitio = sitio && String(sitio).trim() !== '' ? String(sitio).trim() : null;
+    const resolvedAddress = address || trimmedSitio || null;
 
     const beneficiary = await Beneficiary.create({
       user_id: user_id || null,
@@ -192,7 +195,8 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
       category: normalizedCategory,
       ip_classification: resolvedIpClassification,
       contact_number: trimmedContact,
-      address,
+      sitio: trimmedSitio,
+      address: resolvedAddress,
       status: 'Approved',
       household_id_number: is4Ps ? customId : null,
       beneficiary_id_code: customId,

@@ -53,6 +53,7 @@ export default function UserListPage() {
     contact_number: '',
     role: 'staff',
     barangay_id: '',
+    sitio: '',
     category: '',
     household_id_number: '',
     ip_classification: 'Non-IP',
@@ -140,6 +141,7 @@ export default function UserListPage() {
 
       await userApi.create({
         ...form,
+        sitio: form.sitio && form.sitio.trim() !== '' ? form.sitio.trim() : null,
         contact_number: form.contact_number && form.contact_number.trim() !== '' ? form.contact_number.trim() : null,
         barangay_id: form.barangay_id ? Number(form.barangay_id) : null,
         category: form.role === 'beneficiary' ? form.category : undefined,
@@ -156,6 +158,7 @@ export default function UserListPage() {
         contact_number: '',
         role: currentUser?.role === 'staff' ? 'beneficiary' : 'staff',
         barangay_id: currentUser?.role === 'staff' ? currentUser.barangay_id || '' : '',
+        sitio: '',
         category: '',
         household_id_number: '',
         ip_classification: 'Non-IP',
@@ -241,12 +244,20 @@ export default function UserListPage() {
         </span>
       );
     }},
-    { header: 'Barangay', accessor: 'barangay_id', cell: (row) => {
-      const brgyId = row.barangay_id || row.Beneficiaries?.[0]?.barangay_id;
+    { header: 'Barangay & Sitio', accessor: 'barangay_id', cell: (row) => {
+      const ben = row.Beneficiaries?.[0];
+      const brgyId = row.barangay_id || ben?.barangay_id;
       const brgy = barangays.find((b) => b.id === brgyId);
-      if (brgy) return brgy.barangay_name;
-      if (['admin', 'mswdo_admin'].includes(row.role)) return 'All (Municipal)';
-      return '—';
+      const brgyName = brgy ? brgy.barangay_name : (['admin', 'mswdo_admin'].includes(row.role) ? 'All (Municipal)' : '—');
+      const sitioName = ben?.sitio || row.sitio;
+      return (
+        <div>
+          <span className="font-medium text-slate-800">{brgyName}</span>
+          {sitioName && (
+            <span className="block text-[11px] text-slate-500 font-normal">📍 {sitioName}</span>
+          )}
+        </div>
+      );
     }},
     { header: 'Contact', accessor: 'contact_number', cell: (row) => row.contact_number || <span className="text-slate-400 italic text-xs">Walang mobile</span> },
     { header: 'Status', accessor: 'status', cell: (row) => (
@@ -364,6 +375,7 @@ export default function UserListPage() {
         contact_number: '',
         role: 'beneficiary',
         barangay_id: currentUser?.barangay_id || '',
+        sitio: '',
         category: sectorCategoryOptions[0]?.value || '',
         household_id_number: '',
         ip_classification: 'Non-IP',
@@ -378,6 +390,7 @@ export default function UserListPage() {
         contact_number: '',
         role: availableRoles[0]?.value || 'staff',
         barangay_id: '',
+        sitio: '',
         category: '',
         household_id_number: '',
         ip_classification: 'Non-IP',
@@ -659,21 +672,32 @@ export default function UserListPage() {
                     </div>
                   )}
 
-                  <label className="block text-sm font-semibold text-slate-700">
-                    Barangay
-                    <select
-                      name="barangay_id"
-                      value={form.barangay_id}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Barangay <span className="text-red-500">*</span>
+                      <select
+                        name="barangay_id"
+                        value={form.barangay_id}
+                        onChange={handleChange}
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        required
+                      >
+                        <option value="">Select Barangay</option>
+                        {barangays.map((b) => (
+                          <option key={b.id} value={b.id}>{b.barangay_name}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <Input
+                      label="Sitio / Purok (Opsyonal)"
+                      name="sitio"
+                      value={form.sitio}
                       onChange={handleChange}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                      required
-                    >
-                      <option value="">Select Barangay</option>
-                      {barangays.map((b) => (
-                        <option key={b.id} value={b.id}>{b.barangay_name}</option>
-                      ))}
-                    </select>
-                  </label>
+                      placeholder="e.g. Sitio Ilaya, Purok 3"
+                      autoComplete="off"
+                    />
+                  </div>
                 </>
               )}
               

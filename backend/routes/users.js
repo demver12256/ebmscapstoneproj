@@ -103,7 +103,7 @@ router.get('/', async (req, res, next) => {
       include: [
         {
           model: Beneficiary,
-          attributes: ['id', 'category', 'status', 'household_id_number', 'beneficiary_id_code', 'RFID_number', 'barangay_id', 'qr_token', 'approval_date', 'approved_at', 'ip_classification'],
+          attributes: ['id', 'category', 'status', 'household_id_number', 'beneficiary_id_code', 'RFID_number', 'barangay_id', 'qr_token', 'approval_date', 'approved_at', 'ip_classification', 'sitio'],
           required: false,
         },
       ],
@@ -117,7 +117,7 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    let { first_name, last_name, username, email, password, contact_number, address, barangay_id, role, category, household_id_number, ip_classification } = req.body;
+    let { first_name, last_name, username, email, password, contact_number, address, sitio, barangay_id, role, category, household_id_number, ip_classification } = req.body;
 
     if (req.user.role === 'senior_citizen_admin') {
       if (role === 'beneficiary') {
@@ -136,9 +136,9 @@ router.post('/', async (req, res, next) => {
     } else if (req.user.role === 'admin') {
       if (role === 'beneficiary') {
         role = 'beneficiary';
-        category = '4Ps Household Beneficiaries';
+        category = category || '4Ps Household Beneficiaries';
       } else {
-        role = 'staff';
+        role = role || 'staff';
       }
     } else if (req.user.role === 'mswdo_admin') {
       if (role === 'beneficiary') {
@@ -168,6 +168,8 @@ router.post('/', async (req, res, next) => {
     const normalizedCategory = normalizeBeneficiaryCategory(category);
     const trimmedHouseholdId = household_id_number ? String(household_id_number).trim() : null;
     const trimmedContact = contact_number && String(contact_number).trim() !== '' ? String(contact_number).trim() : null;
+    const trimmedSitio = sitio && String(sitio).trim() !== '' ? String(sitio).trim() : null;
+    const resolvedAddress = address || trimmedSitio || null;
 
     if (!first_name || !last_name || (!trimmedUsername && !trimmedEmail) || !password || !role) {
       return res.status(400).json({ success: false, message: 'First name, last name, username or email, password, and role are required' });
@@ -212,7 +214,7 @@ router.post('/', async (req, res, next) => {
       email: trimmedEmail,
       password,
       contact_number: trimmedContact,
-      address,
+      address: resolvedAddress,
       barangay_id: ['mswdo_staff'].includes(role) ? null : (barangay_id ? Number(barangay_id) : null),
       role
     });
@@ -278,7 +280,8 @@ router.post('/', async (req, res, next) => {
         category: normalizedCategory,
         ip_classification: resolvedIpClassification,
         contact_number: trimmedContact,
-        address,
+        sitio: trimmedSitio,
+        address: resolvedAddress,
         status: 'Approved',
         household_id_number: is4Ps ? customId : null,
         beneficiary_id_code: customId,

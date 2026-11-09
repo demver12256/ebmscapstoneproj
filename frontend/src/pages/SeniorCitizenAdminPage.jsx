@@ -5,7 +5,7 @@ import {
   XCircle, Clock, Search, Filter, Download, Printer, QrCode, FileText, 
   ExternalLink, RefreshCw, AlertTriangle, Eye, ChevronRight, Sparkles, 
   Building2, Wallet, Megaphone, Smartphone, HeartHandshake, Package, 
-  Check, X, FileCheck, Layers, Info
+  Check, X, FileCheck, Layers, Info, UserPlus
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import * as XLSX from 'xlsx';
@@ -522,6 +522,14 @@ export default function SeniorCitizenAdminPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap shrink-0">
+          <Link
+            to="/dashboard/users"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs active:scale-95"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Create Senior Account</span>
+          </Link>
+
           <button
             type="button"
             onClick={() => loadSectorData(true)}
