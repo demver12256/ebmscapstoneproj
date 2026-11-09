@@ -1211,12 +1211,10 @@ export default function PwdAdminPage() {
                   </div>
 
                   <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Disbursement & Payout Account</span>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>Method: <strong>{viewingBeneficiary.payout_preference === 'digital' ? 'E-Wallet / Bank' : 'Cash OTC / RFID'}</strong></div>
-                      <div>Provider: <strong>{viewingBeneficiary.payout_provider || '—'}</strong></div>
-                      <div>Account No: <strong>{viewingBeneficiary.payout_account_number || '—'}</strong></div>
-                      <div>Account Holder: <strong>{viewingBeneficiary.payout_account_name || '—'}</strong></div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Disbursement & Payout</span>
+                    <div className="rounded-lg bg-blue-50 border border-blue-200 p-2.5 text-xs text-blue-900 space-y-0.5">
+                      <p className="font-bold">🏢 Cash Over-the-Counter / RFID</p>
+                      <p className="text-[11px] text-blue-700">Ang tulong para sa PWD ay ibinibigay nang personal via Cash OTC gamit ang RFID Card o QR Pass. Walang digital payout para sa PWD.</p>
                     </div>
                   </div>
                 </div>

@@ -846,8 +846,17 @@ export default function BeneficiaryListPage() {
     ...(!isSectorAdmin ? [{
       header: 'Payout / Ayuda Channel',
       accessor: 'payout_preference',
-      cell: (row) => (
-        row.payout_preference === 'digital' ? (
+      cell: (row) => {
+        // Digital payout is strictly for 4Ps only; Senior/PWD always show Cash OTC/RFID
+        const rowIs4Ps = is4PsCategory(row.category);
+        if (!rowIs4Ps) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200">
+              🏢 Cash OTC / RFID
+            </span>
+          );
+        }
+        return row.payout_preference === 'digital' ? (
           row.account_verification_status === 'verified' ? (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-green-50 text-green-700 border border-green-200">
               ⚡ {row.payout_provider || 'GCash'} (Verified)
@@ -865,8 +874,8 @@ export default function BeneficiaryListPage() {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200">
             🏢 Cash OTC / RFID
           </span>
-        )
-      )
+        );
+      }
     }] : []),
     { header: 'Date Approved', accessor: 'approval_date', cell: (row) => row.approval_date || '—' },
     { header: 'Status', accessor: 'status', cell: (row) => (
@@ -1669,6 +1678,14 @@ export default function BeneficiaryListPage() {
                     <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                       <CreditCard className="w-3.5 h-3.5 text-purple-600" /> Payout & Disbursement Details
                     </h4>
+                    {!is4PsCategory(viewingBeneficiary.category) ? (
+                      <div className="rounded-xl bg-blue-50 border border-blue-200 p-3.5 text-xs text-blue-900 space-y-1">
+                        <p className="font-bold">🏢 Cash Over-the-Counter (Physical) / RFID</p>
+                        <p className="text-[11px] text-blue-700 leading-relaxed">
+                          Ang {viewingBeneficiary.category?.toLowerCase().includes('senior') ? 'Social Pension para sa Senior Citizen' : 'tulong para sa PWD'} ay ibinibigay nang personal via Cash OTC gamit ang RFID Card o QR Pass. Walang digital payout (GCash/Maya/Bank) para sa kategoryang ito.
+                        </p>
+                      </div>
+                    ) : (
                     <div className="space-y-2 text-xs">
                       <div className="flex justify-between py-1 border-b border-slate-100">
                         <span className="text-slate-500">Payout Method:</span>
@@ -1843,8 +1860,8 @@ export default function BeneficiaryListPage() {
                         </>
                       )}
 
-                      {/* Secondary / Extra Payout Accounts Display in Admin Modal */}
-                      {Array.isArray(viewingBeneficiary.extra_payout_accounts) && viewingBeneficiary.extra_payout_accounts.length > 0 && (
+                      {/* Secondary / Extra Payout Accounts Display in Admin Modal (4Ps Only) */}
+                      {is4PsCategory(viewingBeneficiary.category) && Array.isArray(viewingBeneficiary.extra_payout_accounts) && viewingBeneficiary.extra_payout_accounts.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-purple-200">
                           <p className="text-xs font-bold text-slate-700 uppercase mb-2 flex items-center gap-1.5">
                             <span>Secondary / Extra Payout Accounts ({viewingBeneficiary.extra_payout_accounts.length})</span>
@@ -1874,6 +1891,7 @@ export default function BeneficiaryListPage() {
                         </div>
                       )}
                     </div>
+                    )}
                   </div>
                   )}
                 </>
@@ -2665,6 +2683,15 @@ export default function BeneficiaryListPage() {
                     <CreditCard className="w-4 h-4" /> Payout & Disbursement
                   </h4>
                   <div className="space-y-3">
+                    {!is4PsCategory(editingBeneficiary?.category) ? (
+                      <div className="rounded-xl bg-blue-50 border border-blue-200 p-3.5 text-xs text-blue-900 space-y-1">
+                        <p className="font-bold">🏢 Cash Over-the-Counter (Physical) / RFID</p>
+                        <p className="text-[11px] text-blue-700 leading-relaxed">
+                          Ang {editingBeneficiary?.category?.toLowerCase().includes('senior') ? 'Social Pension para sa Senior Citizen' : 'tulong para sa PWD'} ay ibinibigay nang personal via Cash OTC gamit ang RFID Card o QR Pass. Hindi pinapayagan ang digital payout (GCash/Maya/Bank) para sa kategoryang ito.
+                        </p>
+                      </div>
+                    ) : (
+                    <>
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-1">Payout Method</label>
                       <select
@@ -2726,6 +2753,8 @@ export default function BeneficiaryListPage() {
                           <p className="text-xs text-slate-400 mt-1">Dapat tugma sa pangalan ng benepisyaryo para sa verification.</p>
                         </div>
                       </>
+                    )}
+                    </>
                     )}
                   </div>
                 </div>

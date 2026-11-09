@@ -48,16 +48,30 @@ const isAnnouncementUpcoming = (ann) => {
 export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const [copied, setCopied] = useState(false);
   const { user } = useAuth();
+  const [currentBeneficiary, setCurrentBeneficiary] = useState(beneficiary);
+
+  // Category determination: Digital Payout is strictly for 4Ps members only.
+  // Senior Citizens and PWD are exclusively Cash OTC / RFID payout.
+  const categoryRaw = String(
+    currentBeneficiary?.category || 
+    beneficiary?.category || 
+    user?.category || 
+    user?.Beneficiary?.category || 
+    ''
+  ).toLowerCase();
+  const is4Ps = categoryRaw.includes('4ps') || categoryRaw.includes('pantawid');
+  const isSenior = categoryRaw.includes('senior');
+  const isPwd = ['pwd', 'disabilit'].some(k => categoryRaw.includes(k));
+
   const [announcements, setAnnouncements] = useState([]);
   const [modalItems, setModalItems] = useState([]);
   const [showPopupModal, setShowPopupModal] = useState(false);
   const [currentPopupIndex, setCurrentPopupIndex] = useState(0);
 
-  // Digital payout account registration/update state
-  const [currentBeneficiary, setCurrentBeneficiary] = useState(beneficiary);
+  // Digital payout account registration/update state (4Ps only)
   const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [payoutForm, setPayoutForm] = useState({
-    payout_preference: beneficiary?.payout_preference || 'digital',
+    payout_preference: (is4Ps ? (beneficiary?.payout_preference || 'digital') : 'cash_otc'),
     payout_provider: beneficiary?.payout_provider || 'GCash',
     payout_account_number: beneficiary?.payout_account_number || '',
     payout_account_name: beneficiary?.payout_account_name || `${beneficiary?.first_name || ''} ${beneficiary?.last_name || ''}`.trim(),
@@ -69,8 +83,10 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   useEffect(() => {
     if (beneficiary) {
       setCurrentBeneficiary(beneficiary);
+      const bCat = String(beneficiary.category || '').toLowerCase();
+      const bIs4Ps = bCat.includes('4ps') || bCat.includes('pantawid');
       setPayoutForm({
-        payout_preference: beneficiary.payout_preference || 'digital',
+        payout_preference: (bIs4Ps ? (beneficiary.payout_preference || 'digital') : 'cash_otc'),
         payout_provider: beneficiary.payout_provider || 'GCash',
         payout_account_number: beneficiary.payout_account_number || '',
         payout_account_name: beneficiary.payout_account_name || `${beneficiary.first_name || ''} ${beneficiary.last_name || ''}`.trim(),
@@ -80,6 +96,10 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
 
   const handleSavePayoutAccount = async (e) => {
     e.preventDefault();
+    if (!is4Ps && payoutForm.payout_preference === 'digital') {
+      setPayoutError('Ang digital payout (E-Wallet / Bank) ay para lamang sa mga miyembro ng 4Ps. Ang mga Senior Citizen at PWD ay Cash OTC / RFID payout lamang.');
+      return;
+    }
     setPayoutSaving(true);
     setPayoutError(null);
     try {
@@ -405,8 +425,8 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
         </div>
       )}
 
-      {/* ── Digital Ayuda Payout Alert Banner ── */}
-      {unacknowledgedDigitalPayouts.length > 0 && (
+      {/* ── Digital Ayuda Payout Alert Banner (4Ps Only) ── */}
+      {is4Ps && unacknowledgedDigitalPayouts.length > 0 && (
         <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 text-white rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-yellow-300 shadow-inner">
@@ -666,208 +686,274 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - 2/3 width */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Digital Payout Account Settings Card */}
-          <div className="bg-gradient-to-br from-purple-50 via-white to-indigo-50/40 rounded-2xl border border-purple-200 p-6 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-md shadow-purple-200 shrink-0">
-                  <CreditCard className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-lg font-bold text-slate-900">Digital Ayuda Account</h3>
-                    {currentBeneficiary?.payout_preference === 'digital' ? (
-                      currentBeneficiary?.account_verification_status === 'verified' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Verified
-                        </span>
-                      ) : currentBeneficiary?.account_verification_status === 'rejected' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
-                          <X className="w-3.5 h-3.5" /> Rejected
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 animate-pulse">
-                          <Clock className="w-3.5 h-3.5" /> For Verification
-                        </span>
-                      )
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                        🏢 Cash OTC / RFID
-                      </span>
-                    )}
+          {/* Digital Payout Account Settings Card (Strictly 4Ps) OR Cash OTC / RFID Card (Senior / PWD) */}
+          {is4Ps ? (
+            <div className="bg-gradient-to-br from-purple-50 via-white to-indigo-50/40 rounded-2xl border border-purple-200 p-6 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-md shadow-purple-200 shrink-0">
+                    <CreditCard className="w-6 h-6" />
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Tumatanggap ng ayuda sa pamamagitan ng GCash, Maya, o Bank Account nang walang pila.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => {
-                  setPayoutError(null);
-                  setShowPayoutModal(true);
-                }}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-sm transition hover:shadow-md cursor-pointer shrink-0"
-              >
-                <Edit3 className="w-4 h-4" />
-                {currentBeneficiary?.payout_preference === 'digital' && currentBeneficiary?.payout_account_number
-                  ? 'I-update ang Account'
-                  : 'I-setup ang E-Wallet / Bank'}
-              </button>
-            </div>
-
-            {/* Account Details Box */}
-            {currentBeneficiary?.payout_preference === 'digital' && currentBeneficiary?.payout_account_number ? (
-              <div className="bg-white rounded-xl border border-purple-100 p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                <div>
-                  <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Provider</span>
-                  <span className="font-bold text-purple-900 text-sm flex items-center gap-1.5 mt-0.5">
-                    {['Landbank', 'Other'].includes(currentBeneficiary.payout_provider)
-                      ? <span className="text-base">🏦</span>
-                      : <Zap className="w-3.5 h-3.5 text-purple-600 fill-current" />}
-                    {currentBeneficiary.payout_provider || 'GCash'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Account Number</span>
-                  <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
-                    {currentBeneficiary.payout_account_number}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Account Name</span>
-                  <span className="font-bold text-slate-800 text-sm mt-0.5 block truncate">
-                    {currentBeneficiary.payout_account_name || '—'}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white/80 rounded-xl border border-dashed border-purple-200 p-4 text-center text-xs text-slate-600">
-                <p className="font-semibold text-slate-700">Wala ka pang naka-link na digital account.</p>
-                <p className="text-slate-500 mt-0.5">
-                  Maaari mong ilagay ang iyong GCash, Maya, o Landbank account number upang maging kwalipikado sa mabilisang digital disbursement.
-                </p>
-              </div>
-            )}
-
-            {/* Verification Status Notice Alert */}
-            {currentBeneficiary?.payout_preference === 'digital' && (
-              currentBeneficiary?.account_verification_status === 'verified' ? (
-                <div className="rounded-xl bg-green-50 border border-green-200 p-3 flex items-center gap-2.5 text-xs text-green-800">
-                  <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                  <span>
-                    <strong>Beripikado na ang iyong primary account!</strong> Handa ka nang makatanggap ng digital grants at ayuda direkta sa iyong account.
-                  </span>
-                </div>
-              ) : currentBeneficiary?.account_verification_status === 'rejected' ? (
-                <div className="rounded-xl bg-red-50 border border-red-200 p-3 flex items-center gap-2.5 text-xs text-red-800">
-                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                  <span>
-                    <strong>Hindi na-verify ang iyong account.</strong> Posibleng hindi nagtutugma ang pangalan sa iyong account laban sa iyong DSWD record. Pindutin ang "I-update ang Account" upang itama.
-                  </span>
-                </div>
-              ) : (
-                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 flex items-center gap-2.5 text-xs text-amber-800">
-                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>
-                    <strong>Nakahain para sa Beripikasyon ng Admin.</strong> Tinitingnan ng DSWD/MSWDO admin ang iyong impormasyon para sa beripikasyon bago magpadala ng pondo.
-                  </span>
-                </div>
-              )
-            )}
-
-            {/* Secondary / Extra Payout Accounts Section */}
-            <div className="pt-3 border-t border-purple-100">
-              <div className="flex items-center justify-between mb-2.5">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <span>Secondary Payout Accounts (Landbank / Karagdagang E-Wallet)</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-500">
-                    Maaari kang mag-rehistro ng iba pang account o Landbank ATM/Account bilang alternatibo kapag may problema sa primary wallet.
-                  </p>
-                </div>
-                {(!currentBeneficiary?.extra_payout_accounts || currentBeneficiary?.extra_payout_accounts?.length < 3) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setExtraError(null);
-                      setExtraPayoutForm({
-                        provider: 'Landbank',
-                        account_number: '',
-                        account_name: `${currentBeneficiary?.first_name || ''} ${currentBeneficiary?.last_name || ''}`.trim(),
-                      });
-                      setShowAddExtraModal(true);
-                    }}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-bold rounded-lg transition shrink-0 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Mag-add ng Account
-                  </button>
-                )}
-              </div>
-
-              {Array.isArray(currentBeneficiary?.extra_payout_accounts) && currentBeneficiary.extra_payout_accounts.length > 0 ? (
-                <div className="space-y-2 mt-2">
-                  {currentBeneficiary.extra_payout_accounts.map((extra, idx) => (
-                    <div
-                      key={idx}
-                      className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between gap-3 text-xs shadow-xs"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
-                          {extra.provider === 'Landbank' ? '🏦' : '⚡'}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-900">{extra.provider}</span>
-                            <span className="font-mono text-slate-700 font-semibold">{extra.account_number}</span>
-                            {extra.verification_status === 'verified' ? (
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
-                                <CheckCircle2 className="w-3 h-3" /> Verified
-                              </span>
-                            ) : extra.verification_status === 'rejected' ? (
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
-                                <X className="w-3 h-3" /> Rejected
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
-                                <Clock className="w-3 h-3" /> For Verification
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                            Pangalan: <span className="font-medium text-slate-700">{extra.account_name}</span>
-                          </p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveExtraPayoutAccount(idx)}
-                        disabled={deletingExtraIdx === idx}
-                        title="Tanggalin ang account na ito"
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition disabled:opacity-50 cursor-pointer shrink-0"
-                      >
-                        {deletingExtraIdx === idx ? (
-                          <RefreshCw className="w-4 h-4 animate-spin text-red-500" />
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-lg font-bold text-slate-900">Digital Ayuda Account</h3>
+                      {currentBeneficiary?.payout_preference === 'digital' ? (
+                        currentBeneficiary?.account_verification_status === 'verified' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Verified
+                          </span>
+                        ) : currentBeneficiary?.account_verification_status === 'rejected' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+                            <X className="w-3.5 h-3.5" /> Rejected
+                          </span>
                         ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </button>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 animate-pulse">
+                            <Clock className="w-3.5 h-3.5" /> For Verification
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          🏢 Cash OTC / RFID
+                        </span>
+                      )}
                     </div>
-                  ))}
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Tumatanggap ng ayuda sa pamamagitan ng GCash, Maya, o Bank Account nang walang pila.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setPayoutError(null);
+                    setShowPayoutModal(true);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-sm transition hover:shadow-md cursor-pointer shrink-0"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  {currentBeneficiary?.payout_preference === 'digital' && currentBeneficiary?.payout_account_number
+                    ? 'I-update ang Account'
+                    : 'I-setup ang E-Wallet / Bank'}
+                </button>
+              </div>
+
+              {/* Account Details Box */}
+              {currentBeneficiary?.payout_preference === 'digital' && currentBeneficiary?.payout_account_number ? (
+                <div className="bg-white rounded-xl border border-purple-100 p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Provider</span>
+                    <span className="font-bold text-purple-900 text-sm flex items-center gap-1.5 mt-0.5">
+                      {['Landbank', 'Other'].includes(currentBeneficiary.payout_provider)
+                        ? <span className="text-base">🏦</span>
+                        : <Zap className="w-3.5 h-3.5 text-purple-600 fill-current" />}
+                      {currentBeneficiary.payout_provider || 'GCash'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Account Number</span>
+                    <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
+                      {currentBeneficiary.payout_account_number}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Account Name</span>
+                    <span className="font-bold text-slate-800 text-sm mt-0.5 block truncate">
+                      {currentBeneficiary.payout_account_name || '—'}
+                    </span>
+                  </div>
                 </div>
               ) : (
-                <div className="text-[11px] text-slate-400 italic bg-white/50 p-2.5 rounded-lg border border-dashed border-slate-200 text-center">
-                  Walang karagdagang secondary account. Maaari kang mag-add ng Landbank o ibang e-wallet (hanggang 3 accounts).
+                <div className="bg-white/80 rounded-xl border border-dashed border-purple-200 p-4 text-center text-xs text-slate-600">
+                  <p className="font-semibold text-slate-700">Wala ka pang naka-link na digital account.</p>
+                  <p className="text-slate-500 mt-0.5">
+                    Maaari mong ilagay ang iyong GCash, Maya, o Landbank account number upang maging kwalipikado sa mabilisang digital disbursement.
+                  </p>
                 </div>
               )}
-            </div>
-          </div>
 
-          {/* Digital Ayuda & E-Wallet Payouts Card */}
-          {allDigitalPayouts.length > 0 && (
+              {/* Verification Status Notice Alert */}
+              {currentBeneficiary?.payout_preference === 'digital' && (
+                currentBeneficiary?.account_verification_status === 'verified' ? (
+                  <div className="rounded-xl bg-green-50 border border-green-200 p-3 flex items-center gap-2.5 text-xs text-green-800">
+                    <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                    <span>
+                      <strong>Beripikado na ang iyong primary account!</strong> Handa ka nang makatanggap ng digital grants at ayuda direkta sa iyong account.
+                    </span>
+                  </div>
+                ) : currentBeneficiary?.account_verification_status === 'rejected' ? (
+                  <div className="rounded-xl bg-red-50 border border-red-200 p-3 flex items-center gap-2.5 text-xs text-red-800">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                    <span>
+                      <strong>Hindi na-verify ang iyong account.</strong> Posibleng hindi nagtutugma ang pangalan sa iyong account laban sa iyong DSWD record. Pindutin ang "I-update ang Account" upang itama.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 flex items-center gap-2.5 text-xs text-amber-800">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      <strong>Nakahain para sa Beripikasyon ng Admin.</strong> Tinitingnan ng DSWD admin ang iyong impormasyon para sa beripikasyon bago magpadala ng pondo.
+                    </span>
+                  </div>
+                )
+              )}
+
+              {/* Secondary / Extra Payout Accounts Section */}
+              <div className="pt-3 border-t border-purple-100">
+                <div className="flex items-center justify-between mb-2.5">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>Secondary Payout Accounts (Landbank / Karagdagang E-Wallet)</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Maaari kang mag-rehistro ng iba pang account o Landbank ATM/Account bilang alternatibo kapag may problema sa primary wallet.
+                    </p>
+                  </div>
+                  {(!currentBeneficiary?.extra_payout_accounts || currentBeneficiary?.extra_payout_accounts?.length < 3) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExtraError(null);
+                        setExtraPayoutForm({
+                          provider: 'Landbank',
+                          account_number: '',
+                          account_name: `${currentBeneficiary?.first_name || ''} ${currentBeneficiary?.last_name || ''}`.trim(),
+                        });
+                        setShowAddExtraModal(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-bold rounded-lg transition shrink-0 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Mag-add ng Account
+                    </button>
+                  )}
+                </div>
+
+                {Array.isArray(currentBeneficiary?.extra_payout_accounts) && currentBeneficiary.extra_payout_accounts.length > 0 ? (
+                  <div className="space-y-2 mt-2">
+                    {currentBeneficiary.extra_payout_accounts.map((extra, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between gap-3 text-xs shadow-xs"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
+                            {extra.provider === 'Landbank' ? '🏦' : '⚡'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-900">{extra.provider}</span>
+                              <span className="font-mono text-slate-700 font-semibold">{extra.account_number}</span>
+                              {extra.verification_status === 'verified' ? (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
+                                  <CheckCircle2 className="w-3 h-3" /> Verified
+                                </span>
+                              ) : extra.verification_status === 'rejected' ? (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                                  <X className="w-3 h-3" /> Rejected
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                                  <Clock className="w-3 h-3" /> For Verification
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                              Pangalan: <span className="font-medium text-slate-700">{extra.account_name}</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveExtraPayoutAccount(idx)}
+                          disabled={deletingExtraIdx === idx}
+                          title="Tanggalin ang account na ito"
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition disabled:opacity-50 cursor-pointer shrink-0"
+                        >
+                          {deletingExtraIdx === idx ? (
+                            <RefreshCw className="w-4 h-4 animate-spin text-red-500" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-400 italic bg-white/50 p-2.5 rounded-lg border border-dashed border-slate-200 text-center">
+                    Walang karagdagang secondary account. Maaari kang mag-add ng Landbank o ibang e-wallet (hanggang 3 accounts).
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Cash OTC / Physical RFID Distribution Info Card for Senior Citizen & PWD */
+            <div className="bg-gradient-to-br from-blue-50 via-white to-sky-50/50 rounded-2xl border border-blue-200 p-6 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-200 shrink-0">
+                    <CreditCard className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-lg font-bold text-slate-900">
+                        {isSenior ? 'Social Pension (Cash OTC / RFID)' : isPwd ? 'PDAO Financial & Material Aid (Cash OTC)' : 'Cash OTC / RFID Distribution'}
+                      </h3>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                        🏢 Cash Over-the-Counter (Physical)
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {isSenior
+                        ? 'Ang pamamahagi ng Social Pension para sa Senior Citizens ay isinasagawa nang personal via Cash Over-The-Counter gamit ang RFID Card o QR Pass.'
+                        : isPwd
+                        ? 'Ang pamamahagi ng tulong pinansyal para sa PWD ay isinasagawa nang personal via Cash Over-The-Counter gamit ang RFID Card o QR Pass.'
+                        : 'Ang pamamahagi ng ayuda ay isinasagawa nang personal via Cash Over-The-Counter.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payout Details Grid */}
+              <div className="bg-white rounded-xl border border-blue-100 p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Paraan ng Payout</span>
+                  <span className="font-bold text-blue-900 text-sm flex items-center gap-1.5 mt-0.5">
+                    🏢 Cash Over-the-Counter
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5">Direct cash release sa venue</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Claiming Method</span>
+                  <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block flex items-center gap-1">
+                    📶 RFID Card / QR Pass
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5">I-presenta sa payout station</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px]">Lugar ng Pamamahagi</span>
+                  <span className="font-bold text-slate-800 text-sm mt-0.5 block truncate">
+                    {beneficiary?.Barangay?.barangay_name ? `Brgy. ${beneficiary.Barangay.barangay_name}` : 'Barangay Hall / Municipal Gym'}
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5">Ayon sa opisyal na iskedyul</span>
+                </div>
+              </div>
+
+              {/* Informative Policy Alert */}
+              <div className="rounded-xl bg-blue-50/80 border border-blue-200 p-3.5 flex items-start gap-2.5 text-xs text-blue-900">
+                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold">Paalala sa Pag-claim ng Ayuda:</p>
+                  <p className="text-[11px] leading-relaxed text-blue-800">
+                    Alinsunod sa patakaran, ang digital disbursement (GCash/Maya/Bank) ay para lamang sa mga miyembro ng 4Ps. Para sa {isSenior ? 'Senior Citizens' : isPwd ? 'Persons with Disabilities (PWD)' : 'iyong kategorya'}, dalhin lamang ang inyong opisyal na <strong>RFID Beneficiary Card</strong> o <strong>Printed QR Pass</strong> at isang valid government ID sa itinakdang distribution schedule sa inyong barangay o munisipyo.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Digital Ayuda & E-Wallet Payouts Card (Strictly 4Ps Only) */}
+          {is4Ps && allDigitalPayouts.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

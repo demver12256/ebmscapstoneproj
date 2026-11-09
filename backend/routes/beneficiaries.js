@@ -599,6 +599,16 @@ router.put('/me/payout-account', authorize('beneficiary'), async (req, res, next
 
     const { payout_preference, payout_provider, payout_account_number, payout_account_name } = req.body;
 
+    const benCat = String(beneficiary.category || '').toLowerCase();
+    const isBen4Ps = benCat.includes('4ps') || benCat.includes('pantawid');
+
+    if (!isBen4Ps && payout_preference === 'digital') {
+      return res.status(403).json({
+        success: false,
+        message: 'Ang digital payout (E-Wallet / Bank Account) ay eksklusibo lamang para sa mga miyembro ng 4Ps. Ang mga Senior Citizen at PWD ay Cash OTC / RFID payout lamang.',
+      });
+    }
+
     if (payout_preference === 'cash_otc') {
       await beneficiary.update({
         payout_preference: 'cash_otc',
@@ -707,6 +717,15 @@ router.post('/me/extra-payout-accounts', authorize('beneficiary'), async (req, r
   try {
     const beneficiary = await Beneficiary.findOne({ where: { user_id: req.user.id }, include: [User, Barangay] });
     if (!beneficiary) return res.status(404).json({ success: false, message: 'Beneficiary profile not found' });
+
+    const benCat = String(beneficiary.category || '').toLowerCase();
+    const isBen4Ps = benCat.includes('4ps') || benCat.includes('pantawid');
+    if (!isBen4Ps) {
+      return res.status(403).json({
+        success: false,
+        message: 'Ang digital payout accounts ay para lamang sa mga miyembro ng 4Ps. Ang mga Senior Citizen at PWD ay Cash OTC / RFID payout lamang.',
+      });
+    }
 
     const { provider, account_number, account_name } = req.body;
     if (!provider || !account_number) {
@@ -1997,8 +2016,19 @@ router.put('/:id', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo
       }
     }
 
-    // If switching to cash_otc, clear digital payout fields
-    if (otherUpdates.payout_preference === 'cash_otc') {
+    // Digital payout is exclusively for 4Ps beneficiaries
+    const checkBenCat = String(beneficiary.category || otherUpdates.category || '').toLowerCase();
+    const isTarget4Ps = checkBenCat.includes('4ps') || checkBenCat.includes('pantawid');
+    if (!isTarget4Ps) {
+      // Force non-4Ps beneficiaries to cash_otc
+      otherUpdates.payout_preference = 'cash_otc';
+      otherUpdates.payout_provider = null;
+      otherUpdates.payout_account_number = null;
+      otherUpdates.payout_account_name = null;
+      otherUpdates.account_verification_status = 'unverified';
+      otherUpdates.account_verified_at = null;
+    } else if (otherUpdates.payout_preference === 'cash_otc') {
+      // If switching to cash_otc, clear digital payout fields
       otherUpdates.payout_provider = null;
       otherUpdates.payout_account_number = null;
       otherUpdates.payout_account_name = null;
@@ -2033,6 +2063,16 @@ router.post('/:id/verify-payout-account', authorize('admin', 'staff', 'barangay'
 
     if (isBarangayRestricted(req.user, beneficiary.barangay_id)) {
       return res.status(403).json({ success: false, message: 'Forbidden: You can only verify payout accounts for beneficiaries in your assigned barangay.' });
+    }
+
+    // Digital payout verification is exclusively for 4Ps members
+    const verifyCat = String(beneficiary.category || '').toLowerCase();
+    const isVerify4Ps = verifyCat.includes('4ps') || verifyCat.includes('pantawid');
+    if (!isVerify4Ps) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ang digital payout verification ay para lamang sa mga 4Ps beneficiaries. Ang mga Senior Citizen at PWD ay Cash OTC / RFID payout lamang.',
+      });
     }
 
     // Must have digital payout preference

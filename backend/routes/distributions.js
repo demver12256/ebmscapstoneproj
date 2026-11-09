@@ -970,12 +970,15 @@ router.post('/events/:id/publish', authorize('admin'), async (req, res, next) =>
       }
 
       // Determine disbursement type based on beneficiary's payout preference, verification, and event claiming mode
-      // If event.claiming_mode === 'physical_rfid', ALL beneficiaries must physically claim via RFID/QR (cash_otc).
-      // If event.claiming_mode === 'direct_ewallet', verified digital beneficiaries receive direct digital payout, others cash_otc.
+      // Digital payout (GCash/Maya/Bank) is strictly and exclusively for 4Ps beneficiaries.
+      // Senior Citizens, PWD, and all MSWDO events are strictly Cash OTC / Physical claiming (cash_otc).
+      const benCat = String(beneficiary.category || '').toLowerCase();
+      const isBen4Ps = benCat.includes('4ps') || benCat.includes('pantawid');
       const isMswdoEvent = event.agency === 'MSWDO' || ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin'].includes(req.user?.role);
-      const isPhysicalOnlyEvent = isMswdoEvent || event.claiming_mode === 'physical_rfid';
+      const isPhysicalOnlyEvent = isMswdoEvent || event.claiming_mode === 'physical_rfid' || !isBen4Ps;
       const isDigitalReady = !isNonCash
         && !isPhysicalOnlyEvent
+        && isBen4Ps
         && event.claiming_mode === 'direct_ewallet'
         && beneficiary.payout_preference === 'digital'
         && beneficiary.account_verification_status === 'verified'
