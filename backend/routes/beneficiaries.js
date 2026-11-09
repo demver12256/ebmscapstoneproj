@@ -121,7 +121,8 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
       contact_number,
       address,
       household_id_number,
-      user_id
+      user_id,
+      ip_classification
     } = req.body;
 
     if (!first_name || !last_name) {
@@ -177,6 +178,8 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
     }
 
     const qrToken = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
+    const resolvedIpClassification = String(ip_classification || '').trim().toUpperCase() === 'IP' ? 'IP' : 'Non-IP';
+    const trimmedContact = contact_number && String(contact_number).trim() !== '' ? String(contact_number).trim() : null;
 
     const beneficiary = await Beneficiary.create({
       user_id: user_id || null,
@@ -187,7 +190,8 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
       birthdate,
       barangay_id: resolvedBarangayId,
       category: normalizedCategory,
-      contact_number,
+      ip_classification: resolvedIpClassification,
+      contact_number: trimmedContact,
       address,
       status: 'Approved',
       household_id_number: is4Ps ? customId : null,

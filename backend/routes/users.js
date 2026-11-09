@@ -103,7 +103,7 @@ router.get('/', async (req, res, next) => {
       include: [
         {
           model: Beneficiary,
-          attributes: ['id', 'category', 'status', 'household_id_number', 'beneficiary_id_code', 'RFID_number', 'barangay_id', 'qr_token', 'approval_date', 'approved_at'],
+          attributes: ['id', 'category', 'status', 'household_id_number', 'beneficiary_id_code', 'RFID_number', 'barangay_id', 'qr_token', 'approval_date', 'approved_at', 'ip_classification'],
           required: false,
         },
       ],
@@ -117,7 +117,7 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    let { first_name, last_name, username, email, password, contact_number, address, barangay_id, role, category, household_id_number } = req.body;
+    let { first_name, last_name, username, email, password, contact_number, address, barangay_id, role, category, household_id_number, ip_classification } = req.body;
 
     if (req.user.role === 'senior_citizen_admin') {
       if (role === 'beneficiary') {
@@ -167,6 +167,7 @@ router.post('/', async (req, res, next) => {
     const trimmedEmail = email && String(email).trim() !== '' ? String(email).trim().toLowerCase() : null;
     const normalizedCategory = normalizeBeneficiaryCategory(category);
     const trimmedHouseholdId = household_id_number ? String(household_id_number).trim() : null;
+    const trimmedContact = contact_number && String(contact_number).trim() !== '' ? String(contact_number).trim() : null;
 
     if (!first_name || !last_name || (!trimmedUsername && !trimmedEmail) || !password || !role) {
       return res.status(400).json({ success: false, message: 'First name, last name, username or email, password, and role are required' });
@@ -210,7 +211,7 @@ router.post('/', async (req, res, next) => {
       username: trimmedUsername,
       email: trimmedEmail,
       password,
-      contact_number,
+      contact_number: trimmedContact,
       address,
       barangay_id: ['mswdo_staff'].includes(role) ? null : (barangay_id ? Number(barangay_id) : null),
       role
@@ -264,6 +265,7 @@ router.post('/', async (req, res, next) => {
         resolvedBarangayId = firstBrgy ? firstBrgy.id : 37;
       }
 
+      const resolvedIpClassification = String(ip_classification || '').trim().toUpperCase() === 'IP' ? 'IP' : 'Non-IP';
       const qrToken = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
 
       createdBen = await Beneficiary.create({
@@ -274,8 +276,8 @@ router.post('/', async (req, res, next) => {
         birthdate: '2000-01-01',
         barangay_id: resolvedBarangayId,
         category: normalizedCategory,
-        ip_classification: 'Non-IP',
-        contact_number,
+        ip_classification: resolvedIpClassification,
+        contact_number: trimmedContact,
         address,
         status: 'Approved',
         household_id_number: is4Ps ? customId : null,
@@ -290,14 +292,14 @@ router.post('/', async (req, res, next) => {
       try {
         await AuditLog.create({
           user_id: req.user.id,
-          action: `Created and directly approved beneficiary ${first_name} ${last_name}. Assigned ${is4Ps ? 'Household Number' : 'Beneficiary ID'}: ${customId}`,
+          action: `Created and directly approved beneficiary ${first_name} ${last_name}. Assigned ${is4Ps ? 'Household Number' : 'Beneficiary ID'}: ${customId} (${resolvedIpClassification})`,
           module: 'Beneficiary Management'
         });
       } catch (auditErr) {
         console.error('[AUDIT LOG ERROR]', auditErr);
       }
 
-      if (contact_number) {
+      if (trimmedContact) {
         try {
           await SMSNotification.create({
             beneficiary_id: createdBen.id,

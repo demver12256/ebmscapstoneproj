@@ -55,6 +55,7 @@ export default function UserListPage() {
     barangay_id: '',
     category: '',
     household_id_number: '',
+    ip_classification: 'Non-IP',
   });
 
   // Pre-fill form details depending on role
@@ -139,9 +140,11 @@ export default function UserListPage() {
 
       await userApi.create({
         ...form,
+        contact_number: form.contact_number && form.contact_number.trim() !== '' ? form.contact_number.trim() : null,
         barangay_id: form.barangay_id ? Number(form.barangay_id) : null,
         category: form.role === 'beneficiary' ? form.category : undefined,
         household_id_number: is4Ps && form.household_id_number.trim() ? form.household_id_number.trim() : undefined,
+        ip_classification: form.role === 'beneficiary' ? (form.ip_classification || 'Non-IP') : undefined,
       });
       setShowModal(false);
       setForm({
@@ -155,6 +158,7 @@ export default function UserListPage() {
         barangay_id: currentUser?.role === 'staff' ? currentUser.barangay_id || '' : '',
         category: '',
         household_id_number: '',
+        ip_classification: 'Non-IP',
       });
       setSuccessMessage(form.role === 'beneficiary'
         ? '✓ Matagumpay na nalikha at direktang naaprubahan ang benepisyaryo! Agad itong napasama sa opisyal na listahan ng mga aprubado nang hindi na dadaan sa pending review.'
@@ -184,23 +188,32 @@ export default function UserListPage() {
     { header: 'Email', accessor: 'email', cell: (row) => row.email || '—' },
     { header: 'Role', accessor: 'role', cell: (row) => {
       if (row.role === 'beneficiary') {
-        const cat = row.Beneficiaries?.[0]?.category || '';
+        const ben = row.Beneficiaries?.[0];
+        const cat = ben?.category || '';
         const isSenior = cat.toLowerCase().includes('senior');
         const isPwd = cat.toLowerCase().includes('pwd') || cat.toLowerCase().includes('disabilit');
         const is4Ps = cat.toLowerCase().includes('4ps');
+        const isIp = ben?.ip_classification === 'IP';
 
         return (
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-            isSenior ? 'bg-rose-100 text-rose-800 border border-rose-200' :
-            isPwd ? 'bg-blue-100 text-blue-800 border border-blue-200' :
-            is4Ps ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-            'bg-slate-100 text-slate-700 border border-slate-200'
-          }`}>
-            {isSenior ? '👴 Senior Beneficiary' :
-             isPwd ? '♿ PWD Beneficiary' :
-             is4Ps ? '👨‍👩‍👧 4Ps Beneficiary' :
-             'Beneficiary'}
-          </span>
+          <div className="flex flex-col gap-1 items-start">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+              isSenior ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+              isPwd ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+              is4Ps ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+              'bg-slate-100 text-slate-700 border border-slate-200'
+            }`}>
+              {isSenior ? '👴 Senior Beneficiary' :
+               isPwd ? '♿ PWD Beneficiary' :
+               is4Ps ? '👨‍👩‍👧 4Ps Beneficiary' :
+               'Beneficiary'}
+            </span>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+              isIp ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-slate-100 text-slate-600'
+            }`}>
+              {isIp ? '🌿 IP (Katutubo)' : 'Non-IP'}
+            </span>
+          </div>
         );
       }
 
@@ -235,7 +248,7 @@ export default function UserListPage() {
       if (['admin', 'mswdo_admin'].includes(row.role)) return 'All (Municipal)';
       return '—';
     }},
-    { header: 'Contact', accessor: 'contact_number', cell: (row) => row.contact_number || '—' },
+    { header: 'Contact', accessor: 'contact_number', cell: (row) => row.contact_number || <span className="text-slate-400 italic text-xs">Walang mobile</span> },
     { header: 'Status', accessor: 'status', cell: (row) => (
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
         row.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
@@ -353,6 +366,7 @@ export default function UserListPage() {
         barangay_id: currentUser?.barangay_id || '',
         category: sectorCategoryOptions[0]?.value || '',
         household_id_number: '',
+        ip_classification: 'Non-IP',
       });
     } else {
       setForm({
@@ -366,6 +380,7 @@ export default function UserListPage() {
         barangay_id: '',
         category: '',
         household_id_number: '',
+        ip_classification: 'Non-IP',
       });
     }
     setShowModal(true);
@@ -566,24 +581,46 @@ export default function UserListPage() {
                 <Input label="Email Address (Optional)" name="email" type="email" value={form.email} onChange={handleChange} placeholder="Optional" autoComplete="new-password" />
               </div>
               <Input label="Password" name="password" type="password" value={form.password} onChange={handleChange} required autoComplete="new-password" />
-              <Input label="Contact Number" name="contact_number" value={form.contact_number} onChange={handleChange} autoComplete="off" />
+              <Input
+                label="Contact Number (Opsyonal)"
+                name="contact_number"
+                value={form.contact_number}
+                onChange={handleChange}
+                placeholder="e.g. 09171234567 (Kahit walang mobile number)"
+                autoComplete="off"
+              />
 
               {form.role === 'beneficiary' && (
                 <>
-                  <label className="block text-sm font-semibold text-slate-700">
-                    Beneficiary Category
-                    <select
-                      name="category"
-                      value={form.category}
-                      onChange={handleChange}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                      required
-                    >
-                      {sectorCategoryOptions.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Beneficiary Category
+                      <select
+                        name="category"
+                        value={form.category}
+                        onChange={handleChange}
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        required
+                      >
+                        {sectorCategoryOptions.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block text-sm font-semibold text-slate-700">
+                      IP / Non-IP Classification
+                      <select
+                        name="ip_classification"
+                        value={form.ip_classification || 'Non-IP'}
+                        onChange={handleChange}
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      >
+                        <option value="Non-IP">Non-IP (General / Di-katutubo)</option>
+                        <option value="IP">IP (Indigenous People / Katutubo - Mangyan)</option>
+                      </select>
+                    </label>
+                  </div>
 
                   {form.category && form.category.toLowerCase().includes('4ps') && (
                     <Input
