@@ -926,6 +926,13 @@ const App = () => {
   }
 
   const handleSavePayoutAccount = async () => {
+    const catLower = String(profile?.category || user?.category || '').toLowerCase();
+    const is4PsMember = catLower.includes('4ps') || catLower.includes('pantawid');
+    if (!is4PsMember && payoutForm.payout_preference === 'digital') {
+      Alert.alert('Hindi Kwalipikado', 'Ang digital payout (E-Wallet / Bank) ay eksklusibo lamang para sa 4Ps members. Ang Senior Citizens at PWD ay Cash OTC / RFID payout lamang.');
+      return;
+    }
+
     if (
       payoutForm.payout_preference !== 'cash_otc' &&
       (!payoutForm.payout_provider || !payoutForm.payout_account_number)
@@ -995,6 +1002,10 @@ const App = () => {
     const enrolledProgramName = activeEnrollment?.BenefitProgram?.name ||
       activeEnrollment?.Program?.name || activeEnrollment?.program_name || 'No active program';
     const beneficiaryCategory = profile?.category || 'Category not set';
+    const catLower = String(profile?.category || user?.category || '').toLowerCase();
+    const is4Ps = catLower.includes('4ps') || catLower.includes('pantawid');
+    const isSenior = catLower.includes('senior');
+    const isPwd = ['pwd', 'disabilit'].some(k => catLower.includes(k));
     const beneficiaryCode = profile?.beneficiary_id_code || profile?.household_id_number || 'Not assigned';
     const beneficiaryBarangay = profile?.barangay_name || profile?.Barangay?.barangay_name || profile?.barangay?.barangay_name || profile?.barangay || 'Not available';
     const rawProfilePicture = profile?.profile_picture;
@@ -1371,95 +1382,128 @@ const App = () => {
             </View>
           </View>
 
-          {/* Digital Ayuda Account Card (Image 4) */}
-          <View style={styles.digitalAyudaCard}>
-            <View style={styles.digitalAyudaHeader}>
-              <View style={styles.digitalAyudaIconBox}>
-                <Text style={{ fontSize: 20 }}>💳</Text>
-              </View>
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text style={styles.digitalAyudaTitle}>
-                    {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? 'Cash OTC Account' : 'Digital Ayuda Account'}
-                  </Text>
-                  {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? (
-                    <View style={{ backgroundColor: '#f1f5f9', borderColor: '#cbd5e1', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569' }}>🏢 Cash / OTC</Text>
-                    </View>
-                  ) : (profile?.account_verification_status || 'unverified') === 'verified' ? (
-                    <View style={{ backgroundColor: '#dcfce7', borderColor: '#86efac', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803d' }}>✓ Verified</Text>
-                    </View>
-                  ) : (profile?.account_verification_status || 'unverified') === 'rejected' ? (
-                    <View style={{ backgroundColor: '#fee2e2', borderColor: '#fca5a5', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#b91c1c' }}>✕ Rejected</Text>
-                    </View>
-                  ) : (
-                    <View style={{ backgroundColor: '#fef3c7', borderColor: '#fcd34d', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#b45309' }}>⏳ For Verification</Text>
-                    </View>
-                  )}
+          {/* Digital Ayuda Account Card (Strictly 4Ps Only) OR Cash OTC Card (Senior / PWD) */}
+          {is4Ps ? (
+            <View style={styles.digitalAyudaCard}>
+              <View style={styles.digitalAyudaHeader}>
+                <View style={styles.digitalAyudaIconBox}>
+                  <Text style={{ fontSize: 20 }}>💳</Text>
                 </View>
-                <Text style={styles.digitalAyudaSub}>
-                  {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc'
-                    ? 'Tumatanggap ng ayuda sa pamamagitan ng personal claiming / over-the-counter gamit ang QR Pass o RFID.'
-                    : 'Tumatanggap ng ayuda sa pamamagitan ng GCash, Maya, o Bank Account nang walang pila.'}
-                </Text>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={styles.digitalAyudaTitle}>Digital Ayuda Account</Text>
+                    {(profile?.account_verification_status || 'unverified') === 'verified' ? (
+                      <View style={{ backgroundColor: '#dcfce7', borderColor: '#86efac', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803d' }}>✓ Verified</Text>
+                      </View>
+                    ) : (profile?.account_verification_status || 'unverified') === 'rejected' ? (
+                      <View style={{ backgroundColor: '#fee2e2', borderColor: '#fca5a5', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#b91c1c' }}>✕ Rejected</Text>
+                      </View>
+                    ) : (
+                      <View style={{ backgroundColor: '#fef3c7', borderColor: '#fcd34d', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#b45309' }}>⏳ For Verification</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.digitalAyudaSub}>
+                    Tumatanggap ng ayuda sa pamamagitan ng GCash, Maya, o Bank Account nang walang pila.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.updateAccountBtn}
+                  onPress={() => {
+                    setPayoutMethodOpen(false);
+                    setActiveModal(activeModal === 'payout' ? null : 'payout');
+                  }}
+                >
+                  <Text style={styles.updateAccountBtnText}>✏️ I-update</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.updateAccountBtn}
-                onPress={() => {
-                  setPayoutMethodOpen(false);
-                  setActiveModal(activeModal === 'payout' ? null : 'payout');
-                }}
-              >
-                <Text style={styles.updateAccountBtnText}>✏️ I-update ang Account</Text>
-              </TouchableOpacity>
-            </View>
 
-            <View style={styles.ayudaDetailsGrid}>
-              <View style={styles.ayudaDetailCol}>
-                <Text style={styles.ayudaDetailLabel}>PAYOUT METHOD</Text>
-                <Text style={styles.ayudaDetailVal}>
-                  {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? '🏢 Cash OTC / RFID' : `⚡ ${profile?.payout_provider || payoutForm.payout_provider || 'GCash'}`}
+              <View style={styles.ayudaDetailsGrid}>
+                <View style={styles.ayudaDetailCol}>
+                  <Text style={styles.ayudaDetailLabel}>PROVIDER</Text>
+                  <Text style={styles.ayudaDetailVal}>⚡ {profile?.payout_provider || payoutForm.payout_provider || 'GCash'}</Text>
+                </View>
+                <View style={styles.ayudaDetailCol}>
+                  <Text style={styles.ayudaDetailLabel}>ACCOUNT NUMBER</Text>
+                  <Text style={styles.ayudaDetailVal}>{profile?.payout_account_number || payoutForm.payout_account_number || 'Walang account'}</Text>
+                </View>
+                <View style={styles.ayudaDetailCol}>
+                  <Text style={styles.ayudaDetailLabel}>ACCOUNT NAME</Text>
+                  <Text style={styles.ayudaDetailVal}>{profile?.payout_account_name || displayName}</Text>
+                </View>
+              </View>
+
+              {(profile?.account_verification_status || 'unverified') === 'verified' ? (
+                <View style={styles.verifiedInfoBanner}>
+                  <Text style={styles.verifiedInfoText}>
+                    ✓ Beripikado na ang iyong primary account! Handa ka nang makatanggap ng digital grants at ayuda direkta sa iyong e-wallet.
+                  </Text>
+                </View>
+              ) : (profile?.account_verification_status || 'unverified') === 'rejected' ? (
+                <View style={{ backgroundColor: '#fef2f2', borderColor: '#fecaca', borderWidth: 1, padding: 10, borderRadius: 8 }}>
+                  <Text style={{ color: '#991b1b', fontSize: 11.5, fontWeight: '600' }}>
+                    ⚠️ Hindi na-verify ang iyong account. Posibleng hindi nagtutugma ang pangalan sa iyong account laban sa iyong opisyal na DSWD record. Pindutin ang "I-update" upang itama.
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, padding: 10, borderRadius: 8 }}>
+                  <Text style={{ color: '#92400e', fontSize: 11.5, fontWeight: '600' }}>
+                    ⏳ For Verification: Kasalukuyang sinusuri ng DSWD admin ang iyong payout account information upang masigurong ligtas at tugma ang iyong mga detalye bago mag-disburse ng ayuda.
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            /* Cash OTC / RFID Distribution Card (Senior Citizen & PWD) */
+            <View style={[styles.digitalAyudaCard, { borderColor: '#bfdbfe', backgroundColor: '#f0f9ff' }]}>
+              <View style={styles.digitalAyudaHeader}>
+                <View style={[styles.digitalAyudaIconBox, { backgroundColor: '#0284c7' }]}>
+                  <Text style={{ fontSize: 20 }}>🏢</Text>
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={[styles.digitalAyudaTitle, { color: '#0369a1' }]}>
+                      {isSenior ? 'Social Pension (Cash OTC / RFID)' : isPwd ? 'PDAO Financial Aid (Cash OTC)' : 'Cash OTC / RFID Distribution'}
+                    </Text>
+                    <View style={{ backgroundColor: '#e0f2fe', borderColor: '#7dd3fc', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#0369a1' }}>🏢 Cash Over-the-Counter</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.digitalAyudaSub}>
+                    {isSenior
+                      ? 'Ang pamamahagi ng Social Pension para sa Senior Citizens ay eksklusibong cash payout via RFID Card o QR Pass.'
+                      : isPwd
+                      ? 'Ang tulong pinansyal para sa Persons with Disabilities (PWD) ay eksklusibong cash payout via RFID Card o QR Pass.'
+                      : 'Ang pamamahagi ng ayuda ay via Cash Over-The-Counter gamit ang iyong RFID Card o QR Pass.'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.ayudaDetailsGrid}>
+                <View style={styles.ayudaDetailCol}>
+                  <Text style={styles.ayudaDetailLabel}>PAYOUT METHOD</Text>
+                  <Text style={[styles.ayudaDetailVal, { color: '#0369a1' }]}>🏢 Cash Over-the-Counter</Text>
+                </View>
+                <View style={styles.ayudaDetailCol}>
+                  <Text style={styles.ayudaDetailLabel}>CLAIMING PASS</Text>
+                  <Text style={styles.ayudaDetailVal}>{profile?.RFID_number ? `📶 RFID: ${profile.RFID_number}` : '🎟️ Printed QR Pass'}</Text>
+                </View>
+                <View style={styles.ayudaDetailCol}>
+                  <Text style={styles.ayudaDetailLabel}>VENUE</Text>
+                  <Text style={styles.ayudaDetailVal}>{beneficiaryBarangay}</Text>
+                </View>
+              </View>
+
+              <View style={{ backgroundColor: '#e0f2fe', borderColor: '#bae6fd', borderWidth: 1, padding: 10, borderRadius: 8 }}>
+                <Text style={{ color: '#075985', fontSize: 11.5, fontWeight: '600', lineHeight: 16 }}>
+                  💡 Paalala: Ang digital payout (GCash/Maya/Bank) ay para lamang sa 4Ps members. Para sa {isSenior ? 'Senior Citizens' : isPwd ? 'PWD' : 'iyong kategorya'}, dalhin lamang ang inyong opisyal na RFID Card o Printed QR Pass at isang valid ID tuwing may payout schedule sa inyong barangay.
                 </Text>
-              </View>
-              <View style={styles.ayudaDetailCol}>
-                <Text style={styles.ayudaDetailLabel}>ACCOUNT NUMBER</Text>
-                <Text style={styles.ayudaDetailVal}>{(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? 'Physical claiming' : profile?.payout_account_number || payoutForm.payout_account_number || 'N/A'}</Text>
-              </View>
-              <View style={styles.ayudaDetailCol}>
-                <Text style={styles.ayudaDetailLabel}>ACCOUNT NAME</Text>
-                <Text style={styles.ayudaDetailVal}>{profile?.payout_account_name || displayName}</Text>
               </View>
             </View>
-
-            {(profile?.payout_preference || payoutForm.payout_preference) === 'cash_otc' ? (
-              <View style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1', borderWidth: 1, padding: 10, borderRadius: 8 }}>
-                <Text style={{ color: '#334155', fontSize: 11.5, fontWeight: '600' }}>
-                  🏢 Naka-set sa Cash Over-the-Counter ang iyong payout preference. Maaari mong i-claim ang ayuda gamit ang iyong QR Pass o RFID Card sa itinakdang distribution site.
-                </Text>
-              </View>
-            ) : (profile?.account_verification_status || 'unverified') === 'verified' ? (
-              <View style={styles.verifiedInfoBanner}>
-                <Text style={styles.verifiedInfoText}>
-                  ✓ Beripikado na ang iyong primary account! Handa ka nang makatanggap ng digital grants at ayuda direkta sa iyong e-wallet.
-                </Text>
-              </View>
-            ) : (profile?.account_verification_status || 'unverified') === 'rejected' ? (
-              <View style={{ backgroundColor: '#fef2f2', borderColor: '#fecaca', borderWidth: 1, padding: 10, borderRadius: 8 }}>
-                <Text style={{ color: '#991b1b', fontSize: 11.5, fontWeight: '600' }}>
-                  ⚠️ Hindi na-verify ang iyong account. Posibleng hindi nagtutugma ang pangalan sa iyong account laban sa iyong opisyal na DSWD record. Pindutin ang "I-update ang Account" upang itama.
-                </Text>
-              </View>
-            ) : (
-              <View style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, padding: 10, borderRadius: 8 }}>
-                <Text style={{ color: '#92400e', fontSize: 11.5, fontWeight: '600' }}>
-                  ⏳ For Verification: Kasalukuyang sinusuri ng admin/MSWDO ang iyong payout account information upang masigurong ligtas at tugma ang iyong mga detalye bago mag-disburse ng ayuda.
-                </Text>
-              </View>
-            )}
-          </View>
+          )}
 
           {/* Intervention / Other Assistance Card */}
           {user?.role === 'beneficiary' && (
@@ -1720,15 +1764,17 @@ const App = () => {
 
                 {payoutMethodOpen && (
                   <View style={styles.payoutOptions}>
-                    <TouchableOpacity
-                      style={styles.payoutOption}
-                      onPress={() => {
-                        setPayoutForm((prev) => ({ ...prev, payout_preference: 'digital' }));
-                        setPayoutMethodOpen(false);
-                      }}
-                    >
-                      <Text style={styles.payoutOptionText}>⚡ Digital (E-Wallet / Bank Account)</Text>
-                    </TouchableOpacity>
+                    {is4Ps && (
+                      <TouchableOpacity
+                        style={styles.payoutOption}
+                        onPress={() => {
+                          setPayoutForm((prev) => ({ ...prev, payout_preference: 'digital' }));
+                          setPayoutMethodOpen(false);
+                        }}
+                      >
+                        <Text style={styles.payoutOptionText}>⚡ Digital (E-Wallet / Bank Account)</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={styles.payoutOption}
                       onPress={() => {
