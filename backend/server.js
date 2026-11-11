@@ -338,6 +338,22 @@ connectDatabase()
   .then(async () => {
     await initFileStorageTable();
     await createDefaultAdmin();
+    // Rename legacy meeting announcement titles to updated designations requested by user
+    try {
+      const { Announcement } = require('./db');
+      if (Announcement) {
+        await Announcement.update(
+          { title: '4Ps: Compliance to Conditionalities' },
+          { where: { title: '4Ps: Program Orientation' } }
+        );
+        await Announcement.update(
+          { title: '4Ps: Cash Grant' },
+          { where: { title: '4Ps: Financial Literacy Session' } }
+        );
+      }
+    } catch (renameErr) {
+      console.warn('[ANNOUNCEMENTS] Legacy title update check warning:', renameErr.message);
+    }
     autoCompleteExpiredAnnouncements().catch((err) => console.error('[ANNOUNCEMENTS] Auto-complete failed:', err.message));
     setInterval(() => {
       autoCompleteExpiredAnnouncements().catch((err) => console.error('[ANNOUNCEMENTS] Auto-complete failed:', err.message));

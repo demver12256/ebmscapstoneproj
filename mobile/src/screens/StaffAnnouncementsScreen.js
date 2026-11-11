@@ -16,6 +16,7 @@ import {
   Platform,
 } from 'react-native';
 import { announcementApi, barangayApi } from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   isAnnouncementActiveForAttendance,
   getAnnouncementTiming,
@@ -44,31 +45,31 @@ export const OFFICIAL_MEETING_PRESETS = [
     target_categories: ['4Ps Household Beneficiaries'],
   },
   {
-    id: '4ps-program-orientation',
+    id: '4ps-compliance',
     program: '4Ps',
     sector: '4Ps Household Beneficiaries',
-    sectorLabel: '4Ps (Program Activity)',
-    title: '4Ps: Program Orientation',
+    sectorLabel: '4Ps (Compliance to Conditionalities)',
+    title: '4Ps: Compliance to Conditionalities',
     message:
-      'Oryentasyon ukol sa mga patakaran, karapatan, at responsibilidad ng mga benepisyaryo ng Pantawid Pamilyang Pilipino Program (4Ps). Pagsusuri ng compliance rules, RFID card verification, at gabay sa paggamit ng mga serbisyong pampamahalaan.',
+      'Buwanang pagsusuri at oryentasyon ukol sa compliance sa mga conditionalities ng Pantawid Pamilyang Pilipino Program (4Ps) tulad ng regular na health center checkups, 85% school attendance ng mga bata, at pagdalo sa Family Development Sessions. Mangyaring dalhin ang inyong RFID Beneficiary Card para sa attendance verification.',
     event_time: '08:30 AM',
     end_time: '12:00 PM',
     venue: 'Bongabong Municipal Gymnasium',
-    priority: 'Medium',
+    priority: 'High',
     target_categories: ['4Ps Household Beneficiaries'],
   },
   {
-    id: '4ps-financial-literacy',
+    id: '4ps-cash-grant',
     program: '4Ps',
     sector: '4Ps Household Beneficiaries',
-    sectorLabel: '4Ps (Program Activity)',
-    title: '4Ps: Financial Literacy Session',
+    sectorLabel: '4Ps (Cash Grant)',
+    title: '4Ps: Cash Grant',
     message:
-      'Pagsasanay sa wastong paghawak ng pera, pagbabadyet ng sambahayan, pag-iimpok (savings), at mga oportunidad sa micro-livelihood sa ilalim ng Sustainable Livelihood Program (SLP) module.',
-    event_time: '09:00 AM',
+      'Opisyal na anunsyo at pagpupulong kaugnay sa pamamahagi ng 4Ps Cash Grant para sa mga benepisyaryo ng Pantawid Pamilyang Pilipino Program. Tatalakayin ang payout schedule, mga kinakailangang dokumento, at pagberipika ng attendance gamit ang RFID card bago ang disbursement.',
+    event_time: '08:00 AM',
     end_time: '12:00 PM',
     venue: 'Barangay Multi-Purpose Hall',
-    priority: 'Medium',
+    priority: 'High',
     target_categories: ['4Ps Household Beneficiaries'],
   },
 
@@ -222,6 +223,112 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
   const [createModal, setCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [templateModalVisible, setTemplateModalVisible] = useState(false);
+  const [customPresets, setCustomPresets] = useState([]);
+  const [customMeetingModal, setCustomMeetingModal] = useState(false);
+  const [newMeetingTitle, setNewMeetingTitle] = useState('');
+  const [newMeetingSector, setNewMeetingSector] = useState(allowedCategories[0] || '4Ps Household Beneficiaries');
+  const [newMeetingVenue, setNewMeetingVenue] = useState('Barangay Covered Court');
+
+  useEffect(() => {
+    const loadCustomPresets = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('@custom_meeting_presets');
+        if (saved) setCustomPresets(JSON.parse(saved));
+      } catch (e) {
+        console.warn('Failed to load custom meeting presets:', e);
+      }
+    };
+    loadCustomPresets();
+  }, []);
+
+  const handleCreateCustomMeeting = async () => {
+    if (!newMeetingTitle.trim()) {
+      Alert.alert('Kailangan ang Pamagat', 'Mangyaring ilagay ang pangalan ng meeting.');
+      return;
+    }
+    const cleanTitle = newMeetingTitle.trim();
+    const sector = newMeetingSector || allowedCategories[0] || '4Ps Household Beneficiaries';
+    const newPreset = {
+      id: `custom-${Date.now()}`,
+      isCustom: true,
+      program: sector.includes('Senior') ? 'Senior' : sector.includes('PWD') ? 'PWD' : '4Ps',
+      sector: sector,
+      sectorLabel: `${sector} (Custom Meeting)`,
+      title: cleanTitle,
+      message: `Opisyal na pagpupulong para sa ${cleanTitle}. Tatalakayin ang mahahalagang updates. Mangyaring dalhin ang inyong RFID Beneficiary Card para sa attendance verification.`,
+      event_time: '08:00 AM',
+      end_time: '12:00 PM',
+      venue: newMeetingVenue.trim() || 'Barangay Covered Court',
+      priority: 'High',
+      target_categories: [sector],
+    };
+
+    const updated = [...customPresets, newPreset];
+    setCustomPresets(updated);
+    try {
+      await AsyncStorage.setItem('@custom_meeting_presets', JSON.stringify(updated));
+    } catch (e) {
+      console.warn(e);
+    }
+
+    handleSelectTemplate(newPreset);
+    setCustomMeetingModal(false);
+    setTemplateModalVisible(false);
+    setNewMeetingTitle('');
+    Alert.alert('Tagumpay!', `Nagawa at nailagay ang meeting template: "${cleanTitle}"`);
+  };
+
+  const handleDeleteCustomPreset = async (presetId, title) => {
+    Alert.alert(
+      'Tanggalin ang Template',
+      `Sigurado ka bang nais mong tanggalin ang template na "${title}"?`,
+      [
+        { text: 'Kanselahin', style: 'cancel' },
+        {
+          text: 'Tanggalin',
+          style: 'destructive',
+          onPress: async () => {
+            const updated = customPresets.filter((p) => p.id !== presetId);
+            setCustomPresets(updated);
+            try {
+              await AsyncStorage.setItem('@custom_meeting_presets', JSON.stringify(updated));
+            } catch (e) {
+              console.warn(e);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleQuickSaveCurrentTitle = async () => {
+    if (!form.title.trim()) return;
+    const cleanTitle = form.title.trim();
+    const sector = (form.target_categories && form.target_categories[0]) || allowedCategories[0] || '4Ps Household Beneficiaries';
+    const newPreset = {
+      id: `custom-${Date.now()}`,
+      isCustom: true,
+      program: sector.includes('Senior') ? 'Senior' : sector.includes('PWD') ? 'PWD' : '4Ps',
+      sector: sector,
+      sectorLabel: `${sector} (Custom Meeting)`,
+      title: cleanTitle,
+      message: form.message || `Opisyal na pagpupulong para sa ${cleanTitle}. Mangyaring dalhin ang inyong RFID Beneficiary Card para sa attendance verification.`,
+      event_time: form.event_time || '08:00 AM',
+      end_time: form.end_time || '12:00 PM',
+      venue: form.venue || 'Barangay Covered Court',
+      priority: form.priority || 'High',
+      target_categories: form.target_categories && form.target_categories.length > 0 ? form.target_categories : [sector],
+    };
+
+    const updated = [...customPresets, newPreset];
+    setCustomPresets(updated);
+    try {
+      await AsyncStorage.setItem('@custom_meeting_presets', JSON.stringify(updated));
+      Alert.alert('Nai-save!', `Nai-save ang "${cleanTitle}" bilang template ng meeting.`);
+    } catch (e) {
+      console.warn(e);
+    }
+  };
 
   // Target Audience Selection & Matching Preview State
   const [previewCount, setPreviewCount] = useState(0);
@@ -811,12 +918,21 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
 
             {/* Announcement Title */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>
-                ANNOUNCEMENT TITLE <Text style={{ color: '#ef4444' }}>*</Text>
-              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={styles.label}>
+                  ANNOUNCEMENT TITLE <Text style={{ color: '#ef4444' }}>*</Text>
+                </Text>
+                {Boolean(form.title && form.title.trim() && !OFFICIAL_MEETING_PRESETS.some((p) => p.title.toLowerCase() === form.title.trim().toLowerCase()) && !customPresets.some((p) => p.title.toLowerCase() === form.title.trim().toLowerCase())) && (
+                  <TouchableOpacity onPress={handleQuickSaveCurrentTitle}>
+                    <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#059669' }}>
+                      💾 I-save bilang Template
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               <TextInput
                 style={styles.textInput}
-                placeholder="Hal. 4Ps Family Development Session / General Assembly"
+                placeholder="Hal. 4Ps Compliance to Conditionalities"
                 placeholderTextColor="#94a3b8"
                 value={form.title}
                 onChangeText={(t) => setForm({ ...form, title: t })}
@@ -1310,39 +1426,167 @@ const StaffAnnouncementsScreen = ({ onBack, onOpenDrawer, onNavigate, user, dark
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 420 }}>
-              {allowedCategories.map((sec) => {
-                const groupPresets = OFFICIAL_MEETING_PRESETS.filter((p) => p.sector === sec);
-                const groupLabel = sec.includes('4Ps')
-                  ? '🔵 DSWD 4Ps Meetings'
-                  : sec.includes('Senior')
-                  ? '👵 OSCA / MSWDO Senior Citizens Meetings'
-                  : '♿ PDAO / MSWDO PWD Assemblies & Meetings';
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#059669',
+                  borderRadius: 10,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  marginBottom: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                }}
+                onPress={() => {
+                  setNewMeetingTitle(form.title || '');
+                  setNewMeetingSector(allowedCategories[0] || '4Ps Household Beneficiaries');
+                  setCustomMeetingModal(true);
+                }}
+              >
+                <Text style={{ color: '#ffffff', fontWeight: 'bold', fontSize: 13 }}>
+                  ➕ Magdagdag ng Bagong Meeting Name
+                </Text>
+              </TouchableOpacity>
 
-                return (
-                  <View key={sec} style={{ marginBottom: 14 }}>
-                    <Text style={styles.presetGroupTitle}>{groupLabel}</Text>
-                    {groupPresets.map((preset) => (
+              <ScrollView style={{ maxHeight: 420 }}>
+                {customPresets.length > 0 && (
+                  <View style={{ marginBottom: 14 }}>
+                    <Text style={[styles.presetGroupTitle, { color: '#059669' }]}>⭐ Aking Mga Pasadyang Meeting</Text>
+                    {customPresets.map((preset) => (
+                      <View key={preset.id} style={{ position: 'relative', marginBottom: 6 }}>
+                        <TouchableOpacity
+                          style={[styles.presetItemCard, { borderColor: '#a7f3d0', backgroundColor: '#f0fdf4' }]}
+                          onPress={() => handleSelectTemplate(preset)}
+                        >
+                          <Text style={[styles.presetItemTitle, { color: '#065f46' }]}>⭐ {preset.title}</Text>
+                          <Text style={styles.presetItemSub} numberOfLines={2}>{preset.message}</Text>
+                          <View style={styles.presetMetaRow}>
+                            <Text style={styles.presetMetaText}>🕒 {preset.event_time} - {preset.end_time}</Text>
+                            <Text style={styles.presetMetaText}>📍 {preset.venue}</Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={{ position: 'absolute', top: 10, right: 10, padding: 4 }}
+                          onPress={() => handleDeleteCustomPreset(preset.id, preset.title)}
+                        >
+                          <Text style={{ color: '#ef4444', fontWeight: 'bold', fontSize: 13 }}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {allowedCategories.map((sec) => {
+                  const groupPresets = OFFICIAL_MEETING_PRESETS.filter((p) => p.sector === sec);
+                  const groupLabel = sec.includes('4Ps')
+                    ? '🔵 DSWD 4Ps Meetings'
+                    : sec.includes('Senior')
+                    ? '👵 OSCA / MSWDO Senior Citizens Meetings'
+                    : '♿ PDAO / MSWDO PWD Assemblies & Meetings';
+
+                  return (
+                    <View key={sec} style={{ marginBottom: 14 }}>
+                      <Text style={styles.presetGroupTitle}>{groupLabel}</Text>
+                      {groupPresets.map((preset) => (
+                        <TouchableOpacity
+                          key={preset.id}
+                          style={styles.presetItemCard}
+                          onPress={() => handleSelectTemplate(preset)}
+                        >
+                          <Text style={styles.presetItemTitle}>{preset.title}</Text>
+                          <Text style={styles.presetItemSub} numberOfLines={2}>{preset.message}</Text>
+                          <View style={styles.presetMetaRow}>
+                            <Text style={styles.presetMetaText}>🕒 {preset.event_time} - {preset.end_time}</Text>
+                            <Text style={styles.presetMetaText}>📍 {preset.venue}</Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ━━━ CREATE CUSTOM MEETING MODAL ━━━ */}
+        <Modal visible={customMeetingModal} transparent animationType="slide" onRequestClose={() => setCustomMeetingModal(false)}>
+          <View style={styles.templateModalOverlay}>
+            <View style={[styles.templateModalCard, { maxHeight: '90%' }]}>
+              <View style={[styles.templateModalHeader, { backgroundColor: '#065f46' }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.templateModalTitle}>Lumikha ng Bagong Meeting</Text>
+                  <Text style={styles.templateModalSub}>Mag-set ng bagong uri o pangalan ng meeting</Text>
+                </View>
+                <TouchableOpacity onPress={() => setCustomMeetingModal(false)} style={styles.closeBtn}>
+                  <Text style={styles.closeBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ padding: 14 }}>
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={styles.label}>PANGALAN NG MEETING <Text style={{ color: '#ef4444' }}>*</Text></Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Hal. 4Ps: Emergency Assembly / Payout"
+                    placeholderTextColor="#94a3b8"
+                    value={newMeetingTitle}
+                    onChangeText={setNewMeetingTitle}
+                  />
+                </View>
+
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={styles.label}>TARGET CATEGORY</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                    {allowedCategories.map((cat) => (
                       <TouchableOpacity
-                        key={preset.id}
-                        style={styles.presetItemCard}
-                        onPress={() => handleSelectTemplate(preset)}
+                        key={cat}
+                        onPress={() => setNewMeetingSector(cat)}
+                        style={{
+                          paddingVertical: 6,
+                          paddingHorizontal: 10,
+                          borderRadius: 8,
+                          backgroundColor: newMeetingSector === cat ? '#059669' : '#e2e8f0',
+                        }}
                       >
-                        <Text style={styles.presetItemTitle}>{preset.title}</Text>
-                        <Text style={styles.presetItemSub} numberOfLines={2}>{preset.message}</Text>
-                        <View style={styles.presetMetaRow}>
-                          <Text style={styles.presetMetaText}>🕒 {preset.event_time} - {preset.end_time}</Text>
-                          <Text style={styles.presetMetaText}>📍 {preset.venue}</Text>
-                        </View>
+                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: newMeetingSector === cat ? '#fff' : '#334155' }}>
+                          {cat}
+                        </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
-                );
-              })}
-            </ScrollView>
+                </View>
+
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={styles.label}>DEFAULT VENUE</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Hal. Barangay Covered Court"
+                    placeholderTextColor="#94a3b8"
+                    value={newMeetingVenue}
+                    onChangeText={setNewMeetingVenue}
+                  />
+                </View>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 14, marginBottom: 20 }}>
+                  <TouchableOpacity
+                    onPress={() => setCustomMeetingModal(false)}
+                    style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#e2e8f0' }}
+                  >
+                    <Text style={{ fontWeight: 'bold', color: '#475569', fontSize: 13 }}>Kanselahin</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleCreateCustomMeeting}
+                    style={{ paddingVertical: 10, paddingHorizontal: 18, borderRadius: 8, backgroundColor: '#059669' }}
+                  >
+                    <Text style={{ fontWeight: 'bold', color: '#ffffff', fontSize: 13 }}>I-save at Gamitin</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
     </SafeAreaView>
   );
 };

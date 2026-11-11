@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Megaphone,
   Plus,
+  PlusCircle,
   Search,
   Filter,
   Calendar,
@@ -60,29 +61,29 @@ export const OFFICIAL_MEETING_PRESETS = [
     target_categories: ['4Ps Household Beneficiaries'],
   },
   {
-    id: '4ps-program-orientation',
+    id: '4ps-compliance',
     program: '4Ps',
     sector: '4Ps Household Beneficiaries',
-    sectorLabel: '4Ps (Program Activity)',
-    title: '4Ps: Program Orientation',
-    message: 'Oryentasyon ukol sa mga patakaran, karapatan, at responsibilidad ng mga benepisyaryo ng Pantawid Pamilyang Pilipino Program (4Ps). Pagsusuri ng compliance rules, RFID card verification, at gabay sa paggamit ng mga serbisyong pampamahalaan.',
+    sectorLabel: '4Ps (Compliance to Conditionalities)',
+    title: '4Ps: Compliance to Conditionalities',
+    message: 'Buwanang pagsusuri at oryentasyon ukol sa compliance sa mga conditionalities ng Pantawid Pamilyang Pilipino Program (4Ps) tulad ng regular na health center checkups, 85% school attendance ng mga bata, at pagdalo sa Family Development Sessions. Mangyaring dalhin ang inyong RFID Beneficiary Card para sa attendance verification.',
     event_time: '08:30',
     end_time: '12:00',
     venue: 'Bongabong Municipal Gymnasium',
-    priority: 'Medium',
+    priority: 'High',
     target_categories: ['4Ps Household Beneficiaries'],
   },
   {
-    id: '4ps-financial-literacy',
+    id: '4ps-cash-grant',
     program: '4Ps',
     sector: '4Ps Household Beneficiaries',
-    sectorLabel: '4Ps (Program Activity)',
-    title: '4Ps: Financial Literacy Session',
-    message: 'Pagsasanay sa wastong paghawak ng pera, pagbabadyet ng sambahayan, pag-iimpok (savings), at mga oportunidad sa micro-livelihood sa ilalim ng Sustainable Livelihood Program (SLP) module.',
-    event_time: '09:00',
+    sectorLabel: '4Ps (Cash Grant)',
+    title: '4Ps: Cash Grant',
+    message: 'Opisyal na anunsyo at pagpupulong kaugnay sa pamamahagi ng 4Ps Cash Grant para sa mga benepisyaryo ng Pantawid Pamilyang Pilipino Program. Tatalakayin ang payout schedule, mga kinakailangang dokumento, at pagberipika ng attendance gamit ang RFID card bago ang disbursement.',
+    event_time: '08:00',
     end_time: '12:00',
     venue: 'Barangay Multi-Purpose Hall',
-    priority: 'Medium',
+    priority: 'High',
     target_categories: ['4Ps Household Beneficiaries'],
   },
 
@@ -286,12 +287,144 @@ export default function AnnouncementManagementPage() {
     return TARGET_CATEGORIES;
   }, [isSeniorAdmin, isPwdAdmin, isMswdoAdmin, isMswdoStaff]);
 
+  // Custom Meeting Presets created by Admin
+  const [customPresets, setCustomPresets] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ebms_custom_meeting_presets');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveCustomPresets = (updated) => {
+    setCustomPresets(updated);
+    try {
+      localStorage.setItem('ebms_custom_meeting_presets', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save custom presets:', e);
+    }
+  };
+
+  const combinedPresets = useMemo(() => {
+    return [...OFFICIAL_MEETING_PRESETS, ...customPresets];
+  }, [customPresets]);
+
   const availablePresets = useMemo(() => {
-    if (isSeniorAdmin) return OFFICIAL_MEETING_PRESETS.filter((p) => p.program === 'Senior' || p.sector.includes('Senior'));
-    if (isPwdAdmin) return OFFICIAL_MEETING_PRESETS.filter((p) => p.program === 'PWD' || p.sector.includes('PWD') || p.sector.includes('Disabilit'));
-    if (isMswdoAdmin || isMswdoStaff) return OFFICIAL_MEETING_PRESETS.filter((p) => p.program !== '4Ps');
-    return OFFICIAL_MEETING_PRESETS;
-  }, [isSeniorAdmin, isPwdAdmin, isMswdoAdmin, isMswdoStaff]);
+    if (isSeniorAdmin) return combinedPresets.filter((p) => p.program === 'Senior' || (p.sector && p.sector.includes('Senior')));
+    if (isPwdAdmin) return combinedPresets.filter((p) => p.program === 'PWD' || (p.sector && (p.sector.includes('PWD') || p.sector.includes('Disabilit'))));
+    if (isMswdoAdmin || isMswdoStaff) return combinedPresets.filter((p) => p.program !== '4Ps');
+    return combinedPresets;
+  }, [combinedPresets, isSeniorAdmin, isPwdAdmin, isMswdoAdmin, isMswdoStaff]);
+
+  // State for creating a new meeting name
+  const [isNewMeetingModalOpen, setIsNewMeetingModalOpen] = useState(false);
+  const [newMeetingForm, setNewMeetingForm] = useState({
+    title: '',
+    sector: '4Ps Household Beneficiaries',
+    venue: 'Barangay Covered Court',
+    event_time: '08:00',
+    end_time: '12:00',
+    message: '',
+    priority: 'High',
+  });
+
+  const handleCreateCustomMeeting = (e) => {
+    if (e) e.preventDefault();
+    if (!newMeetingForm.title || !newMeetingForm.title.trim()) {
+      alert('Mangyaring ilagay ang pangalan ng meeting.');
+      return;
+    }
+    const cleanTitle = newMeetingForm.title.trim();
+    const sector = newMeetingForm.sector || activeAllowedCategories[0] || '4Ps Household Beneficiaries';
+    const prog = sector.includes('Senior') ? 'Senior' : sector.includes('PWD') ? 'PWD' : '4Ps';
+
+    const newPreset = {
+      id: `custom-meeting-${Date.now()}`,
+      isCustom: true,
+      program: prog,
+      sector: sector,
+      sectorLabel: `${sector} (Custom Meeting)`,
+      title: cleanTitle,
+      message: newMeetingForm.message && newMeetingForm.message.trim()
+        ? newMeetingForm.message.trim()
+        : `Opisyal na pagpupulong para sa ${cleanTitle}. Tatalakayin ang mahahalagang anunsyo at programa. Mangyaring dalhin ang inyong RFID Beneficiary Card para sa attendance verification.`,
+      event_time: newMeetingForm.event_time || '08:00',
+      end_time: newMeetingForm.end_time || '12:00',
+      venue: newMeetingForm.venue || 'Barangay Covered Court',
+      priority: newMeetingForm.priority || 'High',
+      target_categories: [sector],
+    };
+
+    const updated = [...customPresets, newPreset];
+    saveCustomPresets(updated);
+
+    // Auto-fill active announcement form with this newly created meeting
+    setFormData((prev) => {
+      const autoPriority = prev.event_date ? calculatePriorityFromDate(prev.event_date) : newPreset.priority;
+      const targetsSenior = sector.toLowerCase().includes('senior');
+      const targetsPwd = sector.toLowerCase().includes('pwd') || sector.toLowerCase().includes('disabil');
+      return {
+        ...prev,
+        title: newPreset.title,
+        message: newPreset.message,
+        venue: newPreset.venue,
+        priority: autoPriority || newPreset.priority,
+        event_time: newPreset.event_time,
+        end_time: newPreset.end_time,
+        target_categories: newPreset.target_categories,
+        target_programs: mapCategoriesToProgramIds(newPreset.target_categories, programs),
+        notify_senior: targetsSenior ? true : prev.notify_senior,
+        notify_pwd: targetsPwd ? true : prev.notify_pwd,
+      };
+    });
+
+    setIsNewMeetingModalOpen(false);
+    setNewMeetingForm({
+      title: '',
+      sector: activeAllowedCategories[0] || '4Ps Household Beneficiaries',
+      venue: 'Barangay Covered Court',
+      event_time: '08:00',
+      end_time: '12:00',
+      message: '',
+      priority: 'High',
+    });
+    alert(`Matagumpay na nagawa ang bagong meeting name: "${cleanTitle}"!`);
+  };
+
+  const handleDeleteCustomPreset = (presetId, title) => {
+    if (window.confirm(`Sigurado ka bang nais mong tanggalin ang template na "${title}"?`)) {
+      const updated = customPresets.filter((p) => p.id !== presetId);
+      saveCustomPresets(updated);
+      alert(`Tinanggal ang template na "${title}".`);
+    }
+  };
+
+  const handleQuickSaveCurrentTitle = () => {
+    if (!formData.title || !formData.title.trim()) return;
+    const cleanTitle = formData.title.trim();
+    const sector = (formData.target_categories && formData.target_categories[0]) || activeAllowedCategories[0] || '4Ps Household Beneficiaries';
+    const prog = sector.includes('Senior') ? 'Senior' : sector.includes('PWD') ? 'PWD' : '4Ps';
+
+    const newPreset = {
+      id: `custom-meeting-${Date.now()}`,
+      isCustom: true,
+      program: prog,
+      sector: sector,
+      sectorLabel: `${sector} (Custom Meeting)`,
+      title: cleanTitle,
+      message: formData.message || `Opisyal na pagpupulong para sa ${cleanTitle}. Mangyaring dalhin ang inyong RFID Beneficiary Card para sa attendance verification.`,
+      event_time: formData.event_time || '08:00',
+      end_time: formData.end_time || '12:00',
+      venue: formData.venue || 'Barangay Covered Court',
+      priority: formData.priority || 'High',
+      target_categories: formData.target_categories && formData.target_categories.length > 0 ? formData.target_categories : [sector],
+    };
+
+    const updated = [...customPresets, newPreset];
+    saveCustomPresets(updated);
+    alert(`Nai-save ang "${cleanTitle}" bilang meeting template!`);
+  };
 
   // Form State
   const [bgySelectionMode, setBgySelectionMode] = useState('single'); // 'single' | 'multiple'
@@ -1510,7 +1643,7 @@ export default function AnnouncementManagementPage() {
             <form onSubmit={handleSubmit} className="p-4 space-y-3 overflow-y-auto max-h-[80vh]">
               {/* Quick Fill from DSWD / MSWDO Meeting Presets */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 mb-2 shadow-sm">
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                   <label className="text-xs font-black text-dswd-blue uppercase flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
                     <span>
@@ -1523,14 +1656,45 @@ export default function AnnouncementManagementPage() {
                         : 'Pumili sa DSWD / MSWDO Official Meeting Templates:'}
                     </span>
                   </label>
-                  <span className="text-[11px] text-slate-500 font-semibold">
-                    Auto-fill details & target audience
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewMeetingForm({
+                        title: formData.title || '',
+                        sector: activeAllowedCategories[0] || '4Ps Household Beneficiaries',
+                        venue: formData.venue || 'Barangay Covered Court',
+                        event_time: formData.event_time || '08:00',
+                        end_time: formData.end_time || '12:00',
+                        message: '',
+                        priority: 'High',
+                      });
+                      setIsNewMeetingModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition transform hover:scale-[1.02] cursor-pointer"
+                    title="Lumikha ng bagong meeting title na maitatala bilang template"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>+ Magdagdag ng Bagong Meeting Name</span>
+                  </button>
                 </div>
                 <select
                   onChange={(e) => {
                     const selectedId = e.target.value;
                     if (!selectedId) return;
+                    if (selectedId === '__create_new__') {
+                      setNewMeetingForm({
+                        title: '',
+                        sector: activeAllowedCategories[0] || '4Ps Household Beneficiaries',
+                        venue: formData.venue || 'Barangay Covered Court',
+                        event_time: formData.event_time || '08:00',
+                        end_time: formData.end_time || '12:00',
+                        message: '',
+                        priority: 'High',
+                      });
+                      setIsNewMeetingModalOpen(true);
+                      e.target.value = '';
+                      return;
+                    }
                     const preset = availablePresets.find((p) => p.id === selectedId);
                     if (preset) {
                       setFormData((prev) => {
@@ -1560,8 +1724,23 @@ export default function AnnouncementManagementPage() {
                   className="w-full px-3 py-2 border border-blue-300 rounded-lg text-xs font-bold text-slate-800 bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm cursor-pointer hover:border-blue-400 transition"
                 >
                   <option value="">-- Pumili ng Opisyal na Meeting Template (Quick Fill) --</option>
+                  <option value="__create_new__" className="font-bold text-emerald-700 bg-emerald-50">
+                    ➕ [ + Gumawa ng Bagong Uri / Pangalan ng Meeting... ]
+                  </option>
+
+                  {/* Custom Admin Meetings */}
+                  {customPresets.length > 0 && (
+                    <optgroup label="⭐ Aking Mga Pasadyang Meeting (Custom Templates)">
+                      {customPresets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          ⭐ {p.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+
                   {['4Ps Household Beneficiaries', 'Senior Citizens (Social Pension)', 'Persons with Disabilities (PWD)'].map((sec) => {
-                    const presetsInSec = availablePresets.filter((p) => p.sector === sec);
+                    const presetsInSec = availablePresets.filter((p) => !p.isCustom && p.sector === sec);
                     if (presetsInSec.length === 0) return null;
                     const groupLabel = sec.includes('4Ps')
                       ? '🔵 DSWD 4Ps Meetings'
@@ -1583,13 +1762,26 @@ export default function AnnouncementManagementPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    Announcement Title <span className="text-red-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">
+                      Announcement Title <span className="text-red-500">*</span>
+                    </label>
+                    {formData.title && !availablePresets.some((p) => p.title.trim().toLowerCase() === formData.title.trim().toLowerCase()) && (
+                      <button
+                        type="button"
+                        onClick={handleQuickSaveCurrentTitle}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded shadow-xs transition"
+                        title="I-save ang pamagat na ito bilang template para magamit ulit sa susunod"
+                      >
+                        <Sparkles className="w-3 h-3 text-emerald-600" />
+                        <span>I-save bilang Template</span>
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
                     required
-                    placeholder="e.g., 4Ps Family Development Session"
+                    placeholder="e.g., 4Ps Compliance to Conditionalities"
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
@@ -2759,6 +2951,172 @@ export default function AnnouncementManagementPage() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREATE CUSTOM MEETING NAME */}
+      {isNewMeetingModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden my-8 border border-slate-200 animate-in fade-in zoom-in duration-150">
+            <div className="bg-gradient-to-r from-emerald-700 to-teal-800 text-white px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+                <h3 className="font-black text-lg">Lumikha ng Bagong Pangalan ng Meeting</h3>
+              </div>
+              <button
+                onClick={() => setIsNewMeetingModalOpen(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCustomMeeting} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase mb-1">
+                  Pangalan ng Meeting (Meeting Title) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g., 4Ps: Emergency Barangay Assembly o Special Payout"
+                  value={newMeetingForm.title}
+                  onChange={(e) => setNewMeetingForm({ ...newMeetingForm, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black text-slate-700 uppercase mb-1">
+                    Target Sector / Category
+                  </label>
+                  <select
+                    value={newMeetingForm.sector}
+                    onChange={(e) => setNewMeetingForm({ ...newMeetingForm, sector: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-emerald-500 outline-none bg-white"
+                  >
+                    {activeAllowedCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black text-slate-700 uppercase mb-1">
+                    Priority Level
+                  </label>
+                  <select
+                    value={newMeetingForm.priority}
+                    onChange={(e) => setNewMeetingForm({ ...newMeetingForm, priority: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-emerald-500 outline-none bg-white"
+                  >
+                    <option value="High">High</option>
+                    <option value="Urgent">Urgent</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase mb-1">
+                  Default Venue / Lokasyon
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Barangay Covered Court, Municipal Gymnasium"
+                  value={newMeetingForm.venue}
+                  onChange={(e) => setNewMeetingForm({ ...newMeetingForm, venue: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black text-slate-700 uppercase mb-1">Default Start Time</label>
+                  <input
+                    type="time"
+                    value={newMeetingForm.event_time}
+                    onChange={(e) => setNewMeetingForm({ ...newMeetingForm, event_time: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-700 uppercase mb-1">Default End Time</label>
+                  <input
+                    type="time"
+                    value={newMeetingForm.end_time}
+                    onChange={(e) => setNewMeetingForm({ ...newMeetingForm, end_time: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase mb-1">
+                  Mensahe / Panuntunan (Opsyonal)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Mensahe o paalala para sa mga dadalo..."
+                  value={newMeetingForm.message}
+                  onChange={(e) => setNewMeetingForm({ ...newMeetingForm, message: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              {/* LIST OF CURRENTLY SAVED CUSTOM MEETINGS */}
+              {customPresets.length > 0 && (
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="text-[11px] font-black text-slate-500 uppercase mb-2 flex items-center justify-between">
+                    <span>Nai-save nang mga Meeting Templates ({customPresets.length})</span>
+                  </div>
+                  <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+                    {customPresets.map((cp) => (
+                      <div
+                        key={cp.id}
+                        className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <p className="font-bold text-slate-800 truncate">⭐ {cp.title}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{cp.sector} • {cp.venue}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCustomPreset(cp.id, cp.title)}
+                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition cursor-pointer"
+                          title="Tanggalin"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsNewMeetingModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-100 transition"
+                >
+                  Kanselahin
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition cursor-pointer"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>I-save at Gamitin Ngayon</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
