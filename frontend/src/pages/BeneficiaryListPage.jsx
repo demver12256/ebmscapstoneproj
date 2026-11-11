@@ -439,6 +439,8 @@ export default function BeneficiaryListPage() {
     
     setEditingBeneficiary(beneficiary);
     setEditFormData({
+      household_id_number: beneficiary.household_id_number || beneficiary.beneficiary_id_code || '',
+      sitio: beneficiary.sitio || '',
       RFID_number: beneficiary.RFID_number || '',
       status: beneficiary.User?.status || 'active',
       inactivation_reason: beneficiary.inactivation_reason || '',
@@ -464,8 +466,14 @@ export default function BeneficiaryListPage() {
 
     try {
       const perm = getRfidPermission(editingBeneficiary);
+      const is4Ps = editingBeneficiary.category?.toLowerCase().includes('4ps');
+      const cleanHh = editFormData.household_id_number ? editFormData.household_id_number.trim() : null;
+      const cleanSitio = editFormData.sitio ? editFormData.sitio.trim() : null;
+
       const payload = {
         ...editFormData,
+        household_id_number: cleanHh,
+        sitio: cleanSitio,
         inactivation_reason: editFormData.status === 'inactive' ? editFormData.inactivation_reason.trim() : null
       };
 
@@ -481,7 +489,10 @@ export default function BeneficiaryListPage() {
           b.id === editingBeneficiary.id
             ? { 
                 ...b, 
-                RFID_number: payload.RFID_number,
+                household_id_number: cleanHh,
+                beneficiary_id_code: is4Ps && cleanHh ? cleanHh : b.beneficiary_id_code,
+                sitio: cleanSitio,
+                RFID_number: payload.RFID_number !== undefined ? payload.RFID_number : b.RFID_number,
                 inactivation_reason: payload.inactivation_reason,
                 User: { ...b.User, status: payload.status }
               }
@@ -2598,22 +2609,58 @@ export default function BeneficiaryListPage() {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="bg-slate-50 rounded-lg p-4 space-y-2 border border-slate-200">
-                <div>
-                  <p className="text-xs text-slate-600 uppercase tracking-wide font-semibold">
-                    {editingBeneficiary.category?.toLowerCase().includes('4ps') ? '4Ps Household Number' : 'Beneficiary ID'}
-                  </p>
-                  <p className="text-lg font-bold text-slate-900 font-mono">{editingBeneficiary.household_id_number || editingBeneficiary.beneficiary_id_code || 'N/A'}</p>
+              <div className="bg-slate-50 rounded-xl p-4 space-y-1.5 border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500 uppercase tracking-wide font-semibold">Beneficiary</span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                    {editingBeneficiary.category || '4Ps Household'}
+                  </span>
                 </div>
-                <div>
-                  <p className="text-xs text-slate-600 uppercase tracking-wide font-semibold">Full Name</p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {editingBeneficiary.first_name} {editingBeneficiary.last_name}
+                <p className="text-base font-bold text-slate-900">
+                  {editingBeneficiary.first_name} {editingBeneficiary.last_name}
+                </p>
+                {editingBeneficiary.Barangay?.barangay_name && (
+                  <p className="text-xs text-slate-500">
+                    📍 Brgy. {editingBeneficiary.Barangay.barangay_name}
                   </p>
-                </div>
+                )}
               </div>
 
               <form onSubmit={handleSaveEdit} className="space-y-4">
+                {/* Editable Household ID Number */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>
+                      {editingBeneficiary.category?.toLowerCase().includes('4ps') ? '4Ps Household Number' : 'Household / Beneficiary ID Number'}
+                    </span>
+                    <span className="text-[11px] text-blue-600 font-medium">Maaaring itama kung may typo</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.household_id_number || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, household_id_number: e.target.value })}
+                    placeholder="Hal. 1700003735341 o 4PS-2026-0001"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Opisyal na numero ng pamilya o miyembro. Magagamit ito upang maiwasto ang anumang typo.
+                  </p>
+                </div>
+
+                {/* Editable Sitio / Purok */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">
+                    Sitio / Purok
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.sitio || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, sitio: e.target.value })}
+                    placeholder="Hal. Sitio Centro, Purok 3, Sitio Ilaya"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                </div>
+
                 {(() => {
                   const editRfidPerm = getRfidPermission(editingBeneficiary);
                   return (

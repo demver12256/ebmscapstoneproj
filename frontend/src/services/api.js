@@ -99,6 +99,7 @@ export const beneficiaryApi = {
   getMe: () => apiClient.get('/beneficiaries/me'),
   getById: (id) => apiClient.get(`/beneficiaries/${id}`),
   updateMe: (data) => apiClient.put('/beneficiaries/me', data),
+  updateContact: (data) => apiClient.put('/beneficiaries/me/contact', data),
   update: (id, data) => apiClient.put(`/beneficiaries/${id}`, data),
   uploadDocument: (formData) => apiClient.post('/beneficiaries/me/documents', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }

@@ -80,6 +80,18 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
   const [payoutError, setPayoutError] = useState(null);
   const [payoutSuccessMsg, setPayoutSuccessMsg] = useState(null);
 
+  // Edit Profile (Household ID & Sitio) modal state
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    household_id_number: '',
+    sitio: '',
+    address: '',
+    contact_number: '',
+  });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState(null);
+  const [profileSuccessMsg, setProfileSuccessMsg] = useState(null);
+
   useEffect(() => {
     if (beneficiary) {
       setCurrentBeneficiary(beneficiary);
@@ -91,8 +103,50 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
         payout_account_number: beneficiary.payout_account_number || '',
         payout_account_name: beneficiary.payout_account_name || `${beneficiary.first_name || ''} ${beneficiary.last_name || ''}`.trim(),
       });
+      setProfileForm({
+        household_id_number: beneficiary.household_id_number || beneficiary.beneficiary_id_code || '',
+        sitio: beneficiary.sitio || '',
+        address: beneficiary.address || '',
+        contact_number: beneficiary.contact_number || '',
+      });
     }
   }, [beneficiary]);
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setProfileSaving(true);
+    setProfileError(null);
+    setProfileSuccessMsg(null);
+    try {
+      const payload = {
+        household_id_number: profileForm.household_id_number ? profileForm.household_id_number.trim() : null,
+        sitio: profileForm.sitio ? profileForm.sitio.trim() : null,
+        address: profileForm.address ? profileForm.address.trim() : null,
+        contact_number: profileForm.contact_number ? profileForm.contact_number.trim() : undefined,
+      };
+      const res = await beneficiaryApi.updateContact(payload);
+      if (res.data?.success && res.data?.data) {
+        setCurrentBeneficiary(res.data.data);
+      } else {
+        setCurrentBeneficiary((prev) => ({
+          ...prev,
+          household_id_number: payload.household_id_number,
+          beneficiary_id_code: (is4Ps && payload.household_id_number) ? payload.household_id_number : prev.beneficiary_id_code,
+          sitio: payload.sitio,
+          address: payload.address,
+        }));
+      }
+      setProfileSuccessMsg('✓ Matagumpay na na-update ang iyong impormasyon!');
+      setTimeout(() => {
+        setShowEditProfileModal(false);
+        setProfileSuccessMsg(null);
+      }, 1500);
+    } catch (err) {
+      setProfileError(err.response?.data?.message || err.message || 'Hindi ma-update ang profile.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const handleSavePayoutAccount = async (e) => {
     e.preventDefault();
@@ -629,19 +683,39 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
           <div className="flex items-center gap-2 mb-3">
             <FileText className="w-5 h-5 text-dswd-lightBlue" />
             <p className="text-sm font-semibold text-slate-700">
-              {beneficiary?.category?.toLowerCase().includes('4ps') ? '4Ps Household Number' : 'Beneficiary ID'}
+              {currentBeneficiary?.category?.toLowerCase().includes('4ps') ? '4Ps Household Number' : 'Beneficiary ID'}
             </p>
           </div>
           <h3 className="text-xl font-black text-slate-900 font-mono">
-            {beneficiary?.household_id_number || beneficiary?.beneficiary_id_code || '—'}
+            {currentBeneficiary?.household_id_number || currentBeneficiary?.beneficiary_id_code || '—'}
           </h3>
-          <button
-            onClick={handleCopy}
-            className="mt-3 flex items-center gap-2 text-xs font-semibold text-dswd-lightBlue hover:text-dswd-blue transition"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            {copied ? 'Copied!' : 'Copy'}
-          </button>
+          <div className="mt-3 flex items-center gap-3 flex-wrap">
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1.5 text-xs font-semibold text-dswd-lightBlue hover:text-dswd-blue transition cursor-pointer"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+            <button
+              onClick={() => {
+                setProfileError(null);
+                setProfileSuccessMsg(null);
+                setProfileForm({
+                  household_id_number: currentBeneficiary?.household_id_number || currentBeneficiary?.beneficiary_id_code || '',
+                  sitio: currentBeneficiary?.sitio || '',
+                  address: currentBeneficiary?.address || '',
+                  contact_number: currentBeneficiary?.contact_number || '',
+                });
+                setShowEditProfileModal(true);
+              }}
+              className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
+              title="I-edit ang Household Number o Sitio kung may typo nung registration"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              I-edit / Itama ang Typo
+            </button>
+          </div>
         </div>
 
         {/* Enrolled Program Card */}
@@ -670,14 +744,33 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
         </div>
 
         {/* Barangay Card */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <MapPin className="w-5 h-5 text-slate-600" />
-            <p className="text-sm font-semibold text-slate-700">Barangay</p>
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm relative">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-slate-600" />
+              <p className="text-sm font-semibold text-slate-700">Barangay & Sitio</p>
+            </div>
+            <button
+              onClick={() => {
+                setProfileError(null);
+                setProfileSuccessMsg(null);
+                setProfileForm({
+                  household_id_number: currentBeneficiary?.household_id_number || currentBeneficiary?.beneficiary_id_code || '',
+                  sitio: currentBeneficiary?.sitio || '',
+                  address: currentBeneficiary?.address || '',
+                  contact_number: currentBeneficiary?.contact_number || '',
+                });
+                setShowEditProfileModal(true);
+              }}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              I-edit
+            </button>
           </div>
-          <h4 className="text-lg font-bold text-slate-900">{beneficiary?.Barangay?.barangay_name || 'N/A'}</h4>
+          <h4 className="text-lg font-bold text-slate-900">{currentBeneficiary?.Barangay?.barangay_name || 'N/A'}</h4>
           <p className="text-xs text-slate-600 mt-1">
-            {beneficiary?.sitio ? `${beneficiary.sitio},` : ''} {beneficiary?.Barangay?.barangay_name}
+            {currentBeneficiary?.sitio ? `${currentBeneficiary.sitio}, ` : ''}{currentBeneficiary?.Barangay?.barangay_name || 'Bongabong'}
           </p>
         </div>
       </div>
@@ -1849,6 +1942,129 @@ export default function ApprovedBeneficiaryDashboard({ beneficiary }) {
                     </>
                   ) : (
                     'I-save ang Secondary Account'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Household ID & Sitio Modal for Beneficiary */}
+      {showEditProfileModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-gradient-to-r from-blue-700 to-indigo-700 px-6 py-4 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                  <Edit3 className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">I-update ang Household ID & Sitio</h3>
+                  <p className="text-xs text-blue-100">Itama ang impormasyon kung nagkaroon ng typo.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEditProfileModal(false)}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="p-6 space-y-4">
+              {profileError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+                  <span>{profileError}</span>
+                </div>
+              )}
+
+              {profileSuccessMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{profileSuccessMsg}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  {is4Ps ? '4Ps Household ID Number' : 'Household / Beneficiary ID Number'}
+                </label>
+                <input
+                  type="text"
+                  value={profileForm.household_id_number}
+                  onChange={(e) => setProfileForm({ ...profileForm, household_id_number: e.target.value })}
+                  placeholder="Hal. 1700003735341 o 4PS-2026-0001"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  💡 Kung may typo nung ikaw ay nagparehistro, maaari mo itong itama rito.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Sitio / Purok
+                </label>
+                <input
+                  type="text"
+                  value={profileForm.sitio}
+                  onChange={(e) => setProfileForm({ ...profileForm, sitio: e.target.value })}
+                  placeholder="Hal. Sitio Ilaya, Purok 3, Sitio Centro"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  Barangay: <span className="font-semibold text-slate-700">{currentBeneficiary?.Barangay?.barangay_name || 'Bongabong'}</span>
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Contact Number (Mobile)
+                </label>
+                <input
+                  type="text"
+                  value={profileForm.contact_number}
+                  onChange={(e) => setProfileForm({ ...profileForm, contact_number: e.target.value })}
+                  placeholder="Hal. 09171234567"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Tirahan / Address (Opsyonal)
+                </label>
+                <input
+                  type="text"
+                  value={profileForm.address}
+                  onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
+                  placeholder="Hal. House 12, Street Name"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowEditProfileModal(false)}
+                  className="flex-1 py-2.5 border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-sm transition cursor-pointer"
+                >
+                  Kanselahin
+                </button>
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {profileSaving ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Nagse-save...
+                    </>
+                  ) : (
+                    'I-save ang Pagbabago'
                   )}
                 </button>
               </div>

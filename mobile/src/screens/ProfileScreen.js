@@ -201,6 +201,7 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
     setContactForm({
       contact_number: profile?.contact_number || accountUser.contact_number || accountUser.phone || '',
       email: accountUser.email || profile?.email || '',
+      household_id_number: profile?.household_id_number || profile?.beneficiary_id_code || '',
       sitio: profile?.sitio || '',
       address: profile?.address || '',
     });
@@ -223,9 +224,13 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
       if (res.data?.success && res.data?.data) {
         onProfileUpdated?.(res.data.data);
       } else {
+        const is4Ps = String(profile?.category || '').toLowerCase().includes('4ps');
+        const cleanHh = contactForm.household_id_number ? contactForm.household_id_number.trim() : null;
         onProfileUpdated?.((prev) => ({
           ...prev,
           contact_number: contactForm.contact_number,
+          household_id_number: cleanHh || prev?.household_id_number,
+          beneficiary_id_code: (is4Ps && cleanHh) ? cleanHh : prev?.beneficiary_id_code,
           sitio: contactForm.sitio,
           address: contactForm.address,
           User: {
@@ -236,7 +241,7 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
           },
         }));
       }
-      Alert.alert('Matagumpay', 'Na-update na ang iyong Contact Information!');
+      Alert.alert('Matagumpay', 'Na-update na ang iyong impormasyon!');
       handleCloseContactModal();
     } catch (err) {
       Alert.alert('Hindi na-update', err?.response?.data?.message || err.message || 'Subukan muli mamaya.');
@@ -423,6 +428,20 @@ export default function ProfileScreen({ user, profile, onOpenDrawer, onProfileUp
                   autoCapitalize="none"
                 />
               </View>
+
+              <Text style={styles.passwordLabel}>Household ID Number / 4Ps Number</Text>
+              <View style={styles.passwordInputWrap}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={contactForm.household_id_number}
+                  onChangeText={(val) => setContactForm((prev) => ({ ...prev, household_id_number: val }))}
+                  placeholder="Hal. 1700003735341 o 4PS-2026-0001"
+                  placeholderTextColor="#94a3b8"
+                />
+              </View>
+              <Text style={{ fontSize: 11, color: '#64748b', marginTop: 3, marginBottom: 8 }}>
+                Maaaring itama kung nagkaroon ng typo sa inyong Household Number.
+              </Text>
 
               <Text style={styles.passwordLabel}>Sitio / Purok</Text>
               <View style={styles.passwordInputWrap}>

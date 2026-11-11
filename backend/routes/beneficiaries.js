@@ -528,7 +528,7 @@ router.put('/me/contact', authorize('beneficiary'), async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User account not found' });
     }
 
-    const { contact_number, email, address, sitio } = req.body || {};
+    const { contact_number, email, address, sitio, household_id_number } = req.body || {};
     const beneficiaryUpdates = {};
     const userUpdates = {};
 
@@ -568,6 +568,36 @@ router.put('/me/contact', authorize('beneficiary'), async (req, res, next) => {
     }
     if (sitio !== undefined) {
       beneficiaryUpdates.sitio = String(sitio || '').trim() || null;
+    }
+
+    if (household_id_number !== undefined) {
+      const cleanHh = String(household_id_number || '').trim();
+      if (cleanHh) {
+        if (cleanHh !== beneficiary.household_id_number && cleanHh !== beneficiary.beneficiary_id_code) {
+          const existingHh = await Beneficiary.findOne({
+            where: {
+              [Op.or]: [
+                { household_id_number: cleanHh },
+                { beneficiary_id_code: cleanHh }
+              ],
+              id: { [Op.ne]: beneficiary.id }
+            }
+          });
+          if (existingHh) {
+            return res.status(409).json({
+              success: false,
+              message: `Ang Household Number na "${cleanHh}" ay nakarehistro na sa ibang benepisyaryo.`
+            });
+          }
+        }
+        beneficiaryUpdates.household_id_number = cleanHh;
+        const is4Ps = String(beneficiary.category || '').toLowerCase().includes('4ps');
+        if (is4Ps) {
+          beneficiaryUpdates.beneficiary_id_code = cleanHh;
+        }
+      } else {
+        beneficiaryUpdates.household_id_number = null;
+      }
     }
 
     if (Object.keys(beneficiaryUpdates).length > 0) await beneficiary.update(beneficiaryUpdates);
@@ -1929,12 +1959,39 @@ router.put('/:id', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo
       }
     }
 
-    // If household_id_number updated for 4Ps, also sync beneficiary_id_code
+    // Allow Admin & Staff to edit household_id_number and sitio
     if (otherUpdates.household_id_number !== undefined) {
-      const is4Ps = (otherUpdates.category || beneficiary.category || '').toLowerCase().includes('4ps');
-      if (is4Ps && otherUpdates.household_id_number) {
-        otherUpdates.beneficiary_id_code = String(otherUpdates.household_id_number).trim();
+      const cleanHh = otherUpdates.household_id_number ? String(otherUpdates.household_id_number).trim() : null;
+      if (cleanHh) {
+        if (cleanHh !== beneficiary.household_id_number && cleanHh !== beneficiary.beneficiary_id_code) {
+          const existingHh = await Beneficiary.findOne({
+            where: {
+              [Op.or]: [
+                { household_id_number: cleanHh },
+                { beneficiary_id_code: cleanHh }
+              ],
+              id: { [Op.ne]: beneficiary.id }
+            }
+          });
+          if (existingHh) {
+            return res.status(409).json({
+              success: false,
+              message: `Ang Household Number na "${cleanHh}" ay nakatalaga na kay ${existingHh.first_name} ${existingHh.last_name} (${existingHh.beneficiary_id_code || 'ID #' + existingHh.id}).`
+            });
+          }
+        }
+        otherUpdates.household_id_number = cleanHh;
+        const is4Ps = (otherUpdates.category || beneficiary.category || '').toLowerCase().includes('4ps');
+        if (is4Ps) {
+          otherUpdates.beneficiary_id_code = cleanHh;
+        }
+      } else {
+        otherUpdates.household_id_number = null;
       }
+    }
+
+    if (otherUpdates.sitio !== undefined) {
+      otherUpdates.sitio = otherUpdates.sitio ? String(otherUpdates.sitio).trim() : null;
     }
 
     // Sector-specific RFID Registration Enforcement:
