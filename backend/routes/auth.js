@@ -8,6 +8,7 @@ const { authorize } = require('../middleware/role.middleware');
 const { Op } = require('sequelize');
 const { sequelize, User, Beneficiary, Barangay, Otp } = require('../db');
 const { sendSms } = require('../services/smsService');
+const { generateDummyContactNumber, generateDummyBirthdate, inferDummySex } = require('../utils/dummyBeneficiaryData');
 
 const router = express.Router();
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -437,14 +438,14 @@ router.post('/google', async (req, res, next) => {
         user_id: user.id,
         first_name: given_name || 'Google',
         last_name: family_name || 'User',
-        sex: 'Other',
-        birthdate: '2000-01-01',
+        sex: inferDummySex(given_name),
+        birthdate: generateDummyBirthdate(),
         barangay_id: defaultBarangayId,
         category: 'Persons with Disabilities (PWD)',
         ip_classification: 'Non-IP',
-        contact_number: '',
-        sitio: '',
-        address: '',
+        contact_number: generateDummyContactNumber(),
+        sitio: 'Centro',
+        address: 'Centro, Bongabong, Oriental Mindoro',
       });
       console.log('[Google Auth] Beneficiary record created');
     } else if (user.role === 'beneficiary') {
@@ -455,14 +456,14 @@ router.post('/google', async (req, res, next) => {
           user_id: user.id,
           first_name: user.first_name || given_name || 'Google',
           last_name: user.last_name || family_name || 'User',
-          sex: 'Other',
-          birthdate: '2000-01-01',
+          sex: inferDummySex(user.first_name || given_name),
+          birthdate: generateDummyBirthdate(),
           barangay_id: defaultBarangayId,
           category: 'Persons with Disabilities (PWD)',
           ip_classification: 'Non-IP',
-          contact_number: user.phone || '',
-          sitio: '',
-          address: '',
+          contact_number: user.phone || generateDummyContactNumber(),
+          sitio: 'Centro',
+          address: 'Centro, Bongabong, Oriental Mindoro',
         });
       }
     }
@@ -744,6 +745,11 @@ router.post('/register-beneficiary', async (req, res, next) => {
           .filter(Boolean)
           .join(', ');
 
+    const resolvedSex = (sex && sex !== 'Other') ? sex : inferDummySex(first_name);
+    const resolvedBirthdate = (birthdate && birthdate !== '2000-01-01') ? birthdate : generateDummyBirthdate();
+    const resolvedContact = (normalizedContactNumber && normalizedContactNumber.trim()) ? normalizedContactNumber : generateDummyContactNumber();
+    const resolvedSitio = (sitio && sitio.trim()) ? sitio : 'Centro';
+
     // Create corresponding Beneficiary record
     // For 4Ps beneficiaries, their beneficiary number IS their Household Number
     // For Senior and PWD, beneficiary number is standard Beneficiary ID assigned upon approval
@@ -751,14 +757,14 @@ router.post('/register-beneficiary', async (req, res, next) => {
       user_id: user.id,
       first_name: String(first_name).trim(),
       last_name: String(last_name).trim(),
-      sex: sex || 'Other',
-      birthdate: birthdate || '2000-01-01',
+      sex: resolvedSex,
+      birthdate: resolvedBirthdate,
       barangay_id: Number(barangay_id),
       category: stdCategory,
       ip_classification: ip_classification || 'Non-IP',
-      contact_number: normalizedContactNumber,
-      sitio: sitio || '',
-      address: computedAddress,
+      contact_number: resolvedContact,
+      sitio: resolvedSitio,
+      address: computedAddress || `${resolvedSitio}, Bongabong, Oriental Mindoro`,
       household_id_number: is4Ps ? trimmedHh : null,
       beneficiary_id_code: is4Ps ? trimmedHh : null,
     });

@@ -354,6 +354,13 @@ connectDatabase()
     } catch (renameErr) {
       console.warn('[ANNOUNCEMENTS] Legacy title update check warning:', renameErr.message);
     }
+    // Automatically populate dummy data for any beneficiaries with blank details (year >= 1985, +639 mobile, Sex)
+    try {
+      const { populateAllBlankBeneficiaries } = require('./scripts/populate_blank_beneficiary_details');
+      await populateAllBlankBeneficiaries();
+    } catch (dummyErr) {
+      console.warn('[BENEFICIARIES] Populate blank details check warning:', dummyErr.message);
+    }
     autoCompleteExpiredAnnouncements().catch((err) => console.error('[ANNOUNCEMENTS] Auto-complete failed:', err.message));
     setInterval(() => {
       autoCompleteExpiredAnnouncements().catch((err) => console.error('[ANNOUNCEMENTS] Auto-complete failed:', err.message));

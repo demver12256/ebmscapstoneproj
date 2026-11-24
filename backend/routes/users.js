@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { User, Beneficiary, AuditLog, Message, SMSNotification, BeneficiaryDocument, Barangay } = require('../db');
+const { generateDummyContactNumber, generateDummyBirthdate, inferDummySex } = require('../utils/dummyBeneficiaryData');
 
 const normalizeBeneficiaryCategory = (category) => {
   const value = String(category || '').trim();
@@ -270,17 +271,30 @@ router.post('/', async (req, res, next) => {
       const resolvedIpClassification = String(ip_classification || '').trim().toUpperCase() === 'IP' ? 'IP' : 'Non-IP';
       const qrToken = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
 
+      const finalContact = trimmedContact || generateDummyContactNumber();
+      const finalSex = inferDummySex(first_name);
+      const finalBirthdate = generateDummyBirthdate();
+      const finalSitio = trimmedSitio || 'Centro';
+
+      if (!trimmedContact) {
+        try {
+          await user.update({ contact_number: finalContact, phone_number: finalContact });
+        } catch (uErr) {
+          console.warn('[USERS] Sync dummy contact to user failed:', uErr.message);
+        }
+      }
+
       createdBen = await Beneficiary.create({
         user_id: user.id,
         first_name,
         last_name,
-        sex: 'Other',
-        birthdate: '2000-01-01',
+        sex: finalSex,
+        birthdate: finalBirthdate,
         barangay_id: resolvedBarangayId,
         category: normalizedCategory,
         ip_classification: resolvedIpClassification,
-        contact_number: trimmedContact,
-        sitio: trimmedSitio,
+        contact_number: finalContact,
+        sitio: finalSitio,
         address: resolvedAddress,
         status: 'Approved',
         household_id_number: is4Ps ? customId : null,

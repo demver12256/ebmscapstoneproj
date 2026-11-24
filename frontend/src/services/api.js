@@ -125,6 +125,7 @@ export const beneficiaryApi = {
   removeExtraPayoutAccount: (index) => apiClient.delete(`/beneficiaries/me/extra-payout-accounts/${index}`),
   getQrPass: (id) => apiClient.get(`/beneficiaries/${id}/qr-pass`),
   regenerateQrPass: (id) => apiClient.post(`/beneficiaries/${id}/regenerate-qr`),
+  populateDummyDetails: () => apiClient.post('/beneficiaries/populate-dummy-details'),
 };
 
 export const programApi = {

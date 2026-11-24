@@ -8,6 +8,8 @@ const { authorize } = require('../middleware/role.middleware');
 const { Beneficiary, Barangay, User, BeneficiaryDocument, AuditLog, SMSNotification, Notification, Message, AnnouncementRecipient, Announcement, Attendance, DistributionTransaction, DistributionEvent, BenefitProgram, Enrollment } = require('../db');
 const { isMswdoRole, MSWDO_CATEGORY_FILTER, isMswdoCategory, isSeniorRole, isPwdRole, getOfficeBrand } = require('../utils/roles');
 const QRCode = require('qrcode');
+const { fillBeneficiaryDummyDetails, generateDummyContactNumber, generateDummyBirthdate, inferDummySex } = require('../utils/dummyBeneficiaryData');
+const { populateAllBlankBeneficiaries } = require('../scripts/populate_blank_beneficiary_details');
 
 // Helper to check if staff user is restricted by their assigned barangay
 const isBarangayRestricted = (reqUser, targetBarangayId) => {
@@ -101,7 +103,35 @@ router.get('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_st
     }
     const beneficiaries = await Beneficiary.findAll({ where, include: [Barangay, User] });
     console.log(`[Beneficiaries] Found ${beneficiaries.length} records`);
+
+    // Auto-patch any blank beneficiary details on the fly
+    for (const b of beneficiaries) {
+      const patch = fillBeneficiaryDummyDetails(b);
+      if (Object.keys(patch).length > 0) {
+        try {
+          await b.update(patch);
+          Object.assign(b, patch);
+          if (patch.contact_number && b.User && (!b.User.phone_number || !b.User.phone_number.trim())) {
+            await b.User.update({ phone_number: patch.contact_number });
+            b.User.phone_number = patch.contact_number;
+          }
+        } catch (patchErr) {
+          // ignore individual update errors
+        }
+      }
+    }
+
     res.json({ success: true, data: beneficiaries });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Admin endpoint to manually trigger populating all blank details
+router.post('/populate-dummy-details', authorize('admin', 'mswdo_admin', 'senior_citizen_admin', 'pwd_admin'), async (req, res, next) => {
+  try {
+    const result = await populateAllBlankBeneficiaries();
+    res.json(result);
   } catch (error) {
     next(error);
   }
@@ -180,22 +210,26 @@ router.post('/', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_s
 
     const qrToken = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
     const resolvedIpClassification = String(ip_classification || '').trim().toUpperCase() === 'IP' ? 'IP' : 'Non-IP';
-    const trimmedContact = contact_number && String(contact_number).trim() !== '' ? String(contact_number).trim() : null;
-    const trimmedSitio = sitio && String(sitio).trim() !== '' ? String(sitio).trim() : null;
-    const resolvedAddress = address || trimmedSitio || null;
+    const finalContact = (contact_number && String(contact_number).trim() !== '')
+      ? String(contact_number).trim()
+      : generateDummyContactNumber();
+    const finalSitio = (sitio && String(sitio).trim() !== '') ? String(sitio).trim() : 'Centro';
+    const resolvedAddress = address || finalSitio || 'Centro, Bongabong, Oriental Mindoro';
+    const finalSex = (sex && sex !== 'Other' && String(sex).trim() !== '') ? sex : inferDummySex(first_name);
+    const finalBirthdate = (birthdate && birthdate !== '2000-01-01' && String(birthdate).trim() !== '') ? birthdate : generateDummyBirthdate();
 
     const beneficiary = await Beneficiary.create({
       user_id: user_id || null,
       first_name,
       last_name,
       middle_name,
-      sex,
-      birthdate,
+      sex: finalSex,
+      birthdate: finalBirthdate,
       barangay_id: resolvedBarangayId,
       category: normalizedCategory,
       ip_classification: resolvedIpClassification,
-      contact_number: trimmedContact,
-      sitio: trimmedSitio,
+      contact_number: finalContact,
+      sitio: finalSitio,
       address: resolvedAddress,
       status: 'Approved',
       household_id_number: is4Ps ? customId : null,
@@ -1070,6 +1104,20 @@ router.get('/:id', authorize('admin', 'staff', 'barangay', 'beneficiary', 'mswdo
     }
     if (['mswdo_admin', 'mswdo_staff'].includes(req.user.role) && !isMswdoCategory(beneficiary.category, 'mswdo_admin')) {
       return res.status(403).json({ success: false, message: 'MSWDO access restricted to municipal roster (Senior Citizens, PWD, and 4Ps).' });
+    }
+
+    const patch = fillBeneficiaryDummyDetails(beneficiary);
+    if (Object.keys(patch).length > 0) {
+      try {
+        await beneficiary.update(patch);
+        Object.assign(beneficiary, patch);
+        if (patch.contact_number && beneficiary.User && (!beneficiary.User.phone_number || !beneficiary.User.phone_number.trim())) {
+          await beneficiary.User.update({ phone_number: patch.contact_number });
+          beneficiary.User.phone_number = patch.contact_number;
+        }
+      } catch (patchErr) {
+        // ignore
+      }
     }
 
     res.json({ success: true, data: beneficiary });

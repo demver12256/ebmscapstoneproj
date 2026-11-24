@@ -63,6 +63,24 @@ export default function BeneficiaryListPage() {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState(null);
   const [editSuccess, setEditSuccess] = useState(null);
+  const [populatingDetails, setPopulatingDetails] = useState(false);
+
+  const handlePopulateBlankDetails = async () => {
+    try {
+      setPopulatingDetails(true);
+      const res = await beneficiaryApi.populateDummyDetails();
+      if (res.data?.success) {
+        alert(`Matagumpay na napunan ang dummy data para sa ${res.data.updated || 0} benepisyaryo!`);
+      } else {
+        alert('Nai-update na ang mga detalye ng benepisyaryo.');
+      }
+      loadAllData();
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Error populating blank details');
+    } finally {
+      setPopulatingDetails(false);
+    }
+  };
 
   // Pending Applications Modal State
   const [showPendingModal, setShowPendingModal] = useState(false);
@@ -1032,6 +1050,18 @@ export default function BeneficiaryListPage() {
             <Archive className="w-3.5 h-3.5 text-slate-500" />
             <span>Archived ({archivedCount})</span>
           </button>
+
+          {(user?.role === 'admin' || isSectorAdmin) && (
+            <button
+              onClick={handlePopulateBlankDetails}
+              disabled={populatingDetails}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs active:scale-95 bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer"
+              title="Awtomatikong punan ng dummy contact number (+639...), kasarian, at petsa ng kapanganakan (>= 1985) ang mga benepisyaryong blanko"
+            >
+              <Sparkles className={`w-3.5 h-3.5 text-emerald-600 ${populatingDetails ? 'animate-spin' : ''}`} />
+              <span>{populatingDetails ? 'Pumupuno...' : 'Punan ang Blankong Details'}</span>
+            </button>
+          )}
         </div>
       </div>
 
