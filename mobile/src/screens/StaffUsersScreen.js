@@ -74,6 +74,7 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
     role: 'beneficiary',
     category: allowedCategories[0],
     barangay_id: user?.barangay_id ? Number(user.barangay_id) : '',
+    sitio: '',
   });
 
   const loadUsers = useCallback(async () => {
@@ -160,6 +161,7 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
       category: allowedCategories[0],
       barangay_id: defaultBrgy,
       household_id_number: '',
+      sitio: '',
     });
     setCreateModalVisible(true);
   };
@@ -188,6 +190,7 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
         category: isBen ? form.category : undefined,
         household_id_number: is4Ps && form.household_id_number?.trim() ? form.household_id_number.trim() : undefined,
         barangay_id: form.barangay_id ? Number(form.barangay_id) : undefined,
+        sitio: isBen && form.sitio?.trim() ? form.sitio.trim() : undefined,
       };
       await userApi.create(payload);
       Alert.alert(
@@ -500,7 +503,7 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
               </View>
 
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>CONTACT NUMBER</Text>
+                <Text style={styles.formLabel}>CONTACT NUMBER (OPSYONAL)</Text>
                 <TextInput
                   style={styles.input}
                   value={form.contact_number}
@@ -540,6 +543,18 @@ const StaffUsersScreen = ({ onBack, onOpenDrawer, user, darkMode = false }) => {
                   })}
                 </ScrollView>
               </View>
+
+              {form.account_type === 'beneficiary' && (
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>SITIO / PUROK (OPSYONAL)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={form.sitio}
+                    onChangeText={(v) => setForm({ ...form, sitio: v })}
+                    placeholder="Hal. Centro / Purok 1"
+                  />
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[styles.submitBtn, creating && { opacity: 0.6 }]}

@@ -93,6 +93,7 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
     contact_number: '',
     address: '',
     sitio: '',
+    household_id_number: '',
     civil_status: 'Single',
     status: 'active',
     inactivation_reason: '',
@@ -555,6 +556,7 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
       contact_number: b.contact_number || '',
       address: b.address || '',
       sitio: b.sitio || '',
+      household_id_number: b.household_id_number || '',
       civil_status: b.civil_status || 'Single',
       status: isArchivedBeneficiary(b) ? 'inactive' : (b.User?.status || b.status || 'active'),
       inactivation_reason: b.inactivation_reason || '',
@@ -2169,6 +2171,17 @@ const BeneficiaryListScreen = ({ onBack, onOpenDrawer, user }) => {
                 onChangeText={(val) => setEditForm((prev) => ({ ...prev, sitio: val }))}
                 placeholder="Sitio..."
               />
+
+              <Text style={s.editFieldLabel}>HOUSEHOLD / 4PS NUMBER</Text>
+              <TextInput
+                style={s.editInput}
+                value={editForm.household_id_number}
+                onChangeText={(val) => setEditForm((prev) => ({ ...prev, household_id_number: val }))}
+                placeholder="Hal. 4PS-2026-0001"
+              />
+              <Text style={{ fontSize: 11, color: '#64748b', marginBottom: 8, marginTop: -4 }}>
+                Maaaring itama kung nagkaroon ng typo sa Household Number.
+              </Text>
 
               <Text style={s.editFieldLabel}>CIVIL STATUS</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
