@@ -118,7 +118,7 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    let { first_name, last_name, username, email, password, contact_number, address, sitio, barangay_id, role, category, household_id_number, ip_classification } = req.body;
+    let { first_name, last_name, middle_name, username, email, password, contact_number, address, sitio, barangay_id, role, category, household_id_number, ip_classification, sex, birthdate, civil_status } = req.body;
 
     if (req.user.role === 'senior_citizen_admin') {
       if (role === 'beneficiary') {
@@ -272,8 +272,13 @@ router.post('/', async (req, res, next) => {
       const qrToken = Beneficiary.generateQrToken ? Beneficiary.generateQrToken() : require('crypto').randomBytes(16).toString('hex').toUpperCase();
 
       const finalContact = trimmedContact || generateDummyContactNumber();
-      const finalSex = inferDummySex(first_name);
-      const finalBirthdate = generateDummyBirthdate();
+      const finalSex = ['Male', 'Female', 'Other'].includes(sex) ? sex : inferDummySex(first_name);
+      const finalBirthdate = birthdate && /^\d{4}-\d{2}-\d{2}$/.test(String(birthdate).trim())
+        ? String(birthdate).trim()
+        : generateDummyBirthdate();
+      const finalCivilStatus = civil_status && String(civil_status).trim() !== ''
+        ? String(civil_status).trim()
+        : 'Single';
       const finalSitio = trimmedSitio || 'Centro';
 
       if (!trimmedContact) {
@@ -288,8 +293,10 @@ router.post('/', async (req, res, next) => {
         user_id: user.id,
         first_name,
         last_name,
+        middle_name: middle_name ? String(middle_name).trim() : null,
         sex: finalSex,
         birthdate: finalBirthdate,
+        civil_status: finalCivilStatus,
         barangay_id: resolvedBarangayId,
         category: normalizedCategory,
         ip_classification: resolvedIpClassification,

@@ -57,6 +57,9 @@ export default function UserListPage() {
     category: '',
     household_id_number: '',
     ip_classification: 'Non-IP',
+    sex: 'Male',
+    birthdate: '',
+    civil_status: 'Single',
   });
 
   // Pre-fill form details depending on role
@@ -162,6 +165,9 @@ export default function UserListPage() {
         category: '',
         household_id_number: '',
         ip_classification: 'Non-IP',
+        sex: 'Male',
+        birthdate: '',
+        civil_status: 'Single',
       });
       setSuccessMessage(form.role === 'beneficiary'
         ? '✓ Matagumpay na nalikha at direktang naaprubahan ang benepisyaryo! Agad itong napasama sa opisyal na listahan ng mga aprubado nang hindi na dadaan sa pending review.'
@@ -379,6 +385,9 @@ export default function UserListPage() {
         category: sectorCategoryOptions[0]?.value || '',
         household_id_number: '',
         ip_classification: 'Non-IP',
+        sex: 'Male',
+        birthdate: '',
+        civil_status: 'Single',
       });
     } else {
       setForm({
@@ -394,6 +403,9 @@ export default function UserListPage() {
         category: '',
         household_id_number: '',
         ip_classification: 'Non-IP',
+        sex: 'Male',
+        birthdate: '',
+        civil_status: 'Single',
       });
     }
     setShowModal(true);
@@ -631,6 +643,49 @@ export default function UserListPage() {
                       >
                         <option value="Non-IP">Non-IP (General / Di-katutubo)</option>
                         <option value="IP">IP (Indigenous People / Katutubo - Mangyan)</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Sex
+                      <select
+                        name="sex"
+                        value={form.sex || 'Male'}
+                        onChange={handleChange}
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        required
+                      >
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </label>
+
+                    <Input
+                      label="Birthday"
+                      name="birthdate"
+                      type="date"
+                      value={form.birthdate || ''}
+                      onChange={handleChange}
+                      required
+                    />
+
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Civil Status
+                      <select
+                        name="civil_status"
+                        value={form.civil_status || 'Single'}
+                        onChange={handleChange}
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        required
+                      >
+                        <option value="Single">Single</option>
+                        <option value="Married">Married</option>
+                        <option value="Widowed">Widowed</option>
+                        <option value="Separated">Separated</option>
+                        <option value="Annulled">Annulled</option>
                       </select>
                     </label>
                   </div>
