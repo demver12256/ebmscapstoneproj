@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   Users, TrendingUp, FileText, 
   Clock, CheckCircle, XCircle,
-  Activity, Target, Zap, Megaphone, Smartphone, HandHeart,
+  Target, Zap, Megaphone, Smartphone, HandHeart,
   ChevronRight, RefreshCw, Award, MapPin, Package
 } from 'lucide-react';
 
@@ -432,41 +432,6 @@ export default function ModernDashboard() {
     return true;
   });
 
-  // Recent applications activity
-  const recentActivity = filteredAppsForActivity.slice(0, 5).map(app => {
-    if (app.status === 'Approved') {
-      return {
-        type: 'approval',
-        name: `${app.first_name || ''} ${app.last_name || ''}`,
-        action: 'Application Approved',
-        time: formatTimeAgo(app.updated_at),
-        icon: CheckCircle,
-        iconBg: 'bg-emerald-50 text-emerald-600',
-        id: app.id
-      };
-    } else if (app.status === 'Rejected') {
-      return {
-        type: 'rejection',
-        name: `${app.first_name || ''} ${app.last_name || ''}`,
-        action: 'Application Rejected',
-        time: formatTimeAgo(app.updated_at),
-        icon: XCircle,
-        iconBg: 'bg-rose-50 text-rose-600',
-        id: app.id
-      };
-    } else {
-      return {
-        type: 'pending',
-        name: `${app.first_name || ''} ${app.last_name || ''}`,
-        action: 'New Application Submitted',
-        time: formatTimeAgo(app.created_at),
-        icon: Clock,
-        iconBg: 'bg-amber-50 text-amber-600',
-        id: app.id
-      };
-    }
-  });
-
   const monthlyDistributionData = monthly.map(item => ({
     month: item.month || '',
     amount: parseFloat(item.total || 0),
@@ -803,55 +768,58 @@ export default function ModernDashboard() {
 
       {/* ━━━ Bottom Grid: Recent Activity & Quick Operations ━━━ */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        {/* Recent Applications Activity */}
+        {/* Attendance Rate Chart */}
         <div className="lg:col-span-7 p-5 rounded-xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Recent Applications & Activity</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Latest registrations submitted by citizens</p>
+              <h3 className="text-sm font-bold text-slate-900">Attendance Rate</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Present, late, and absent assembly attendance</p>
             </div>
-            {canAccessPending && (
-              <button 
-                onClick={() => navigate('/dashboard/beneficiaries?pending=true', { state: { openPending: true } })} 
-                className="text-xs font-bold text-blue-600 hover:text-blue-800 transition inline-flex items-center gap-1"
-              >
-                Review Pending <ChevronRight className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-
-          <div className="divide-y divide-slate-100 my-2">
-            {recentActivity.length > 0 ? (
-              recentActivity.map((activity, index) => {
-                const Icon = activity.icon;
-                return (
-                  <div key={index} className="flex items-center gap-3 py-2.5 px-1 hover:bg-slate-50/80 rounded-lg transition">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${activity.iconBg}`}>
-                      <Icon className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-slate-900 truncate">{activity.name}</p>
-                      <p className="text-[11px] text-slate-400 truncate">{activity.action}</p>
-                    </div>
-                    <span className="text-[10px] font-medium text-slate-400 shrink-0">{activity.time}</span>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="py-8 text-center text-slate-400 text-xs">
-                <Activity className="w-8 h-8 text-slate-300 mx-auto mb-2 opacity-50" />
-                No recent activity records found
-              </div>
-            )}
-          </div>
-
-          <div className="pt-2 text-right">
             <button
-              onClick={() => navigate('/dashboard/beneficiaries')}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-900 transition"
+              onClick={() => navigate('/dashboard/reports?type=attendance')}
+              className="text-xs font-bold text-teal-600 hover:text-teal-800 transition inline-flex items-center gap-1"
             >
-              View Beneficiary Roster →
+              View Attendance <ChevronRight className="w-3 h-3" />
             </button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-4 py-3">
+            <div className="h-44 w-full sm:w-[55%]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Present', value: summary?.presentAttendance || 0 },
+                      { name: 'Late', value: summary?.lateAttendance || 0 },
+                      { name: 'Absent', value: summary?.absentAttendance || 0 },
+                    ]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={48}
+                    outerRadius={70}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {['#10B981', '#F59E0B', '#EF4444'].map((color, index) => (
+                      <Cell key={`attendance-${index}`} fill={color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="w-full sm:w-[45%] space-y-3">
+              <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center">
+                <p className="text-3xl font-black text-emerald-700">{summary?.attendanceTurnoutRate || 0}%</p>
+                <p className="text-[11px] font-bold text-emerald-700 uppercase">Turnout Rate</p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div><p className="text-base font-bold text-emerald-700">{summary?.presentAttendance || 0}</p><p className="text-[10px] text-slate-500">Present</p></div>
+                <div><p className="text-base font-bold text-amber-600">{summary?.lateAttendance || 0}</p><p className="text-[10px] text-slate-500">Late</p></div>
+                <div><p className="text-base font-bold text-red-600">{summary?.absentAttendance || 0}</p><p className="text-[10px] text-slate-500">Absent</p></div>
+              </div>
+            </div>
           </div>
         </div>
 
