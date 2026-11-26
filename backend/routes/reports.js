@@ -1311,6 +1311,8 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_a
       order: [['scanned_at', 'DESC'], ['id', 'DESC']],
     });
 
+    const presentKeys = new Set(attendanceRows.map(r => `${r.announcement_id || r.Announcement?.id || ''}:${r.beneficiary_id}`));
+
     const mapped = [
       ...attendanceRows.map(r => ({
         id: r.id,
@@ -1323,7 +1325,9 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_a
         status: r.status,
         remarks: r.remarks || '—',
       })),
-      ...absentRows.map(r => ({
+      ...absentRows
+        .filter(r => !presentKeys.has(`${r.announcement_id || r.Announcement?.id || ''}:${r.beneficiary_id}`))
+        .map(r => ({
         id: `a-${r.id}`,
         beneficiary_name: r.Beneficiary ? `${r.Beneficiary.first_name} ${r.Beneficiary.last_name}` : 'N/A',
         category: r.Beneficiary?.category || '—',
