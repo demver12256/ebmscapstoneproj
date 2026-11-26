@@ -1691,19 +1691,7 @@ export default function BeneficiaryListPage() {
                     <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Identification & Verification History
                     </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                        <span className="text-slate-400 font-medium block">National ID No.</span>
-                        <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
-                          {viewingBeneficiary.national_id_number || '—'}
-                        </span>
-                      </div>
-                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                        <span className="text-slate-400 font-medium block">PSA Birth Cert No.</span>
-                        <span className="font-mono font-bold text-slate-800 text-sm mt-0.5 block">
-                          {viewingBeneficiary.psa_birth_cert_number || '—'}
-                        </span>
-                      </div>
+                    <div className="grid grid-cols-1 gap-3 text-xs">
                       <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                         <span className="text-slate-400 font-medium block">Date Approved</span>
                         <span className="font-semibold text-slate-800 text-sm mt-0.5 block">
@@ -2928,7 +2916,6 @@ export default function BeneficiaryListPage() {
                         <th className="px-4 py-3.5">Applicant Name</th>
                         <th className="px-4 py-3.5">Category</th>
                         <th className="px-4 py-3.5">Barangay</th>
-                        <th className="px-4 py-3.5">National ID</th>
                         <th className="px-4 py-3.5">Date Registered</th>
                         <th className="px-4 py-3.5">Verification Status</th>
                         <th className="px-4 py-3.5 text-right">Actions</th>
@@ -2940,7 +2927,6 @@ export default function BeneficiaryListPage() {
                           <td className="px-4 py-3.5 font-bold text-slate-900">{app.first_name} {app.last_name}</td>
                           <td className="px-4 py-3.5 text-slate-600 font-semibold">{app.category || '—'}</td>
                           <td className="px-4 py-3.5 text-slate-600">{app.Barangay?.barangay_name || '—'}</td>
-                          <td className="px-4 py-3.5 font-mono text-slate-700 text-xs font-bold">{app.national_id_number || '—'}</td>
                           <td className="px-4 py-3.5 text-slate-500 text-xs">
                             {(() => {
                               const rawDate = app.created_at || app.updated_at;
@@ -3057,14 +3043,6 @@ export default function BeneficiaryListPage() {
                     <div className="grid grid-cols-3">
                       <span className="text-slate-400 font-medium">Contact No:</span>
                       <span className="col-span-2 font-semibold text-slate-800">{selectedApp.contact_number || '—'}</span>
-                    </div>
-                    <div className="grid grid-cols-3">
-                      <span className="text-slate-400 font-medium">National ID:</span>
-                      <span className="col-span-2 font-mono font-bold text-slate-800">{selectedApp.national_id_number}</span>
-                    </div>
-                    <div className="grid grid-cols-3">
-                      <span className="text-slate-400 font-medium">PSA Cert:</span>
-                      <span className="col-span-2 font-mono font-bold text-slate-800">{selectedApp.psa_birth_cert_number || '—'}</span>
                     </div>
                     <div className="grid grid-cols-3">
                       <span className="text-slate-400 font-medium">Address:</span>
