@@ -21,7 +21,7 @@ const applyAnnouncementCategoryScope = (where, role) => {
         sequelize.where(targetPrograms, { [Op.like]: '%Disabilit%' }),
       ],
     });
-  } else if (['admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff'].includes(role)) {
+  } else if (['admin', 'staff', 'barangay'].includes(role)) {
     where[Op.and].push(sequelize.where(targetPrograms, { [Op.like]: '%4Ps%' }));
   }
 };
@@ -754,6 +754,8 @@ router.get('/export/beneficiaries', authorize('admin', 'staff', 'barangay'), asy
         { category: { [Op.like]: '%PWD%' } },
         { category: { [Op.like]: '%Disabilit%' } }
       ];
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
+      where.category = { [Op.like]: '%4Ps%' };
     } else if (isMswdoRole(req.user.role)) {
       // Enforce Senior/PWD/4Ps even if category query provided
       const cat = category || '';
@@ -981,6 +983,8 @@ router.get('/table/beneficiaries', authorize('admin', 'staff', 'barangay'), asyn
         { category: { [Op.like]: '%PWD%' } },
         { category: { [Op.like]: '%Disabilit%' } }
       ];
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
+      where.category = { [Op.like]: '%4Ps%' };
     } else if (isMswdoRole(req.user.role)) {
       const cat = category || '';
       const lower = String(cat).toLowerCase();
@@ -1243,7 +1247,13 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_a
     if (effectiveBarangay) {
       benWhere.barangay_id = effectiveBarangay;
     }
-    if (isMswdoRole(req.user.role)) {
+    if (isSeniorRole(req.user.role)) {
+      benWhere.category = { [Op.like]: '%Senior%' };
+    } else if (isPwdRole(req.user.role)) {
+      benWhere[Op.or] = [{ category: { [Op.like]: '%PWD%' } }, { category: { [Op.like]: '%Disabilit%' } }];
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
+      benWhere.category = { [Op.like]: '%4Ps%' };
+    } else if (isMswdoRole(req.user.role)) {
       if (category) {
         benWhere.category = { [Op.like]: `%${category}%` };
       } else {
@@ -1569,7 +1579,13 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_
     const effectiveBarangay = isBarangayScoped && barangayId ? barangayId : qBarangay;
     if (effectiveBarangay) benWhere.barangay_id = effectiveBarangay;
 
-    if (isMswdoRole(req.user.role)) {
+    if (isSeniorRole(req.user.role)) {
+      benWhere.category = { [Op.like]: '%Senior%' };
+    } else if (isPwdRole(req.user.role)) {
+      benWhere[Op.or] = [{ category: { [Op.like]: '%PWD%' } }, { category: { [Op.like]: '%Disabilit%' } }];
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
+      benWhere.category = { [Op.like]: '%4Ps%' };
+    } else if (isMswdoRole(req.user.role)) {
       if (category) {
         benWhere.category = { [Op.like]: `%${category}%` };
       } else {
