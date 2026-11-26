@@ -2803,7 +2803,7 @@ export default function AnnouncementManagementPage() {
                               ) : null}
                             </td>
                             <td className="py-2.5 px-4 text-slate-600">
-                              {r.scanned_at ? (() => { const d = new Date(r.scanned_at); const date = d.toLocaleDateString('en-US', { timeZone: 'UTC' }); const time = d.toLocaleTimeString('en-US', { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' }); return `${date}, ${time}`; })() : '—'}
+                              {r.scanned_at ? (() => { const raw = String(r.scanned_at); const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})T?(\d{2}):(\d{2})/); if (!isoMatch) return raw; const [, date, hourText, minute] = isoMatch; const hour = Number(hourText); const ampm = hour >= 12 ? 'PM' : 'AM'; const hour12 = hour % 12 || 12; const [year, month, day] = date.split('-'); return `${month}/${day}/${year}, ${hour12}:${minute} ${ampm}`; })() : '—'}
                             </td>
                             <td className="py-2.5 px-4 text-slate-500">
                               {r.ScannedByStaff ? `${r.ScannedByStaff.first_name} ${r.ScannedByStaff.last_name}` : '—'}

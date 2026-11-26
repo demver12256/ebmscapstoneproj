@@ -2250,7 +2250,7 @@ router.get('/:id/export', authorize('admin', 'staff', 'barangay'), async (req, r
           ? (r.Beneficiary?.contact_number || r.Beneficiary?.User?.contact_number ? 'not_queued' : 'no_mobile')
           : 'not_applicable'
       ),
-      scanned_at: r.scanned_at ? (() => { const d = new Date(r.scanned_at); const date = d.toLocaleDateString('en-US', { timeZone: 'UTC' }); const time = d.toLocaleTimeString('en-US', { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' }); return `${date}, ${time}`; })() : '—',
+      scanned_at: r.scanned_at ? (() => { const raw = String(r.scanned_at); const match = raw.match(/^(\d{4}-\d{2}-\d{2})T?(\d{2}):(\d{2})/); if (!match) return raw; const [, date, hourText, minute] = match; const hour = Number(hourText); const ampm = hour >= 12 ? 'PM' : 'AM'; const hour12 = hour % 12 || 12; const [year, month, day] = date.split('-'); return `${month}/${day}/${year}, ${hour12}:${minute} ${ampm}`; })() : '—',
       facilitated_by: r.ScannedByStaff ? `${r.ScannedByStaff.first_name} ${r.ScannedByStaff.last_name}` : '—',
     }));
 
