@@ -20,7 +20,7 @@ async function shuffleApprovalDates() {
     { type: QueryTypes.SELECT }
   );
 
-  const dates = Array.from({ length: 14 }, (_, index) => `2026-11-${String(index + 5).padStart(2, '0')}`);
+  const dates = ['2026-11-08', '2026-11-09', '2026-11-10'];
   for (let i = dates.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [dates[i], dates[j]] = [dates[j], dates[i]];
