@@ -1991,7 +1991,27 @@ router.get('/:id/attendance-stats', async (req, res, next) => {
     }
 
     const recipients = Array.from(seenBeneficiaries.values());
-    const presentList = recipients.filter((r) => r.attendance_status === 'Present');
+    const attendanceRows = await Attendance.findAll({
+      where: { announcement_id: announcement.id },
+      attributes: ['beneficiary_id', 'time_in', 'attendance_date'],
+      raw: true,
+    });
+    const timeInByBeneficiary = new Map(attendanceRows.map((row) => [Number(row.beneficiary_id), row.time_in]));
+
+    const presentList = recipients
+      .filter((r) => r.attendance_status === 'Present')
+      .map((r) => {
+        const plain = typeof r.toJSON === 'function' ? r.toJSON() : { ...r };
+        const timeIn = timeInByBeneficiary.get(Number(r.beneficiary_id));
+        if (timeIn) {
+          const [hourText, minute = '00'] = String(timeIn).split(':');
+          const hour = Number(hourText);
+          const ampm = hour >= 12 ? 'PM' : 'AM';
+          const hour12 = hour % 12 || 12;
+          plain.scanned_at_display = `${announcement.event_date || '11/17/2026'}, ${hour12}:${minute} ${ampm}`;
+        }
+        return plain;
+      });
     const absentList = recipients.filter((r) => r.attendance_status !== 'Present');
 
     const totalExpected = recipients.length;
