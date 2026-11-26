@@ -9,6 +9,23 @@ const getIsBarangayScoped = (user) => {
   return Boolean(user?.barangay_id) && ['staff', 'barangay', 'senior_citizen_staff', 'pwd_staff'].includes(user?.role);
 };
 
+const applyAnnouncementCategoryScope = (where, role) => {
+  const targetPrograms = sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR');
+  where[Op.and] = where[Op.and] || [];
+  if (isSeniorRole(role)) {
+    where[Op.and].push(sequelize.where(targetPrograms, { [Op.like]: '%Senior%' }));
+  } else if (isPwdRole(role)) {
+    where[Op.and].push({
+      [Op.or]: [
+        sequelize.where(targetPrograms, { [Op.like]: '%PWD%' }),
+        sequelize.where(targetPrograms, { [Op.like]: '%Disabilit%' }),
+      ],
+    });
+  } else if (['admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff'].includes(role)) {
+    where[Op.and].push(sequelize.where(targetPrograms, { [Op.like]: '%4Ps%' }));
+  }
+};
+
 const router = express.Router();
 router.use(authenticate);
 
@@ -33,6 +50,8 @@ router.get('/summary', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'm
       ];
     } else if (isMswdoRole(req.user.role)) {
       beneficiaryWhere[Op.or] = MSWDO_CATEGORY_FILTER[Op.or];
+    } else if (['admin', 'staff', 'barangay'].includes(req.user.role)) {
+      beneficiaryWhere.category = { [Op.like]: '%4Ps%' };
     }
 
     // ── Core counts ──
@@ -320,26 +339,17 @@ router.get('/summary', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'm
     // ── Attendance stats ──
     let announcementScopeIds = null;
     let attendanceWhere = {};
-    if (isMswdoRole(req.user.role)) {
-      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'] } }, attributes: ['id'] });
-      const mswdoUserIds = mswdoUsers.map(u => u.id);
-      const mswdoAnnouncements = await Announcement.findAll({
-        where: {
-          [Op.or]: [
-            { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
-            { notify_mswdo: true },
-            { notify_senior: true },
-            { notify_pwd: true },
-            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
-            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-          ],
-        },
-        attributes: ['id'],
-      });
-      announcementScopeIds = mswdoAnnouncements.map(a => a.id);
-      if (announcementScopeIds.length > 0) {
-        attendanceWhere.announcement_id = { [Op.in]: announcementScopeIds };
-      }
+    const scopeWhere = {};
+    applyAnnouncementCategoryScope(scopeWhere, req.user.role);
+    const scopedAnnouncements = await Announcement.findAll({
+      where: scopeWhere,
+      attributes: ['id'],
+    });
+    announcementScopeIds = scopedAnnouncements.map(a => a.id);
+    if (announcementScopeIds.length > 0) {
+      attendanceWhere.announcement_id = { [Op.in]: announcementScopeIds };
+    } else {
+      attendanceWhere.announcement_id = { [Op.in]: [-1] };
     }
     const presentAttendance = await Attendance.count({
       where: { ...attendanceWhere, status: { [Op.in]: ['Present', 'present'] } }
@@ -359,18 +369,7 @@ router.get('/summary', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'm
 
     // ── Announcement stats ──
     let announceWhere = {};
-    if (isMswdoRole(req.user.role)) {
-      const mswdoUsers = await User.findAll({ where: { role: { [Op.in]: ['mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'pwd_admin', 'senior_citizen_staff', 'pwd_staff'] } }, attributes: ['id'] });
-      const mswdoUserIds = mswdoUsers.map(u => u.id);
-      announceWhere[Op.or] = [
-        { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
-        { notify_mswdo: true },
-        { notify_senior: true },
-        { notify_pwd: true },
-        sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
-        sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-      ];
-    }
+    applyAnnouncementCategoryScope(announceWhere, req.user.role);
     const totalAnnouncements = await Announcement.count({ where: announceWhere });
     const publishedAnnouncements = await Announcement.count({ where: { ...announceWhere, status: 'published' } });
     const completedAnnouncements = await Announcement.count({ where: { ...announceWhere, status: 'completed' } });
@@ -1230,31 +1229,14 @@ router.get('/table/assistance-requests', authorize('admin', 'staff', 'barangay')
 });
 
 // ── Attendance Table JSON ──
-router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.get('/table/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, category, start_date, end_date, page = 1, limit = 10 } = req.query;
 
     const announcementScopeWhere = {};
-    if (isMswdoRole(req.user.role)) {
-      const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
-      const mswdoUserIds = mswdoUsers.map(u => u.id);
-      const mswdoAnnouncements = await Announcement.findAll({
-        where: {
-          [Op.or]: [
-            { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
-            { notify_mswdo: true },
-            { notify_senior: true },
-            { notify_pwd: true },
-            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
-            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-          ],
-        },
-        attributes: ['id'],
-      });
-      announcementScopeWhere.id = { [Op.in]: mswdoAnnouncements.map(a => a.id) };
-    }
+    applyAnnouncementCategoryScope(announcementScopeWhere, req.user.role);
 
     const benWhere = {};
     const effectiveBarangay = isBarangayScoped && barangayId ? barangayId : qBarangay;
@@ -1380,22 +1362,7 @@ router.get('/table/announcements', authorize('admin', 'staff', 'barangay', 'mswd
       where.event_date = { [Op.lte]: end_date };
     }
 
-    const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
-    const mswdoUserIds = mswdoUsers.map(u => u.id);
-
-    if (isMswdoRole(req.user.role)) {
-      where[Op.and] = where[Op.and] || [];
-      where[Op.and].push({
-        [Op.or]: [
-          { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
-          { notify_mswdo: true },
-          { notify_senior: true },
-          { notify_pwd: true },
-          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
-          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-        ],
-      });
-    }
+    applyAnnouncementCategoryScope(where, req.user.role);
 
     let allAnnouncements = await Announcement.findAll({
       where,
@@ -1589,31 +1556,14 @@ router.get('/export/assistance-requests', authorize('admin', 'staff', 'barangay'
 });
 
 // ── Export Attendance as CSV ──
-router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.get('/export/attendance', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
     const { barangay_id: qBarangay, category, start_date, end_date } = req.query;
 
     const announcementScopeWhere = {};
-    if (isMswdoRole(req.user.role)) {
-      const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
-      const mswdoUserIds = mswdoUsers.map(u => u.id);
-      const mswdoAnnouncements = await Announcement.findAll({
-        where: {
-          [Op.or]: [
-            { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
-            { notify_mswdo: true },
-            { notify_senior: true },
-            { notify_pwd: true },
-            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
-            sequelize.where(sequelize.cast(sequelize.col('target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-          ],
-        },
-        attributes: ['id'],
-      });
-      announcementScopeWhere.id = { [Op.in]: mswdoAnnouncements.map(a => a.id) };
-    }
+    applyAnnouncementCategoryScope(announcementScopeWhere, req.user.role);
 
     const benWhere = {};
     const effectiveBarangay = isBarangayScoped && barangayId ? barangayId : qBarangay;
@@ -1730,22 +1680,7 @@ router.get('/export/announcements', authorize('admin', 'staff', 'barangay', 'msw
       where.event_date = { [Op.lte]: end_date };
     }
 
-    const mswdoUsers = await User.findAll({ where: { role: 'mswdo_admin' }, attributes: ['id'] });
-    const mswdoUserIds = mswdoUsers.map(u => u.id);
-
-    if (isMswdoRole(req.user.role)) {
-      where[Op.and] = where[Op.and] || [];
-      where[Op.and].push({
-        [Op.or]: [
-          { created_by_user_id: { [Op.in]: mswdoUserIds.length ? mswdoUserIds : [-1] } },
-          { notify_mswdo: true },
-          { notify_senior: true },
-          { notify_pwd: true },
-          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%Senior%' }),
-          sequelize.where(sequelize.cast(sequelize.col('Announcement.target_programs'), 'CHAR'), { [Op.like]: '%PWD%' }),
-        ],
-      });
-    }
+    applyAnnouncementCategoryScope(where, req.user.role);
 
     let allAnnouncements = await Announcement.findAll({
       where,
