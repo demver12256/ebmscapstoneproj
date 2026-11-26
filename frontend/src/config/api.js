@@ -2,11 +2,16 @@ const browserHost = typeof window !== 'undefined' ? window.location.hostname : '
 const browserProtocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
 const browserPort = typeof window !== 'undefined' ? window.location.port : '3000';
 
-// When running in a browser through dev server (port 3000), use '/api' to eliminate
-// cross-origin restrictions, preflight failures, and port 5000 firewall blocks on mobile devices.
+// Use Railway directly on the production custom domain; ebms.world is the static frontend.
+const productionBackendUrl = 'https://ebmscapstoneproj-production.up.railway.app/api';
+const isProductionDomain = typeof window !== 'undefined'
+  && ['ebms.world', 'www.ebms.world'].includes(browserHost.toLowerCase());
+
 export const API_URL = (typeof window !== 'undefined' && browserPort === '3000')
   ? '/api'
-  : (process.env.REACT_APP_API_URL || `${browserProtocol}//${browserHost}:5000/api`);
+  : (isProductionDomain
+    ? productionBackendUrl
+    : (process.env.REACT_APP_API_URL || `${browserProtocol}//${browserHost}:5000/api`));
 
 export const API_BASE_URL = API_URL;
 
@@ -15,7 +20,7 @@ export const API_ORIGIN = (typeof window !== 'undefined' && browserPort === '300
   : (API_URL.startsWith('http') ? API_URL.replace(/\/api\/?$/, '') : `${browserProtocol}//${browserHost}:5000`);
 
 export const API_CONFIG = {
-  timeout: 10000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   },

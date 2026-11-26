@@ -6,12 +6,12 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 15000,
+  timeout: 60000,
 });
 
 export const setAuthToken = (token) => {
   if (token) {
-    apiClient.defaults.headers.common.Authorization = `Bearer ${token}`;
+    apiClient.defaults.headers.common.Authorization = 'Bearer ' + token;
     console.log('Auth token set for API calls');
   } else {
     delete apiClient.defaults.headers.common.Authorization;

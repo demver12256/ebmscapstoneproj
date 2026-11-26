@@ -1339,9 +1339,19 @@ export default function AnnouncementManagementPage() {
                                 DSWD
                               </span>
                             )}
-                            {['mswdo_admin', 'senior_citizen_admin', 'pwd_admin'].includes(ann.CreatedBy?.role) && (
+                            {ann.CreatedBy?.role === 'mswdo_admin' && (
                               <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] font-bold">
                                 MSWDO
+                              </span>
+                            )}
+                            {ann.CreatedBy?.role === 'senior_citizen_admin' && (
+                              <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                OSCA / Senior Citizen Admin
+                              </span>
+                            )}
+                            {ann.CreatedBy?.role === 'pwd_admin' && (
+                              <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                PDAO / PWD Admin
                               </span>
                             )}
                             {(ann.CreatedBy?.role === 'staff' || ann.CreatedBy?.role === 'barangay') && (
@@ -1351,7 +1361,7 @@ export default function AnnouncementManagementPage() {
                             )}
                             {ann.AssignedStaff && (
                               <span className="bg-purple-50 text-purple-800 border border-purple-200 px-1.5 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-1">
-                                📋 Staff: {ann.AssignedStaff.first_name} {ann.AssignedStaff.last_name} ({ann.AssignedStaff.role === 'mswdo_staff' ? 'MSWDO Staff' : 'DSWD Staff'})
+                                📋 Staff: {ann.AssignedStaff.first_name} {ann.AssignedStaff.last_name} ({ann.AssignedStaff.role === 'senior_citizen_staff' ? 'Senior Staff' : ann.AssignedStaff.role === 'pwd_staff' ? 'PWD Staff' : ann.AssignedStaff.role === 'mswdo_staff' ? 'MSWDO Staff' : 'DSWD Staff'})
                               </span>
                             )}
                             <span>•</span>
