@@ -12,9 +12,10 @@ const getIsBarangayScoped = (user) => {
 const router = express.Router();
 router.use(authenticate);
 
-router.get('/summary', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.get('/summary', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const isBarangayScoped = getIsBarangayScoped(req.user);
+    const isMswdo = isMswdoRole(req.user.role);
     const barangayId = req.user.barangay_id;
 
     // Beneficiary where scoping
@@ -1362,7 +1363,7 @@ router.get('/table/attendance', authorize('admin', 'staff', 'barangay'), async (
 });
 
 // ── Announcements Table JSON ──
-router.get('/table/announcements', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.get('/table/announcements', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
@@ -1712,7 +1713,7 @@ router.get('/export/attendance', authorize('admin', 'staff', 'barangay'), async 
 });
 
 // ── Export Announcements as CSV ──
-router.get('/export/announcements', authorize('admin', 'staff', 'barangay'), async (req, res, next) => {
+router.get('/export/announcements', authorize('admin', 'staff', 'barangay', 'mswdo_admin', 'mswdo_staff', 'senior_citizen_admin', 'senior_citizen_staff', 'pwd_admin', 'pwd_staff'), async (req, res, next) => {
   try {
     const isBarangayScoped = getIsBarangayScoped(req.user);
     const barangayId = req.user.barangay_id;
