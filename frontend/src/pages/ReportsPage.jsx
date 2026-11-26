@@ -561,9 +561,10 @@ export default function ReportsPage() {
         setTotalPages(res.data.pagination?.totalPages || 1);
       } else if (rType === 'announcement') {
         const res = await reportsApi.getTableAnnouncements(params);
-        setTableData(res.data.data || []);
-        setTableTotal(res.data.pagination?.total || 0);
-        setTotalPages(res.data.pagination?.totalPages || 1);
+        const announcementRows = res.data.data || [];
+        setTableData(announcementRows);
+        setTableTotal(res.data.pagination?.total ?? announcementRows.length);
+        setTotalPages(res.data.pagination?.totalPages ?? (announcementRows.length > 0 ? Math.ceil(announcementRows.length / limit) : 1));
       } else if (rType === 'audit-logs') {
         const res = await reportsApi.getTableAuditLogs(params);
         setTableData(res.data.data || []);
@@ -1230,7 +1231,7 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
           <td>${r.remarks || ''}</td>
         </tr>`).join('');
     } else if (reportType === 'announcement') {
-      tableHeaders = '<th>ID</th><th>Title</th><th>Date</th><th>Time</th><th>Venue</th><th>Sector</th><th>Priority</th><th>Status</th><th>Attendees</th>';
+      tableHeaders = '<th>ID</th><th>Title</th><th>Date</th><th>Time</th><th>Venue</th><th>Sector</th><th>Priority</th><th>Status</th><th>Attendees</th><th>Created By</th><th>Facilitated By</th>';
       rowsHTML = tableData.map(a => `
         <tr>
           <td>${a.id || ''}</td>
@@ -1242,6 +1243,8 @@ function writeAutoSizedExcel(rows, filename, sheetName = 'Report') {
           <td>${a.priority || ''}</td>
           <td>${a.status || ''}</td>
           <td>${a.attendees ?? 0} / ${a.recipients_count ?? 0}</td>
+          <td>${a.created_by_role || a.created_by || '—'}</td>
+          <td>${a.facilitated_by || '—'}</td>
         </tr>`).join('');
     } else if (reportType === 'audit-logs') {
       tableHeaders = '<th>ID</th><th>User</th><th>Email</th><th>Role</th><th>Action</th><th>Module</th><th>Timestamp</th>';
