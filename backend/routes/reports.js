@@ -1399,7 +1399,8 @@ router.get('/table/announcements', authorize('admin', 'staff', 'barangay'), asyn
     let allAnnouncements = await Announcement.findAll({
       where,
       include: [
-        { model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email'] },
+        { model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email', 'role'] },
+        { model: User, as: 'AssignedStaff', attributes: ['id', 'first_name', 'last_name', 'role'] },
         { model: AnnouncementRecipient, as: 'Recipients', attributes: ['id', 'attendance_status'] },
         { model: Attendance, as: 'Attendances', attributes: ['id', 'status'], required: false },
       ],
@@ -1444,7 +1445,17 @@ router.get('/table/announcements', authorize('admin', 'staff', 'barangay'), asyn
       } catch (e) { bNames = ['All Barangays']; }
 
       const totalRecipients = a.Recipients?.length || 0;
-      const presentCount = (a.Attendances?.length || 0) + (a.Recipients?.filter(r => r.attendance_status === 'Present').length || 0);
+      const presentRecipients = new Set(
+        (a.Recipients || [])
+          .filter(r => r.attendance_status === 'Present')
+          .map(r => r.id)
+      ).size;
+      const presentAttendance = new Set(
+        (a.Attendances || [])
+          .filter(r => r.status === 'Present')
+          .map(r => r.id)
+      ).size;
+      const presentCount = presentRecipients > 0 ? presentRecipients : presentAttendance;
 
       return {
         id: a.id,
@@ -1459,6 +1470,8 @@ router.get('/table/announcements', authorize('admin', 'staff', 'barangay'), asyn
         attendees: presentCount,
         recipients_count: totalRecipients,
         created_by: a.CreatedBy ? `${a.CreatedBy.first_name} ${a.CreatedBy.last_name}` : 'System',
+        created_by_role: a.CreatedBy?.role === 'senior_citizen_admin' ? 'Senior Citizen Admin' : a.CreatedBy?.role === 'mswdo_admin' ? 'MSWDO' : (a.CreatedBy?.role || 'System'),
+        facilitated_by: a.AssignedStaff ? `${a.AssignedStaff.first_name} ${a.AssignedStaff.last_name}` : '—',
         created_at: a.createdAt,
       };
     });
@@ -1736,7 +1749,8 @@ router.get('/export/announcements', authorize('admin', 'staff', 'barangay'), asy
     let allAnnouncements = await Announcement.findAll({
       where,
       include: [
-        { model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email'] },
+        { model: User, as: 'CreatedBy', attributes: ['id', 'first_name', 'last_name', 'email', 'role'] },
+        { model: User, as: 'AssignedStaff', attributes: ['id', 'first_name', 'last_name', 'role'] },
         { model: AnnouncementRecipient, as: 'Recipients', attributes: ['id', 'attendance_status'] },
         { model: Attendance, as: 'Attendances', attributes: ['id', 'status'], required: false },
       ],
@@ -1766,7 +1780,7 @@ router.get('/export/announcements', authorize('admin', 'staff', 'barangay'), asy
     const allBarangays = await Barangay.findAll({ attributes: ['id', 'barangay_name'] });
     const barangayMap = new Map(allBarangays.map(b => [b.id, b.barangay_name]));
 
-    const headers = ['ID', 'Title', 'Date', 'Time', 'Venue', 'Target Sector', 'Target Barangay', 'Priority', 'Status', 'Attendees', 'Recipients', 'Created By'];
+    const headers = ['ID', 'Title', 'Date', 'Time', 'Venue', 'Target Sector', 'Target Barangay', 'Priority', 'Status', 'Attendees', 'Recipients', 'Created By', 'Created By Role', 'Facilitated By'];
     const rows = allAnnouncements.map(a => {
       let catNames = [];
       try {
@@ -1782,7 +1796,17 @@ router.get('/export/announcements', authorize('admin', 'staff', 'barangay'), asy
       } catch (e) { bNames = ['All Barangays']; }
 
       const totalRecipients = a.Recipients?.length || 0;
-      const presentCount = (a.Attendances?.length || 0) + (a.Recipients?.filter(r => r.attendance_status === 'Present').length || 0);
+      const presentRecipients = new Set(
+        (a.Recipients || [])
+          .filter(r => r.attendance_status === 'Present')
+          .map(r => r.id)
+      ).size;
+      const presentAttendance = new Set(
+        (a.Attendances || [])
+          .filter(r => r.status === 'Present')
+          .map(r => r.id)
+      ).size;
+      const presentCount = presentRecipients > 0 ? presentRecipients : presentAttendance;
 
       return [
         a.id,
@@ -1797,6 +1821,8 @@ router.get('/export/announcements', authorize('admin', 'staff', 'barangay'), asy
         presentCount,
         totalRecipients,
         a.CreatedBy ? `${a.CreatedBy.first_name} ${a.CreatedBy.last_name}` : 'System',
+        a.CreatedBy?.role === 'senior_citizen_admin' ? 'Senior Citizen Admin' : a.CreatedBy?.role === 'mswdo_admin' ? 'MSWDO' : (a.CreatedBy?.role || 'System'),
+        a.AssignedStaff ? `${a.AssignedStaff.first_name} ${a.AssignedStaff.last_name}` : '—',
       ];
     });
 

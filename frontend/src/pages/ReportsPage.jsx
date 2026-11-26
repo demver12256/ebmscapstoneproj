@@ -760,7 +760,7 @@ export default function ReportsPage() {
           title: 'Announcement & Meeting Reports',
           exportType: 'announcements',
           emptyMsg: 'No announcements or meetings found matching the filters',
-          columns: ['ID', 'Title', 'Date', 'Time', 'Venue', 'Target Sector', 'Priority', 'Status', 'Attendees'],
+          columns: ['ID', 'Title', 'Date', 'Time', 'Venue', 'Target Sector', 'Priority', 'Status', 'Attendees', 'Created By', 'Facilitated By'],
           renderRow: (row) => (
             <>
               <td className="px-6 py-4 text-sm text-slate-500 font-mono">{row.id}</td>
@@ -784,6 +784,8 @@ export default function ReportsPage() {
                 }`}>{row.status}</span>
               </td>
               <td className="px-6 py-4 text-sm font-semibold text-slate-900 text-center">{row.attendees ?? 0} / {row.recipients_count ?? 0}</td>
+              <td className="px-6 py-4 text-sm text-slate-700">{row.created_by_role || row.created_by || '—'}</td>
+              <td className="px-6 py-4 text-sm text-slate-700">{row.facilitated_by || '—'}</td>
             </>
           ),
         };
