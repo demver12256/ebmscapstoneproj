@@ -265,7 +265,13 @@ export default function UserListPage() {
         </div>
       );
     }},
-    { header: 'Contact', accessor: 'contact_number', cell: (row) => row.contact_number || <span className="text-slate-400 italic text-xs">Walang mobile</span> },
+    { header: 'Contact', accessor: 'contact_number', cell: (row) => {
+      const ben = row.Beneficiaries?.[0];
+      const contact = row.contact_number || row.phone_number || ben?.contact_number;
+      return contact
+        ? <span className="font-medium text-slate-700">{contact}</span>
+        : <span className="text-slate-400 italic text-xs">Walang mobile</span>;
+    } },
     { header: 'Status', accessor: 'status', cell: (row) => (
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
         row.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'

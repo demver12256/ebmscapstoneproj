@@ -104,7 +104,7 @@ router.get('/', async (req, res, next) => {
       include: [
         {
           model: Beneficiary,
-          attributes: ['id', 'category', 'status', 'household_id_number', 'beneficiary_id_code', 'RFID_number', 'barangay_id', 'qr_token', 'approval_date', 'approved_at', 'ip_classification', 'sitio'],
+          attributes: ['id', 'category', 'status', 'household_id_number', 'beneficiary_id_code', 'RFID_number', 'barangay_id', 'qr_token', 'approval_date', 'approved_at', 'ip_classification', 'sitio', 'contact_number'],
           required: false,
         },
       ],
