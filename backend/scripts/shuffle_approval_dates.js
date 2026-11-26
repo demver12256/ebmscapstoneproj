@@ -16,7 +16,14 @@ const sequelize = new Sequelize(
 
 async function shuffleApprovalDates() {
   const beneficiaries = await sequelize.query(
-    "SELECT id FROM beneficiaries WHERE status = 'Approved' ORDER BY id",
+    `SELECT id FROM beneficiaries
+     WHERE status = 'Approved'
+       AND (
+         approval_date IN ('2026-11-25', '2026-11-26')
+         OR approved_at LIKE '2026-11-25%' 
+         OR approved_at LIKE '2026-11-26%'
+       )
+     ORDER BY id`,
     { type: QueryTypes.SELECT }
   );
 
